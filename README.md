@@ -41,7 +41,9 @@ FitCoachIA/
 │       ├── domain/               # Entidades y lógica de dominio
 │       ├── infrastructure/
 │       │   ├── config/           # Configuración de la aplicación
-│       │   └── database/         # Conexión y setup de base de datos
+│       │   ├── database/         # Conexión y setup de base de datos
+│       │   ├── ia/               # Clientes y adaptadores de LLMs
+│       │   └── prompts/          # Plantillas de prompts por agente
 │       ├── repository/           # Acceso a datos (patrón Repository)
 │       └── service/              # Casos de uso y lógica de negocio
 ├── tests/

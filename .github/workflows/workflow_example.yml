@@ -1,0 +1,11 @@
+name: workflow_sample
+on:
+    push: 
+        branches: ["feature/project-structure"]
+
+jobs:
+    sample-job:
+        runs-on: ubuntu-latest
+        steps:
+            - name: "sample-step"
+              run: echo "Hello world" 

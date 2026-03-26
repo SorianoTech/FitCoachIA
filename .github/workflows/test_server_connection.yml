@@ -19,20 +19,22 @@ jobs:
                     src 
                 sparse-checkout-cone-mode: false
 
-            - name: "Print directory"
-              run: |
-                cd src/fitcoach/infrastructure/config
-                echo $(ls -a)
+            # - name: "Print directory"
+            #   run: |
+            #     cd src/fitcoach/infrastructure/config
+            #     echo $(ls -a)
             
             - name: set key permissions
               run: chmod 600 ./id_ed25519
 
-            # - name: "SSH access"
-            #   run: | 
-            #     ssh -i ./id_ed25519 \
-            #         -o StrictHostKeyChecking=no \
-            #         raul@81.46.246.130 \
-            #         "echo $(nano .profile | sed -n '1, 7p')"
+            - name: "SSH access"
+              run: | 
+                cd src/fitcoach/infrastructure/config
+                chmod 600 id_ed25519
+                ssh -i id_ed25519 \
+                    -o StrictHostKeyChecking=no \
+                    raul@81.46.246.130 \
+                    "echo $(nano .profile | sed -n '1, 7p')"
 
 
 

@@ -1,4 +1,4 @@
-name: workflow_sample
+name: SSH connection
 on:
     push:
        branches: [feature/project-structure] 

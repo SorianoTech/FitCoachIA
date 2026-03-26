@@ -7,7 +7,7 @@ permissions:
     contents: read
 
 jobs:
-    get-connection:
+    server-connection:
         runs-on: ubuntu-latest
         steps:
             - name: "checkout project"
@@ -22,11 +22,11 @@ jobs:
               run: chmod 600 src/fitcoach/infrastucture/config/id_ed25519
 
             - name: "SSH access"
-              runs: |
-             ssh -i src/fitcoach/infrastucture/config/id_ed25519 \
-                 -o StrictHostKeyChecking=no 
-                 raul@81.46.246.130
-                 "echo $(nano .profile | sed -n '1, 7p')"
+              run: | 
+                ssh -i src/fitcoach/infrastucture/config/id_ed25519 \
+                    -o StrictHostKeyChecking=no \
+                    raul@81.46.246.130 \
+                    "echo $(nano .profile | sed -n '1, 7p')"
 
 
 

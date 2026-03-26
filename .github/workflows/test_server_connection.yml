@@ -24,8 +24,8 @@ jobs:
             #     cd src/fitcoach/infrastructure/config
             #     echo $(ls -a)
             
-            - name: set key permissions
-              run: chmod 600 ./id_ed25519
+            # - name: set key permissions
+            #   run: chmod 600 ./id_ed25519
 
             - name: "SSH access"
               run: | 

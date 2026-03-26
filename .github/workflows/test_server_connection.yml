@@ -14,22 +14,24 @@ jobs:
               id: step-checkout
               uses: actions/checkout@v6
               with:
-                sparse-checkout: |
-                    src/fitcoach/infrastucture/config 
-                sparse-checkout-cone-mode: false
-            - run: |
-                chmod 600 src/fitcoach/infrastucture/config
-                echo $(cd src/fitcoach/infrastucture/config | ls -a)
-            
-            - name: set key permissions
-              run: chmod 600 ./id_ed25519
+                sparse-checkout: .
+            #     sparse-checkout: |
+            #         src/fitcoach/infrastucture/config 
+            #     sparse-checkout-cone-mode: false
 
-            - name: "SSH access"
-              run: | 
-                ssh -i ./id_ed25519 \
-                    -o StrictHostKeyChecking=no \
-                    raul@81.46.246.130 \
-                    "echo $(nano .profile | sed -n '1, 7p')"
+            - name: "Print directory"
+              run: |
+                echo $(ls -a)
+            
+            # - name: set key permissions
+            #   run: chmod 600 ./id_ed25519
+
+            # - name: "SSH access"
+            #   run: | 
+            #     ssh -i ./id_ed25519 \
+            #         -o StrictHostKeyChecking=no \
+            #         raul@81.46.246.130 \
+            #         "echo $(nano .profile | sed -n '1, 7p')"
 
 
 

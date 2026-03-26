@@ -16,10 +16,8 @@ jobs:
               with:
                 ref: feature/project-structure
                 sparse-checkout: |
-                    src
-            #     sparse-checkout: |
-            #         src/fitcoach/infrastucture/config 
-            #     sparse-checkout-cone-mode: false
+                    src/fitcoach/infrastucture/config 
+                sparse-checkout-cone-mode: false
 
             - name: "Print directory"
               run: |

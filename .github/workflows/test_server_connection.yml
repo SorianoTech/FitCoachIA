@@ -15,7 +15,8 @@ jobs:
               uses: actions/checkout@v6
               with:
                 ref: feature/project-structure
-                sparse-checkout: .
+                sparse-checkout: |
+                    src
             #     sparse-checkout: |
             #         src/fitcoach/infrastucture/config 
             #     sparse-checkout-cone-mode: false

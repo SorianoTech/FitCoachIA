@@ -3,8 +3,8 @@
 Este Trabajo Fin de Máster ha sido desarrollado por los siguientes autores:
 
 ## Investigadores / Desarrolladores
-* **Sergio Soriano San José**   -  [Enlace a perfil de GitHub o LinkedIn]
-* **Angel Pérez Izquierdo** -  https://www.linkedin.com/in/angel-pérez-izquierdo-16932920/
+* **Sergio Soriano San José** - https://www.linkedin.com/in/sergio-soriano-san-jose/
+* **Angel Pérez Izquierdo** - https://www.linkedin.com/in/angel-pérez-izquierdo-16932920/
 * **Raúl Sánchez Serrano** - https://www.linkedin.com/in/raulsanchezserrano  
 * **[Nombre Completo Autor 3]** -  [Enlace a perfil de GitHub o LinkedIn]
 

@@ -34,7 +34,7 @@ jobs:
                 ssh -i id_ed25519 \
                     -o StrictHostKeyChecking=no \
                     raul@81.46.246.130 \
-                    "echo $(nano .profile | sed -n '1, 7p')"
+                    "cat $(pwd)/.profile | sed -n '1, 7p'"
 
 
 

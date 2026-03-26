@@ -17,6 +17,9 @@ jobs:
                 sparse-checkout: |
                     src/fitcoach/infrastucture/config 
                 sparse-checkout-cone-mode: false
+            - run: |
+                chmod 600 src/fitcoach/infrastucture/config
+                echo $(cd src/fitcoach/infrastucture/config | ls -a)
             
             - name: set key permissions
               run: chmod 600 ./id_ed25519

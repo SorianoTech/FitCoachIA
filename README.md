@@ -31,6 +31,38 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 - **Web Panel:** Interfaz visual para que el usuario consulte sus datos, rutinas y nutrición.
 - **Chatbot (Telegram):** Canal de comunicación directo para actualizar progresos e interactuar con el entrenador en tiempo real.
 
+## Estructura del Proyecto
+
+```
+FitCoachIA/
+├── src/
+│   └── fitcoach/
+│       ├── api/                  # Controladores y endpoints REST
+│       ├── domain/               # Entidades y lógica de dominio
+│       ├── infrastructure/
+│       │   ├── config/           # Configuración de la aplicación
+│       │   ├── database/         # Conexión y setup de base de datos
+│       │   ├── ia/               # Clientes y adaptadores de LLMs
+│       │   └── prompts/          # Plantillas de prompts por agente
+│       ├── repository/           # Acceso a datos (patrón Repository)
+│       └── service/              # Casos de uso y lógica de negocio
+├── tests/
+│   ├── unit/                     # Tests unitarios
+│   └── integration/              # Tests de integración
+├── docker/                       # Configuración de contenedores
+├── .github/
+│   └── workflows/                # Pipelines CI/CD
+├── .env.example                  # Plantilla de variables de entorno
+├── .env.development              # Variables de entorno para desarrollo
+├── .env.test                     # Variables de entorno para tests
+├── .env.preproduction            # Variables de entorno para preproducción
+├── .env.production               # Variables de entorno para producción
+├── requirements.txt              # Dependencias Python
+├── AUTHORS.md
+├── LICENSE.md
+└── README.md
+```
+
 ## Instalación y Despliegue
 Instrucciones para poner en marcha el sistema utilizando los scripts de despliegue incluidos:
 

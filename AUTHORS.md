@@ -3,10 +3,9 @@
 Este Trabajo Fin de Máster ha sido desarrollado por los siguientes autores:
 
 ## Investigadores / Desarrolladores
-* **Sergio Soriano San José**   -  [Enlace a perfil de GitHub o LinkedIn]
+* **Sergio Soriano San José**   -  https://www.linkedin.com/in/sergio-soriano-san-jose/
 * **Angel Pérez Izquierdo** -  https://www.linkedin.com/in/angel-pérez-izquierdo-16932920/
-* **Juan Martínez Fraile** -  [Enlace a perfil de GitHub o LinkedIn]
-* **[Nombre Completo Autor 3]** -  [Enlace a perfil de GitHub o LinkedIn]
+* **Raúl Sánchez Serrano** - https://www.linkedin.com/in/raulsanchezserrano  
 
 ## Institución
 * **Universidad:** PontIA.tech

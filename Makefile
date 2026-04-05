@@ -1,26 +1,35 @@
 # Variables para personalizar fácilmente
 DOCKER=docker
-IMAGE_NAME=fitcoach-app-image
+IMAGE_BASE=fitcoachia/fitcoach-app
+IMAGE_LATEST=$(IMAGE_BASE):latest
 CONTAINER_NAME=fitcoach-container
 PORT=8000
+version ?= latest
 
-.PHONY: build run stop clean all help docker_image_pull docker_image_push
+.PHONY: container build run stop clean all help pull_image push_image tag, images
 
 help:
-	@echo "Comandos disponibles:"
-	@echo "  make build  - Construye la imagen de Docker usando el contexto de 'src'"
-	@echo "  make run    - Ejecuta el contenedor en el puerto $(PORT)"
-	@echo "  make stop   - Detiene y elimina el contenedor si está corriendo"
-	@echo "  make clean  - Detiene el contenedor y elimina la imagen"
-	@echo "  make all    - Construye y ejecuta todo (limpiando primero)"
-	@echo "  make docker_image_pull   - Obtiene la imagen del repositorio de docker.
-	@echo "  make docker_image_push   - Sube la imagen con tag latest al dockerhub.
+	@echo "Comandos disponibles Docker"
+	@echo "  make container                      - Consulta los contenedores"
+	@echo "  make build                          - Construye la imagen de Docker usando el contexto de 'src'"
+	@echo "  make run [version=x.y.z]            - Ejecuta el contenedor con la imagen 'version' (defecto, latest) en el puerto $(PORT)"
+	@echo "  make stop                           - Detiene y elimina el contenedor si está corriendo"
+	@echo "  make clean                          - Detiene el contenedor y elimina todas las imagenes $(IMAGE_BASE)"
+	@echo "  make all                            - Construye y ejecuta todo (limpiando primero)"
+	@echo "  make images                         - Consulta las imagenes en local"
+	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
+	@echo "  make pull_image [version=x.y.z]     - Obtiene la imagen del repositorio de docker (Por defecto, latest)"
+	@echo "  make push_image [version=x.y.z]     - Si existe, sube la imagen:tag al repositorio (Por defecto, latest)"
 
+container:
+	@$(DOCKER) ps -a
+	
 build:
-	@$(DOCKER) build -t $(IMAGE_NAME) -f src/Dockerfile ./src
+	@$(DOCKER) build -t $(IMAGE_LATEST) -f src/Dockerfile ./src
 
 run:
-	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(IMAGE_NAME)
+	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
+	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"
 
 stop:
@@ -28,36 +37,55 @@ stop:
 	@$(DOCKER) rm $(CONTAINER_NAME) || true
 
 clean: stop
-	@$(DOCKER) rmi $(IMAGE_NAME) || true
+	@$(DOCKER) rmi -f $$($(DOCKER) images $(IMAGE_BASE) -q) 2>/dev/null || true
 
 all: clean build run
 
-docker_image_pull:
-	@echo "Iniciando sesión en Docker Hub..."
-	@$(DOCKER) login; \
+images:
+	@$(DOCKER) images
+
+tag:
+	@if [ -z "$(version)" ]; then \
+		echo "Error: debes indicar la versión. Uso: make tag version=1.0.0"; \
+		exit 1; \
+	fi; \
+	echo "Buscando imagen local $(IMAGE_LATEST)..."; \
+	if ! $(DOCKER) image inspect $(IMAGE_LATEST) > /dev/null 2>&1; then \
+		echo "Error: no se encontró la imagen $(IMAGE_LATEST) en local. Ejecuta 'make build' primero."; \
+		exit 1; \
+	fi; \
+	echo "Imagen encontrada. Aplicando tag $(IMAGE_BASE):$(version)..."; \
+	$(DOCKER) tag $(IMAGE_LATEST) $(IMAGE_BASE):$(version); \
+	echo "Tag aplicado. Imágenes disponibles para $(IMAGE_BASE):"; \
+	$(DOCKER) images $(IMAGE_BASE)
+
+pull_image:
+	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
+	@$(DOCKER) login -u fitcoachia; \
 	if [ $$? -ne 0 ]; then \
 		echo "Error: docker login fallido. Abortando pull."; \
 		exit 1; \
 	fi; \
-	echo "Login exitoso. Comprobando si existe la imagen local $(IMAGE_NAME):latest..."; \
-	if @$(DOCKER) image inspect $(IMAGE_NAME):latest > /dev/null 2>&1; then \
+	echo "Comprobando si existe la imagen local $(TARGET_IMAGE)..."; \
+	if $(DOCKER) image inspect $(TARGET_IMAGE) > /dev/null 2>&1; then \
 		echo "Imagen local encontrada. Eliminando..."; \
-		@$(DOCKER) rmi $(IMAGE_NAME):latest; \
+		$(DOCKER) rmi $(TARGET_IMAGE); \
 	fi; \
-	echo "Obteniendo imagen $(IMAGE_NAME):latest del repositorio..."; \
-	@$(DOCKER) pull $(IMAGE_NAME):latest
+	echo "Obteniendo imagen $(TARGET_IMAGE) del repositorio..."; \
+	$(DOCKER) pull $(TARGET_IMAGE)
 
-docker_image_push:
-	@echo "Iniciando sesión en Docker Hub..."
-	@$(DOCKER) login; \
+push_image:
+	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
+	@echo "Buscando imagen local $(TARGET_IMAGE)..."; \
+	if ! $(DOCKER) image inspect $(TARGET_IMAGE) > /dev/null 2>&1; then \
+		echo "Error: no se encontró la imagen $(TARGET_IMAGE). Ejecuta 'make build' o 'make tag version=$(TAG)' primero."; \
+		exit 1; \
+	fi; \
+	echo "Imagen encontrada. Iniciando sesión en Docker Hub..."; \
+	$(DOCKER) login -u fitcoachia; \
 	if [ $$? -ne 0 ]; then \
 		echo "Error: docker login fallido. Abortando push."; \
 		exit 1; \
 	fi; \
-	echo "Login exitoso. Buscando imagen $(IMAGE_NAME):latest..."; \
-	if ! $(DOCKER) image inspect $(IMAGE_NAME):latest > /dev/null 2>&1; then \
-		echo "Error: no se encontró la imagen $(IMAGE_NAME):latest. Ejecuta 'make build' primero."; \
-		exit 1; \
-	fi; \
-	echo "Imagen encontrada. Realizando push al repositorio..."; \
-	@$(DOCKER) push $(IMAGE_NAME):latest
+	echo "Realizando push de $(TARGET_IMAGE)..."; \
+	$(DOCKER) push $(TARGET_IMAGE)

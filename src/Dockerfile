@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+ARG APP_SRC
 # No genera archivos .pyc (innecesarios en contenedor)
 ENV PYTHONDONTWRITEBYTECODE=1
 # No bufferiza stdout/stderr (logs en tiempo real)
@@ -11,7 +12,7 @@ EXPOSE 8000
 
 WORKDIR /app
 
-COPY . .
+COPY $APP_SRC .
 COPY ./requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -46,10 +46,21 @@ FitCoachIA/
 │       │   └── prompts/          # Plantillas de prompts por agente
 │       ├── repository/           # Acceso a datos (patrón Repository)
 │       └── service/              # Casos de uso y lógica de negocio
+├── knowledge/                    # Skills y datos RAG
+│   └── skills/
+│       ├── interviewer/
+│       │   └── entrevista_cliente.md
+│       ├── trainer/
+│       │   └── workout_plans.md
+│       ├── nutritionist/
+│       │   └── nutrition_guidelines.md
+│       └── coach/
+│           └── coaching_strategies.md
 ├── tests/
 │   ├── unit/                     # Tests unitarios
 │   └── integration/              # Tests de integración
 ├── docker/                       # Configuración de contenedores
+├── scripts/                      # Scripts varios
 ├── .github/
 │   └── workflows/                # Pipelines CI/CD
 ├── .env.example                  # Plantilla de variables de entorno

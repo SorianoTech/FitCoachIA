@@ -6,7 +6,7 @@ CONTAINER_NAME=fitcoach-container
 PORT=8000
 version ?= latest
 
-.PHONY: container build run stop clean all help pull_image push_image tag, images
+.PHONY: container build run stop clean all help tag images
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -18,8 +18,6 @@ help:
 	@echo "  make all                            - Construye y ejecuta todo (limpiando primero)"
 	@echo "  make images                         - Consulta las imagenes en local"
 	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
-	@echo "  make pull_image [version=x.y.z]     - Obtiene la imagen del repositorio de docker (Por defecto, latest)"
-	@echo "  make push_image [version=x.y.z]     - Si existe, sube la imagen:tag al repositorio (Por defecto, latest)"
 
 container:
 	@$(DOCKER) ps -a
@@ -58,34 +56,3 @@ tag:
 	$(DOCKER) tag $(IMAGE_LATEST) $(IMAGE_BASE):$(version); \
 	echo "Tag aplicado. Imágenes disponibles para $(IMAGE_BASE):"; \
 	$(DOCKER) images $(IMAGE_BASE)
-
-pull_image:
-	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
-	@$(DOCKER) login -u fitcoachia; \
-	if [ $$? -ne 0 ]; then \
-		echo "Error: docker login fallido. Abortando pull."; \
-		exit 1; \
-	fi; \
-	echo "Comprobando si existe la imagen local $(TARGET_IMAGE)..."; \
-	if $(DOCKER) image inspect $(TARGET_IMAGE) > /dev/null 2>&1; then \
-		echo "Imagen local encontrada. Eliminando..."; \
-		$(DOCKER) rmi $(TARGET_IMAGE); \
-	fi; \
-	echo "Obteniendo imagen $(TARGET_IMAGE) del repositorio..."; \
-	$(DOCKER) pull $(TARGET_IMAGE)
-
-push_image:
-	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
-	@echo "Buscando imagen local $(TARGET_IMAGE)..."; \
-	if ! $(DOCKER) image inspect $(TARGET_IMAGE) > /dev/null 2>&1; then \
-		echo "Error: no se encontró la imagen $(TARGET_IMAGE). Ejecuta 'make build' o 'make tag version=$(TAG)' primero."; \
-		exit 1; \
-	fi; \
-	echo "Imagen encontrada. Iniciando sesión en Docker Hub..."; \
-	$(DOCKER) login -u fitcoachia; \
-	if [ $$? -ne 0 ]; then \
-		echo "Error: docker login fallido. Abortando push."; \
-		exit 1; \
-	fi; \
-	echo "Realizando push de $(TARGET_IMAGE)..."; \
-	$(DOCKER) push $(TARGET_IMAGE)

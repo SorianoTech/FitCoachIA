@@ -36,43 +36,42 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 ```
 FitCoachIA/
 ├── src/
-│   └── fitcoach/
-│       ├── api/                  # Controladores y endpoints REST
-│       ├── domain/               # Entidades y lógica de dominio
-│       ├── infrastructure/
-│       │   ├── config/           # Configuración de la aplicación
-│       │   ├── database/         # Conexión y setup de base de datos
-│       │   ├── ia/               # Clientes y adaptadores de LLMs
-│       │   └── prompts/          # Plantillas de prompts por agente
-│       ├── repository/           # Acceso a datos (patrón Repository)
-│       └── service/              # Casos de uso y lógica de negocio
-├── knowledge/                    # Skills y datos RAG
-│   └── skills/
-│       ├── interviewer/
-│       │   └── client_interview.md
-│       ├── trainer/
-│       │   └── workout_plans.md
-│       ├── nutritionist/
-│       │   └── nutrition_guidelines.md
-│       └── coach/
-│           └── coaching_strategies.md
+│   ├── fitcoach/
+│   │   ├── api/                  # Controladores y endpoints REST
+│   │   ├── domain/               # Entidades y lógica de dominio
+│   │   ├── infrastructure/
+│   │   │   ├── config/           # Configuración de la aplicación
+│   │   │   ├── database/         # Conexión y setup de base de datos
+│   │   │   ├── ia/               # Clientes y adaptadores de LLMs
+│   │   │   │   └── skills/       # Skills y datos RAG por agente
+│   │   │   │       ├── coach/
+│   │   │   │       ├── interviewer/
+│   │   │   │       ├── nutrionist/
+│   │   │   │       └── trainer/
+│   │   │   └── prompts/          # Plantillas de prompts por agente
+│   │   ├── repository/           # Acceso a datos (patrón Repository)
+│   │   ├── service/              # Casos de uso y lógica de negocio
+│   │   └── main.py               # Punto de entrada de la aplicación
+│   ├── Dockerfile                # Dockerización de la aplicación
+│   └── requirements.txt          # Dependencias del contenedor
 ├── tests/
 │   ├── unit/                     # Tests unitarios
 │   └── integration/              # Tests de integración
-├── docker/                       # Configuración de contenedores
-├── scripts/                      # Scripts varios
 ├── .github/
 │   └── workflows/                # Pipelines CI/CD
-├── .env.example                  # Plantilla de variables de entorno
+├── docker/                       # Configuración de contenedores
+├── scripts/                      # Scripts de utilidad
 ├── .env.development              # Variables de entorno para desarrollo
+├── .env.example                  # Plantilla de variables de entorno
 ├── .env.test                     # Variables de entorno para tests
-├── .env.preproduction            # Variables de entorno para preproducción
-├── .env.production               # Variables de entorno para producción
-├── requirements.txt              # Dependencias Python
 ├── AUTHORS.md
 ├── LICENSE.md
-└── README.md
+├── Makefile                      # Automatización de tareas
+├── README.md
+├── comandos.md                   # Resumen de comandos útiles
+└── requirements.txt              # Dependencias Python (entorno local)
 ```
+
 
 ## Instalación y Despliegue
 Instrucciones para poner en marcha el sistema utilizando los scripts de despliegue incluidos:

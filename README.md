@@ -49,7 +49,7 @@ FitCoachIA/
 ├── knowledge/                    # Skills y datos RAG
 │   └── skills/
 │       ├── interviewer/
-│       │   └── entrevista_cliente.md
+│       │   └── client_interview.md
 │       ├── trainer/
 │       │   └── workout_plans.md
 │       ├── nutritionist/

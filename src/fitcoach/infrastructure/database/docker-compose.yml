@@ -1,0 +1,52 @@
+services:
+
+  pgvector:
+    image: pgvector/pgvector:pg18-trixie
+    container_name: pgvector
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=fit-coach
+    volumes:
+      - pgvector_volume:/var/lib/postgresql
+    networks:
+      - fit-coach-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin4
+    ports:
+      - "8080:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    volumes:
+      - pgadmin_data:/root/.pgadmin
+    networks:
+      - fit-coach-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+volumes:
+  pgadmin_data:
+  pgvector_volume:
+
+
+networks:
+  fit-coach-net:
+    driver: bridge

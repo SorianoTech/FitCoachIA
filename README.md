@@ -85,6 +85,44 @@ cd docker
 bash deploy.sh
 ```
 
+## 🐳 Docker — Construcción manual de la imagen
+
+El `Dockerfile` se encuentra en `src/` y requiere que el contexto de construcción sea ese mismo directorio, ya que copia la carpeta `fitcoach/` y el fichero `requirements.txt` desde allí.
+
+### 1. Construir la imagen
+
+```bash
+# Desde la raíz del repositorio
+docker build -t fitcoach-ia:latest ./src
+```
+
+> **Nota:** La etiqueta `fitcoach-ia:latest` puede sustituirse por cualquier nombre y versión que prefieras (p. ej. `fitcoach-ia:1.0.0`).
+
+### 2. Ejecutar el contenedor
+
+La aplicación expone el **puerto 8000**. Para lanzarla pasando las variables de entorno necesarias:
+
+```bash
+# Usando un fichero .env (recomendado)
+docker run --rm -p 8000:8000 --env-file .env.development fitcoach-ia:latest
+
+# O pasando variables individuales
+docker run --rm -p 8000:8000 \
+  -e OPENAI_API_KEY=<tu_clave> \
+  fitcoach-ia:latest
+```
+
+Una vez en marcha, la API estará disponible en `http://localhost:8000`.
+
+### 3. Referencia rápida de opciones de `docker build`
+
+| Opción | Descripción |
+|--------|-------------|
+| `-t fitcoach-ia:latest` | Nombre y etiqueta de la imagen resultante |
+| `./src` | Contexto de construcción (directorio donde está el `Dockerfile`) |
+| `--no-cache` | Fuerza la reconstrucción de todas las capas sin caché |
+| `--platform linux/amd64` | Construye para una plataforma específica (útil en Apple Silicon) |
+
 ## Pruebas
 Para ejecutar las pruebas unitarias e integradas:
 

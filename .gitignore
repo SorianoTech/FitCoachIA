@@ -4,4 +4,6 @@ localenv
 env/
 venv/
 ENV/
-
+.vscode/
+.env.preproduction
+.env

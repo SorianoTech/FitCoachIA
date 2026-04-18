@@ -103,14 +103,18 @@ docker build -t fitcoach-ia:latest ./src
 La aplicación expone el **puerto 8000**. Para lanzarla pasando las variables de entorno necesarias:
 
 ```bash
-# Usando un fichero .env (recomendado)
-docker run --rm -p 8000:8000 --env-file .env.development fitcoach-ia:latest
-
-# O pasando variables individuales
-docker run --rm -p 8000:8000 \
-  -e OPENAI_API_KEY=<tu_clave> \
-  fitcoach-ia:latest
+docker run -d -p 8000:8000 fitcoach-ia:latest
 ```
+En el supuesto de necesitar variables de entorno, los comandos a utilizar podrían ser:
+
+````bash
+# Usando un fichero con variables de entorno
+docker run -d -p 8000:8000 --env-file=<path_to_file> fitcoach-ia:latest
+
+# Añadiendo las variables de entorno a mano
+docker run -d -p 8000:8000 --e <ENVVAR_NAME>=<ENVVAR_VALUE> fitcoach-ia:latest
+
+`````
 
 Una vez en marcha, la API estará disponible en `http://localhost:8000`.
 

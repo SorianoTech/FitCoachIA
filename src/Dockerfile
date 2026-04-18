@@ -21,4 +21,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY ./requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["fastapi", "run", "/app/main.py", "--port", "8000"]
+ENTRYPOINT ["fastapi", "run","main.py"]
+CMD ["--port", "8000"]

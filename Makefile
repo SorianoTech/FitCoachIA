@@ -49,8 +49,15 @@ images:
 	@$(DOCKER) images
 
 # Borra todas las imagenes que contengan el nombre fitcoachia/fitcoach-app. Busca los IDs, elimina duplicados y borra las imagenes
-clean-images:	
-	@$(DOCKER) rmi -f $$($(DOCKER) images --filter "reference=$(IMAGE_BASE)" -q | sort -u)
+clean-images:
+	@IMAGES=$$($(DOCKER) images --filter "reference=$(IMAGE_BASE)" -q | sort -u); \
+	if [ -z "$$IMAGES" ]; then \
+		echo "No se encontraron imágenes de $(IMAGE_BASE). Nada que eliminar."; \
+	else \
+		echo "Eliminando imágenes de $(IMAGE_BASE)..."; \
+		$(DOCKER) rmi -f $$IMAGES; \
+		echo "Imágenes eliminadas correctamente."; \
+	fi
 
 tag:
 	@if [ -z "$(version)" ]; then \

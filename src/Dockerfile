@@ -3,8 +3,8 @@ FROM python:3.11-slim AS builder
 
 # Instalar herramientas para compilar extensiones nativas de Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+  build-essential \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY ./requirements.txt .
 RUN pip install --prefix=/install -q --no-cache-dir -r requirements.txt
@@ -34,6 +34,6 @@ COPY --from=builder /install $APP_LIB_DIR
 
 COPY ./fitcoach .
 
-ENTRYPOINT ["fastapi", "run","/app/main.py"]
+ENTRYPOINT ["fastapi", "run","main.py"]
 
 CMD ["--port", "8000"]

@@ -36,32 +36,42 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 ```
 FitCoachIA/
 ├── src/
-│   └── fitcoach/
-│       ├── api/                  # Controladores y endpoints REST
-│       ├── domain/               # Entidades y lógica de dominio
-│       ├── infrastructure/
-│       │   ├── config/           # Configuración de la aplicación
-│       │   ├── database/         # Conexión y setup de base de datos
-│       │   ├── ia/               # Clientes y adaptadores de LLMs
-│       │   └── prompts/          # Plantillas de prompts por agente
-│       ├── repository/           # Acceso a datos (patrón Repository)
-│       └── service/              # Casos de uso y lógica de negocio
+│   ├── fitcoach/
+│   │   ├── api/                  # Controladores y endpoints REST
+│   │   ├── domain/               # Entidades y lógica de dominio
+│   │   ├── infrastructure/
+│   │   │   ├── config/           # Configuración de la aplicación
+│   │   │   ├── database/         # Conexión y setup de base de datos
+│   │   │   ├── ia/               # Clientes y adaptadores de LLMs
+│   │   │   │   └── skills/       # Skills y datos RAG por agente
+│   │   │   │       ├── coach/
+│   │   │   │       ├── interviewer/
+│   │   │   │       ├── nutrionist/
+│   │   │   │       └── trainer/
+│   │   │   └── prompts/          # Plantillas de prompts por agente
+│   │   ├── repository/           # Acceso a datos (patrón Repository)
+│   │   ├── service/              # Casos de uso y lógica de negocio
+│   │   └── main.py               # Punto de entrada de la aplicación
+│   ├── Dockerfile                # Dockerización de la aplicación
+│   └── requirements.txt          # Dependencias del contenedor
 ├── tests/
 │   ├── unit/                     # Tests unitarios
 │   └── integration/              # Tests de integración
-├── docker/                       # Configuración de contenedores
 ├── .github/
 │   └── workflows/                # Pipelines CI/CD
-├── .env.example                  # Plantilla de variables de entorno
+├── docker/                       # Configuración de contenedores
+├── scripts/                      # Scripts de utilidad
 ├── .env.development              # Variables de entorno para desarrollo
+├── .env.example                  # Plantilla de variables de entorno
 ├── .env.test                     # Variables de entorno para tests
-├── .env.preproduction            # Variables de entorno para preproducción
-├── .env.production               # Variables de entorno para producción
-├── requirements.txt              # Dependencias Python
 ├── AUTHORS.md
 ├── LICENSE.md
-└── README.md
+├── Makefile                      # Automatización de tareas
+├── README.md
+├── comandos.md                   # Resumen de comandos útiles
+└── requirements.txt              # Dependencias Python (entorno local)
 ```
+
 
 ## Instalación y Despliegue
 Instrucciones para poner en marcha el sistema utilizando los scripts de despliegue incluidos:
@@ -74,6 +84,44 @@ git clone https://github.com/usuario/proyecto-jupiter.git
 cd docker
 bash deploy.sh
 ```
+
+## 🐳 Docker — Construcción manual de la imagen
+
+El `Dockerfile` se encuentra en `src/` y requiere que el contexto de construcción sea ese mismo directorio, ya que copia la carpeta `fitcoach/` y el fichero `requirements.txt` desde allí.
+
+### 1. Construir la imagen
+
+```bash
+# Desde la raíz del repositorio
+docker build -t fitcoach-ia:latest ./src
+```
+
+> **Nota:** La etiqueta `fitcoach-ia:latest` puede sustituirse por cualquier nombre y versión que prefieras (p. ej. `fitcoach-ia:1.0.0`).
+
+### 2. Ejecutar el contenedor
+
+La aplicación expone el **puerto 8000**. Para lanzarla pasando las variables de entorno necesarias:
+
+```bash
+# Usando un fichero .env (recomendado)
+docker run --rm -p 8000:8000 --env-file .env.development fitcoach-ia:latest
+
+# O pasando variables individuales
+docker run --rm -p 8000:8000 \
+  -e OPENAI_API_KEY=<tu_clave> \
+  fitcoach-ia:latest
+```
+
+Una vez en marcha, la API estará disponible en `http://localhost:8000`.
+
+### 3. Referencia rápida de opciones de `docker build`
+
+| Opción | Descripción |
+|--------|-------------|
+| `-t fitcoach-ia:latest` | Nombre y etiqueta de la imagen resultante |
+| `./src` | Contexto de construcción (directorio donde está el `Dockerfile`) |
+| `--no-cache` | Fuerza la reconstrucción de todas las capas sin caché |
+| `--platform linux/amd64` | Construye para una plataforma específica (útil en Apple Silicon) |
 
 ## Pruebas
 Para ejecutar las pruebas unitarias e integradas:

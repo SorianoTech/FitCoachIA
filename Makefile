@@ -6,7 +6,7 @@ CONTAINER_NAME=fitcoach-ia
 PORT=8000
 version ?= latest
 
-.PHONY: container build run stop clean all help tag images clean-images
+.PHONY: container build run stop clean all help tag images clean-images logs
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -14,6 +14,7 @@ help:
 	@echo "  make build [version=x.y.z]          - Construye la imagen de Docker (Por defecto, latest). Si indicas version, genera las imagenes latest y x.y.z (Defecto: latest)"
 	@echo "  make run [version=x.y.z]            - Ejecuta el contenedor con la imagen (previamente generada) latest o version x.y.z indicada en el puerto $(PORT)"
 	@echo "  make stop                           - Detiene y elimina el contenedor si está corriendo"
+	@echo "  make logs                           - Muestra los logs del contenedor"
 	@echo "  make clean                          - Detiene el contenedor y elimina todas las imagenes $(IMAGE_BASE)"
 	@echo "  make all                            - Construye y ejecuta todo (limpiando primero)"
 	@echo "  make images                         - Consulta las imagenes en local"
@@ -40,6 +41,9 @@ run:
 stop:
 	@$(DOCKER) stop $(CONTAINER_NAME) || true
 	@$(DOCKER) rm $(CONTAINER_NAME) || true
+
+logs:
+	@$(DOCKER) logs -f $(CONTAINER_NAME)
 
 clean: stop clean-images
 

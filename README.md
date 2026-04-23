@@ -72,6 +72,17 @@ FitCoachIA/
 └── requirements.txt              # Dependencias Python (entorno local)
 ```
 
+### Comandos disponibles con Makefile
+
+| Comando | Descripción |
+|---------|-------------|
+| `make all` | Construye y ejecuta la aplicación |
+| `make build` | Construye la imagen Docker de la aplicación |
+| `make run` | Ejecuta el contenedor Docker con la aplicación |
+| `make stop` | Detiene el contenedor en ejecución |
+| `make logs` | Muestra los logs en tiempo real del contenedor |
+| `make clean` | Elimina la imagen y contenedor Docker |
+
 
 ## Instalación y Despliegue
 Instrucciones para poner en marcha el sistema utilizando los scripts de despliegue incluidos:
@@ -79,11 +90,6 @@ Instrucciones para poner en marcha el sistema utilizando los scripts de desplieg
 ```bash
 # Clonar el repositorio
 git clone https://github.com/usuario/proyecto-jupiter.git
-
-# Ejecutar despliegue con Docker
-cd docker
-bash deploy.sh
-```
 
 ## 🐳 Docker — Construcción manual de la imagen
 

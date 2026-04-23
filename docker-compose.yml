@@ -1,12 +1,12 @@
 services:
   fitcoach-ia:
+    container_name: fitcoach-ia
+    restart: unless-stopped
     build:
       context: ./src
       dockerfile: Dockerfile
-    container_name: fitcoach-ia
     networks:
       - proxy-network
-    restart: unless-stopped
 
 networks:
   proxy-network:

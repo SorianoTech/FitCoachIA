@@ -1,9 +1,16 @@
 # Environments
-.venv
-localenv
-env/
-venv/
-ENV/
-.vscode/
-.env.preproduction
+venv**/
 .env
+
+#initial files
+**/.gitkeep
+
+# test execution files
+.coverage
+.pytest_cache
+
+#local IDE files
+.vscode/
+
+#code review validation
+.ruff_cache

@@ -1,0 +1,10 @@
+-r ../src/requirements.txt
+
+bandit==1.9.4
+cyclonedx-python-lib==9.1.0
+docker==7.1.0
+mypy==1.20.2
+pip_audit==2.9.0
+ruff==0.15.12
+semgrep; sys_platform != "win32"
+testcontainers==4.14.2

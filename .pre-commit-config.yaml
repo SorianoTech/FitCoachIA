@@ -1,0 +1,52 @@
+# =============================================================================
+# Configuración de pre-commit
+# -----------------------------------------------------------------------------
+# Pasos para activar las validaciones en local (una sola vez por clon del repo):
+#   1. Instalar pre-commit en el entorno:    pip install pre-commit
+#                                            (o: uv pip install pre-commit)
+#   2. Registrar los git hooks del repo:     pre-commit install
+#      Esto crea .git/hooks/pre-commit y los hooks correrán en cada `git commit`.
+#   3. (Opcional) Ejecutar contra todo el repo la primera vez para sanear estado:
+#                                            pre-commit run --all-files
+#
+# Comandos útiles:
+#   - Actualizar versiones (rev) de los hooks: pre-commit autoupdate
+#   - Saltar puntualmente los hooks:           git commit --no-verify   (úsese con cuidado)
+#   - Desinstalar los hooks del repo:          pre-commit uninstall
+# =============================================================================
+
+repos:
+  # 1. Checks generales básicos: higiene mínima del repo antes de commitear.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace        # elimina espacios en blanco al final de línea
+      - id: end-of-file-fixer           # asegura un único salto de línea al final del fichero
+      - id: check-yaml                  # valida sintaxis YAML
+      - id: check-merge-conflict        # bloquea commits con marcadores de conflicto
+      - id: check-added-large-files     # evita subir binarios pesados al repo
+        args: ['--maxkb=500']
+      - id: no-commit-to-branch         # impide commits directos a ramas protegidas
+        args: ['--branch', 'main', '--branch', 'develop']
+
+  # 2. Detección de secretos: prioritario, antes de cualquier otra fase.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks                    # escanea el diff buscando credenciales/tokens
+
+  # 3. Lint y formato Python (alineado con la versión usada en CI; lee ruff.toml).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff                        # linter; --output-format=concise indica cambios a realizar
+        args: [--output-format=concise]
+      - id: ruff-format                 # formateador estilo black integrado en ruff
+        args: [--output-format=concise]
+  # 4. Seguridad estática (SAST) limitada al código de aplicación.
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.8
+    hooks:
+      - id: bandit                      # busca patrones inseguros (eval, subprocess, etc.)
+        args: ["-r", "app/"]
+        files: ^app/

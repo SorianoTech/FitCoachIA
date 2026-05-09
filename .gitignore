@@ -1,9 +1,8 @@
 # Environments
-.venv
-localenv
-env/
-venv/
-ENV/
+venv**/
 .vscode/
-.env.preproduction
 .env
+**/.gitkeep
+.coverage
+__pycache__/
+.pytest_cache

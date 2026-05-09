@@ -1,0 +1,148 @@
+name: Deploy release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  Release:
+    name: Generate-release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      contents: write
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Calculate release version
+        id: last_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Obtenemos la version de la ultima release generada"
+          LATEST=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')
+          echo "Ultima version generada: $LATEST"
+
+          if [ -z "$LATEST" ]; then
+            VERSION="1.0.0"
+            echo "no existen releases anteriores. Usando version inicial v1.0.0"
+          elif [[ "$LATEST" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            # Obtenemos el major de la version
+            MAJOR="${BASH_REMATCH[1]}"
+            # Obtenemos la minor de la version
+            MINOR="${BASH_REMATCH[2]}"
+            VERSION="${MAJOR}.$((MINOR + 1)).0"
+            echo "Last release found: $LATEST -> bumping minor"
+          else
+            echo "La release '$LATEST' no tiene formato semver vX.Y.Z. Se necesita revisar" >&2
+            exit 1
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "tag=v${VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Activar runner docker buildx, mejor que el clasico runner
+      - name: Set up Docker runner Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: image-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.last_release.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=FitCoachIA
+            org.opencontainers.image.description=AI fitness coach service
+            org.opencontainers.image.vendor=SorianoTech
+            org.opencontainers.image.licenses=https://github.com/${{ github.repository }}/blob/main/LICENSE.md
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.authors=fitcoachpontia@gmail.com
+            org.opencontainers.image.version=${{ steps.last_release.outputs.version }}
+            org.opencontainers.image.base.name=python:${{ env.PYTHON_VERSION }}
+
+      # Construimos la imagen docker sin pushear para validar las vulnerabilidades.
+      - name: Build temporal image image
+        id: temporal-image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          push: false
+          tags: ${{ steps.image-metadata.outputs.tags }}
+          labels: ${{ steps.image-metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true  # necesario para que trivy inspeccione localmente
+
+      - name: Container scan (trivy)
+        uses: lazy-actions/gitrivy@v2
+        with:
+          issue_title: Image Security Alert
+          token: ${{ github.token }}
+          image: ${{ steps.temporal-image.outputs.tags }}
+          severity: CRITICAL,HIGH
+          vuln_type: library
+
+      - name: Push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          cache-from: type=gha
+          push: true
+          tags: ${{ steps.image-metadata.outputs.tags }}
+          labels: ${{ steps.image-metadata.outputs.labels }}
+
+      - name: Generate tag and Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Release ${{ steps.last_release.outputs.tag }}
+          tag_name: ${{ steps.last_release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          previous_tag: true
+          prerelease: false
+          preserve_order: true
+          files: |
+            docker-compose.yml
+            .env.example
+
+  Deploy:
+    name: Deploy-to-server
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart service
+        uses: favware/ssh-remote-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: 22
+          key: ${{ secrets.SERVER_PKEY }}
+          username: ${{ secrets.SERVER_USER }}
+          command: |
+
+    # Call to another action to push to server
+    # Install image to server and re run container. ¿Better create a script?

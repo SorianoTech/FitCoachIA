@@ -1,0 +1,114 @@
+name: Test and build project
+
+on:
+  workflow_dispatch:
+
+# on:
+#   pull_request:
+#     paths-ignore:
+#       - '**.md'
+#       - '.gitignore'
+#       - 'Makefile'
+#       - '.env.example'
+#       - 'docs/**'
+#     branches:
+#       - 'feature/**'
+#       - 'feat/**'
+#       - 'fix/**'
+#       - 'bugfix/**'
+env:
+  PYTHON_VERSION: "3.12"
+  RUFF_PYTHON_VERSION: py312
+  ENVIRONMENT: development
+
+concurrency:
+  group: ${{ github.ref_name }}-${{ github.workflow_sha }}
+  cancel-in-progress: true
+
+jobs:
+  # ════════════════════════════════════════════
+  # 1. QUALITY — lint, format, tipos
+  #    SECURITY — secrets, deps, SAST (Static Application Security Test)
+  # ════════════════════════════════════════════
+  quality-security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          ref: '${{ github.ref_name }}'
+
+      # Action customizada. Setea la version de python e instala dependencias necesarias
+      - name: Python setup
+        uses: ./.github/actions/python-setup
+
+      # Ruff: linter de Python que detecta errores, malas prácticas y problemas de estilo.
+      # Falla el job si encuentra algo, evitando que código sucio llegue a main.
+      # Configuración en ruff.toml; ruff sale con código != 0 al detectar violaciones.
+      - name: Code format check (Ruff)
+        run: uv run ruff check . --output-format=github
+
+      # Mypy: Es un verificador de tipos de codigo estatico. no ejecuta el código, solo lo analiza
+      # Además, es capaz de analizar los tipados de librerias.
+      # Configuración en .mypy.ini en la raíz del proyecto
+      - name: Type check (Mypy)
+        run: uv run mypy src/ --strict --show-error-codes --pretty
+
+      - name: Secrets scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: false
+
+      - name: Dependency audit
+        run: uv run pip-audit
+
+      #  Static security analysis with semgrep
+      - name: SATS with bandit
+        run: |
+          uv run bandit -r src/ -lll -v -f custom --msg-template \
+            "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}"
+        continue-on-error: false
+
+      #  Static security analysis with semgrep
+      - name: SATS with semgrep
+        run: |
+          uv run semgrep scan \
+            --config=p/python \
+            --config=p/fastapi src/ \
+            --config=p/owasp-top-ten \
+            --baseline-commit=${{ github.event.pull_request.base.sha }} \
+            --severity=ERROR \
+            --severity=WARNING \
+            --error \
+            --sarif \
+            --output=semgrep-output.sarif
+        continue-on-error: true
+
+      - name: Upload semgrep analysis Github Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-output.sarif
+
+  # ════════════════════════════════════════════
+  # 2. UNIT TESTS && IT TESTS - Ejecución de test unitarios y de integración con cobertura >= 80%
+  # ════════════════════════════════════════════
+  test-gate:
+    runs-on: ubuntu-latest
+    needs: quality-security-gate
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          ref: '${{ github.ref_name }}'
+      # Action customizada. Setea la version de python e instala dependencias necesarias
+      - name: Python setup
+        uses: ./.github/actions/python-setup
+
+      # Configuracion de ejecución vive en pyproyect.toml
+      - name: Run unit tests
+        run: uv run pytest --cov=src --cov-fail-under=80

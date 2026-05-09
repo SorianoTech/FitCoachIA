@@ -48,5 +48,5 @@ repos:
     rev: 1.7.8
     hooks:
       - id: bandit                      # busca patrones inseguros (eval, subprocess, etc.)
-        args: ["-r", "app/"]
-        files: ^app/
+        args: ["-r", "src/"]
+        files: ^src/

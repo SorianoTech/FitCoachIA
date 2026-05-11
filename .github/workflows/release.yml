@@ -135,14 +135,13 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Restart service
-        uses: favware/ssh-remote-action@v1
+      - name: deploy 
+        uses: ./.github/actions/deploy-release
         with:
+          image: ${{ steps.last_release.outputs.tag }}
           host: ${{ secrets.SERVER_HOST }}
           port: 22
           key: ${{ secrets.SERVER_PKEY }}
           username: ${{ secrets.SERVER_USER }}
-          command: |
 
-    # Call to another action to push to server
-    # Install image to server and re run container. ¿Better create a script?
+            

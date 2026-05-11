@@ -1,6 +1,5 @@
 # Environments
 venv**/
-<<<<<<< HEAD
 .env
 
 #initial files
@@ -15,11 +14,6 @@ venv**/
 
 #code review validation
 .ruff_cache
-=======
-.vscode/
-.env
-**/.gitkeep
-.coverage
+
+#Binary
 __pycache__/
-.pytest_cache
->>>>>>> feature/build-action

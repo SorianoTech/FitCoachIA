@@ -17,7 +17,7 @@ jobs:
   Release:
     name: Generate-release
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
+    if: github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/'))
     permissions:
       contents: write
     steps:
@@ -132,13 +132,21 @@ jobs:
 
   Deploy:
     name: Deploy-to-server
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: deploy 
+      - name: Get last release tag
+        id: last_tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: deploy
         uses: ./.github/actions/deploy-release
         with:
-          image: ${{ steps.last_release.outputs.tag }}
+          version: ${{ steps.last_tag.outputs.tag }}
           host: ${{ secrets.SERVER_HOST }}
           port: 22
           key: ${{ secrets.SERVER_PKEY }}

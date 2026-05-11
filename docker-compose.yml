@@ -1,13 +1,98 @@
 services:
+
+  fitcoach-media-server:
+    build:
+      context: ./infrastructure/media-server
+      dockerfile: Dockerfile-media-server
+    container_name: fitcoach-media-server
+    env_file:
+      - .env
+    ports:
+      - "${MEDIA_SERVER_PORT}:${NGINX_PORT}"
+    volumes:
+      - ./infrastructure/media-server/www:/www
+    networks:
+      - fit-coach-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:${NGINX_PORT}/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  pgvector:
+    build:
+      context: ./infrastructure/database
+      dockerfile: Dockerfile-pgVector
+    container_name: pgvector
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    volumes:
+      - pgvector_volume:/var/lib/postgresql
+    networks:
+      - fit-coach-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      fitcoach-media-server:
+        condition: service_healthy
+
+  fitcoach-db-loader:
+    build:
+      context: ./infrastructure/database
+      dockerfile: Dockerfile-db-loader
+    container_name: fitcoach-db-loader
+    env_file:
+      - .env
+    networks:
+      - fit-coach-net
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin4
+    env_file:
+      - .env
+    ports:
+      - "${PGADMIN_PORT}:${STANDARD_HTTP_PORT}"
+    volumes:
+      - pgadmin_data:/root/.pgadmin
+    networks:
+      - fit-coach-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
   fitcoach-ia:
     build:
       context: ./src
       dockerfile: Dockerfile
     container_name: fitcoach-ia
     networks:
-      - proxy-network
+      - fit-coach-net
     restart: unless-stopped
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+volumes:
+  pgadmin_data:
+  pgvector_volume:
 
 networks:
-  proxy-network:
-    external: true
+  fit-coach-net:
+    driver: bridge

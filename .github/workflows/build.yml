@@ -1,21 +1,18 @@
 name: Test and build project
 
 on:
-  workflow_dispatch:
-
-# on:
-#   pull_request:
-#     paths-ignore:
-#       - '**.md'
-#       - '.gitignore'
-#       - 'Makefile'
-#       - '.env.example'
-#       - 'docs/**'
-#     branches:
-#       - 'feature/**'
-#       - 'feat/**'
-#       - 'fix/**'
-#       - 'bugfix/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'Makefile'
+      - '.env.example'
+      - 'docs/**'
+    branches:
+      - 'feature/**'
+      - 'feat/**'
+      - 'fix/**'
+      - 'bugfix/**'
 env:
   PYTHON_VERSION: "3.12"
   RUFF_PYTHON_VERSION: py312

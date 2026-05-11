@@ -9,6 +9,7 @@ ENV/
 .env
 
 # Media Server
-src/fitcoach/infrastructure/media-server/images/*
-src/fitcoach/infrastructure/media-server/videos/*
+infrastructure/media-server/www/data
+infrastructure/media-server/www/images
+infrastructure/media-server/www/videos
 

@@ -72,6 +72,17 @@ FitCoachIA/
 └── requirements.txt              # Dependencias Python (entorno local)
 ```
 
+### Comandos disponibles con Makefile
+
+| Comando | Descripción |
+|---------|-------------|
+| `make all` | Construye y ejecuta la aplicación |
+| `make build` | Construye la imagen Docker de la aplicación |
+| `make run` | Ejecuta el contenedor Docker con la aplicación |
+| `make stop` | Detiene el contenedor en ejecución |
+| `make logs` | Muestra los logs en tiempo real del contenedor |
+| `make clean` | Elimina la imagen y contenedor Docker |
+
 
 ## Instalación y Despliegue
 Instrucciones para poner en marcha el sistema utilizando los scripts de despliegue incluidos:
@@ -79,11 +90,6 @@ Instrucciones para poner en marcha el sistema utilizando los scripts de desplieg
 ```bash
 # Clonar el repositorio
 git clone https://github.com/usuario/proyecto-jupiter.git
-
-# Ejecutar despliegue con Docker
-cd docker
-bash deploy.sh
-```
 
 ## 🐳 Docker — Construcción manual de la imagen
 
@@ -103,14 +109,18 @@ docker build -t fitcoach-ia:latest ./src
 La aplicación expone el **puerto 8000**. Para lanzarla pasando las variables de entorno necesarias:
 
 ```bash
-# Usando un fichero .env (recomendado)
-docker run --rm -p 8000:8000 --env-file .env.development fitcoach-ia:latest
-
-# O pasando variables individuales
-docker run --rm -p 8000:8000 \
-  -e OPENAI_API_KEY=<tu_clave> \
-  fitcoach-ia:latest
+docker run -d -p 8000:8000 fitcoach-ia:latest
 ```
+En el supuesto de necesitar variables de entorno, los comandos a utilizar podrían ser:
+
+````bash
+# Usando un fichero con variables de entorno
+docker run -d -p 8000:8000 --env-file=<path_to_file> fitcoach-ia:latest
+
+# Añadiendo las variables de entorno a mano
+docker run -d -p 8000:8000 --e <ENVVAR_NAME>=<ENVVAR_VALUE> fitcoach-ia:latest
+
+`````
 
 Una vez en marcha, la API estará disponible en `http://localhost:8000`.
 

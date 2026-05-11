@@ -78,10 +78,11 @@ services:
         condition: service_healthy
 
   fitcoach-ia:
+    container_name: fitcoach-ia
+    restart: unless-stopped
     build:
       context: ./src
       dockerfile: Dockerfile
-    container_name: fitcoach-ia
     networks:
       - fit-coach-net
     restart: unless-stopped

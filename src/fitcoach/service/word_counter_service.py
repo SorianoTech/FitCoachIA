@@ -16,7 +16,7 @@ class WordCounterService:
 
     def most_repeated_word(self, message: str | None) -> str:
         validated = self._validate(message)
-        words = self._WORD_PATTERN.findall(validated.lower())
+        words: list[str] = self._WORD_PATTERN.findall(validated.lower())
         if not words:
             raise EmptyMessageError("Message does not contain any word")
         word, _ = Counter(words).most_common(1)[0]

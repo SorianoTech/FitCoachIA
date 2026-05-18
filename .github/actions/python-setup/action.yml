@@ -12,12 +12,14 @@ runs:
     - uses: astral-sh/setup-uv@v4
       with:
         enable-cache: true
-        cache-dependency-glob: ".github/requirements-ci.txt"
+        cache-dependency-glob: ${{ env.REQUIREMENTS_FILE }}
         version: "latest"
 
 
     - name: Requirements security analysis
       shell: bash
+      env:
+        REQ_FILE: ${{ env.REQUIREMENTS_FILE }}
       run: |
         echo "Analizando las dependencias a instalar en un step posterior para verificar si tienen vulnerabilidades:"
         echo "--> -s osv: Uso del servicio de vulnerabilidades OSV"
@@ -26,7 +28,12 @@ runs:
 
         if command -v jq >/dev/null 2>&1; then
           echo "Lanzamos análisis y obtenemos la salida en un fichero donde verificaremos si tiene dependencias criticas"
-          uvx pip-audit -s osv -r .github/requirements-ci.txt -f json -o audit.json || true
+          uvx pip-audit -s osv -r $REQ_FILE -f json -o audit.json || true
+          echo "Verificamos si se ha generado el fichero audit.json"
+          if [ ! -f "audit.json" ]; then
+            echo "ERROR: El fichero audit.json no fue generado por pip-audit. No se puede continuar con el análisis de vulnerabilidades."
+            exit 1
+          fi
           echo "Validando la criticidad de las vulnerabilidades (critical == 0 ó high == 0 -> OK)"
           CRITICAL_COUNT=$(jq '[.dependencies[].vulns[] | select(.cvss_v3_severity == "CRITICAL" or .cvss_v3_severity == "HIGH")] | length' audit.json)
           if [ "$CRITICAL_COUNT" -ne "0" ]; then
@@ -38,7 +45,7 @@ runs:
           fi
         else
           echo "jq no disponible. Ejecutamos el análisis sin verificar criticidades"
-          uvx pip-audit -s osv -r .github/requirements-ci.txt
+          uvx pip-audit -s osv -r $REQ_FILE
         fi
 
     # Instala las dependencias necesarias del proyecto.

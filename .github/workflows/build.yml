@@ -29,6 +29,7 @@ env:
   PYTHON_VERSION: "3.12"
   RUFF_PYTHON_VERSION: py312
   ENVIRONMENT: development
+  REQUIREMENTS_FILE_PATH: "./github/requirements-ci.txt"
 
 concurrency:
   group: ${{ github.ref_name }}-${{ github.workflow_sha }}
@@ -50,6 +51,9 @@ jobs:
       # Action customizada. Setea la version de python e instala dependencias necesarias
       - name: Python setup
         uses: ./.github/actions/python-setup
+        env:
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
 
       - name: Quality assurance
         uses: ./.github/actions/quality-check

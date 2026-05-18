@@ -33,9 +33,11 @@ runs:
     #  Static security analysis with semgrep
     - name: SATS with bandit
       shell: bash
+      env:
+        SOURCECODE_PATH: ${{ env.SOURCECODE_PATH }}
+        CONFIG_FILE: ${{ env.CONFIG_FILE }}
       run: |
-        uv run bandit -c pyproject.toml -f custom -lll --msg-template \
-          "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}"
+        uv run bandit -c $CONFIG_FILE -r -f custom --severity-level all --msg-template "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}" targets $SOURCECODE_PATH
       continue-on-error: false
 
     #  Static security analysis with semgrep

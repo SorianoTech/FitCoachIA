@@ -98,10 +98,3 @@ source = ["src"]
 
 [tool.coverage.report]
 fail_under = 80
-
-
-# ============================================================================
-# BANDIT — análisis estático de seguridad
-# ============================================================================
-[tool.bandit]
-targets = ["src"]

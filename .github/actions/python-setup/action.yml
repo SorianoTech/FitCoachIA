@@ -12,11 +12,12 @@ runs:
     - uses: astral-sh/setup-uv@v4
       with:
         enable-cache: true
-        cache-dependency-path: ".github/requirements-ci.txt"
+        cache-dependency-glob: ".github/requirements-ci.txt"
         version: "latest"
 
 
     - name: Requirements security analysis
+      shell: bash
       run: |
          echo "Analizando las dependencias a instalar en un step posterior para verificar si tienen vulnerabilidades:"
          echo: "--> -s osv: Uso del servicio de vulnerabilidades OSV"
@@ -42,6 +43,5 @@ runs:
     # Instala las dependencias necesarias del proyecto.
     # requirements-ci.txt incluye dependencias de build.yaml además de las dependencias del proyecto
     - name: Install dependencies
-      needs: Requirements security analysis
       shell: bash
       run: uvx pip install --system -q -r .github/requirements-ci.txt

@@ -8,6 +8,7 @@ runs:
     # Falla el job si encuentra algo, evitando que código sucio llegue a main.
     # Configuración en toml. ruff sale con código != 0 al detectar violaciones.
     - name: Code format check (Ruff)
+      shell: bash
       run: uv run ruff check . --output-format=github
       continue-on-error: false
 
@@ -15,20 +16,23 @@ runs:
     # Además, es capaz de analizar los tipados de librerias.
     # Configuración en toml en la raíz del proyecto
     - name: Type check (Mypy)
+      shell: bash
       run: uv run mypy src/
       continue-on-error: false
 
     - name: Secrets scan (gitleaks)
-      uses: gitleaks/gitleaks-action@v2
+      uses: gitleaks/gitleaks-action@v2.3.9
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ github.token }}
       continue-on-error: false
 
     - name: Dependency audit
+      shell: bash
       run: uv run pip-audit
 
     #  Static security analysis with semgrep
     - name: SATS with bandit
+      shell: bash
       run: |
         uv run bandit -f custom --msg-template \
           "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}"
@@ -36,6 +40,7 @@ runs:
 
     #  Static security analysis with semgrep
     - name: SATS with semgrep
+      shell: bash
       run: |
         uv run semgrep scan \
           --config=p/python \

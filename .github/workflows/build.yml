@@ -116,6 +116,9 @@ jobs:
 
       - name: Python setup
         uses: ./.github/actions/python-setup
+        env:
+          PYTHON_VERSION: "3.11"
+          REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
 
       # Levanta la app y ejecuta los tests. Una vez terminen, se elimina el contenedor
       - name: Run app && execute tests

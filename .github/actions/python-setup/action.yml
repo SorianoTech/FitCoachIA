@@ -53,4 +53,4 @@ runs:
       shell: bash
       env:
         REQ_FILE: ${{ env.REQUIREMENTS_FILE }}
-      run: uv pip install -q -r $REQ_FILE
+      run: uv pip install --system -q -r $REQ_FILE

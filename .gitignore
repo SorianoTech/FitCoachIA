@@ -17,3 +17,5 @@ venv**/
 
 #Binary
 __pycache__/
+
+uv.lock

@@ -19,12 +19,12 @@ runs:
     - name: Requirements security analysis
       shell: bash
       run: |
-         echo "Analizando las dependencias a instalar en un step posterior para verificar si tienen vulnerabilidades:"
-         echo "--> -s osv: Uso del servicio de vulnerabilidades OSV"
-         echo "--> -f json: Formato del fichero de salida"
-         echo "--> -o audit.json: Fichero de salida con el resultado."
+        echo "Analizando las dependencias a instalar en un step posterior para verificar si tienen vulnerabilidades:"
+        echo "--> -s osv: Uso del servicio de vulnerabilidades OSV"
+        echo "--> -f json: Formato del fichero de salida"
+        echo "--> -o audit.json: Fichero de salida con el resultado."
 
-         if command -v jq >/dev/null 2>&1; then
+        if command -v jq >/dev/null 2>&1; then
           echo "Lanzamos análisis y obtenemos la salida en un fichero donde verificaremos si tiene dependencias criticas"
           uvx pip-audit -s osv -r .github/requirements-ci.txt -f json -o audit.json || true
           echo "Validando la criticidad de las vulnerabilidades (critical == 0 ó high == 0 -> OK)"
@@ -36,9 +36,10 @@ runs:
           else
             echo "No se han encontrado vulnerabilidades de riesgo alto."
           fi
-         else
-           echo "jq no disponible. Ejecutamos el análisis sin verificar criticidades"
-           uvx pip-audit -s osv -r .github/requirements-ci.txt
+        else
+          echo "jq no disponible. Ejecutamos el análisis sin verificar criticidades"
+          uvx pip-audit -s osv -r .github/requirements-ci.txt
+        fi
 
     # Instala las dependencias necesarias del proyecto.
     # requirements-ci.txt incluye dependencias de build.yaml además de las dependencias del proyecto

@@ -15,7 +15,6 @@ runs:
         cache-dependency-glob: ${{ env.REQUIREMENTS_FILE }}
         version: "latest"
 
-
     - name: Requirements security analysis
       shell: bash
       env:

@@ -29,7 +29,7 @@ env:
   PYTHON_VERSION: "3.12"
   RUFF_PYTHON_VERSION: py312
   ENVIRONMENT: development
-  REQUIREMENTS_FILE_PATH: "./github/requirements-ci.txt"
+  REQUIREMENTS_FILE_PATH: "./.github/requirements-ci.txt"
 
 concurrency:
   group: ${{ github.ref_name }}-${{ github.workflow_sha }}

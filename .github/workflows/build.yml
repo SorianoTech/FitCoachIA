@@ -132,7 +132,7 @@ jobs:
             exit 1
           fi
           echo "Executing unit test and integration tests with cover"
-          uv run pytest ./tests
+          PYTHONPATH=app uv run pytest ./tests
           TEST_EXIT_CODE=$?
 
           echo "Stopping containers"

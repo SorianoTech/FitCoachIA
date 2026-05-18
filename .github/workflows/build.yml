@@ -49,6 +49,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: '${{ github.ref_name }}'
+          fetch-depth: 0
 
       # Action customizada. Setea la version de python e instala dependencias necesarias
       - name: Python setup

@@ -1,0 +1,109 @@
+name: Deploy release
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        required: true
+        type: string
+        description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
+
+  workflow_call:
+    inputs:
+      image:
+        required: true
+        type: string
+        description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
+      host:
+        required: true
+        type: string
+        description: "SSH remote host"
+      port:
+        required: false
+        type: number
+        description: "SSH remote port (default: 22)"
+        default: 22
+      key:
+        required: true
+        type: string
+        description: "SSH private key to connect to remote host"
+      username:
+        required: true
+        type: string
+        description: "SSH username to acces to remote host"
+
+env:
+  PYTHON_VERSION: "3.12"
+  DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
+  CONTAINER_NAME: "fitcoach-ia"
+
+jobs:
+  Deploy:
+    name: Deploy-to-server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obtener nombre imagen
+        id: image_version
+        run: echo "VERSION=$(echo "${{ inputs.image }}" | cut -d':' -f2)" >> $GITHUB_ENV
+
+      - name: deploy
+        uses: easingthemes/ssh-deploy@v5.1.0
+        env:
+          IMAGE_NAME: ${{ env.DOCKER_IMAGE_BASE }}
+          IMAGE_VERSION: ${{ steps.image_version.outputs.VERSION }}
+        with:
+          REMOTE_HOST: ${{ inputs.host || secrets.SERVER_HOST }}
+          SSH_PRIVATE_KEY: ${{ inputs.key || secrets.SERVER_PKEY }}
+          REMOTE_USER: ${{ inputs.username || secrets.SERVER_USER}}
+          SOURCE: /home/${{ secrets.DOCKER_USER }}
+          SCRIPT_BEFORE_REQUIRED: true
+          SCRIPT_BEFORE: |
+            set -e
+            REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
+
+            # 1. Asegurar que el repositorio está disponible y actualizado en el servidor
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo "Repositorio encontrado. Actualizando con git pull..."
+              git -C "$REPO_DIR" pull --ff-only
+            else
+              echo "Repositorio no encontrado. Clonando ..."
+              git clone ${{ github.repositoryUrl }}
+            fi
+
+            # 2. Parar y eliminar contenedor actual (libera puertos/volúmenes antes del sync)
+            echo "Parando contenedor $CONTAINER_NAME si existe..."
+            docker rm -f $CONTAINER_NAME 2>/dev/null && echo "Contenedor eliminado" || echo "No había contenedor previo"
+
+            # 3. Limpiar imágenes locales viejas (libera disco antes del pull)
+            echo "Verificando imágenes locales de ${IMAGE_NAME}..."
+            EXISTING=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${IMAGE_NAME}:" || true)
+            if [ -n "$EXISTING" ]; then
+              echo "Eliminando imágenes existentes: $EXISTING"
+              docker rmi $EXISTING
+            else
+              echo "No hay imágenes locales de ${IMAGE_NAME}"
+            fi
+
+            # 4. Descargar nueva imagen
+            echo "Descargando imagen ${{ inputs.image }}..."
+            docker pull ${{ inputs.image }}
+
+          SCRIPT_AFTER_REQUIRED: true
+          SCRIPT_AFTER: |
+            set -e
+            REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
+
+            # 5. Levantar la nueva versión usando el docker-compose.yml ya sincronizado por rsync
+            echo "Levantando aplicación con VERSION=$VERSION"
+            VERSION=$VERSION docker compose -f $REPO_DIR/docker-compose.yml up -d
+
+            # 6. Verificar que el contenedor está en ejecución
+            echo "Esperando arranque del contenedor..."
+            sleep 5
+            if docker ps --filter "name=^${CONTAINER_NAME}$" --filter "status=running" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+              echo "Contenedor $CONTAINER_NAME levantado correctamente"
+            else
+              echo "ERROR: El contenedor $CONTAINER_NAME no está en ejecución"
+              docker logs $CONTAINER_NAME --tail 50 || true
+              exit 1
+            fi

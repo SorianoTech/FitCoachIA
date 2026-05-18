@@ -1,6 +1,18 @@
 name: Test and build project
 
 on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'feat/**'
+      - 'fix/**'
+      - 'bugfix/**'
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'Makefile'
+      - '.env.example'
+      - 'docs/**'
   pull_request:
     paths-ignore:
       - '**.md'
@@ -20,7 +32,7 @@ env:
 
 concurrency:
   group: ${{ github.ref_name }}-${{ github.workflow_sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ════════════════════════════════════════════
@@ -39,54 +51,8 @@ jobs:
       - name: Python setup
         uses: ./.github/actions/python-setup
 
-      # Ruff: linter de Python que detecta errores, malas prácticas y problemas de estilo.
-      # Falla el job si encuentra algo, evitando que código sucio llegue a main.
-      # Configuración en ruff.toml; ruff sale con código != 0 al detectar violaciones.
-      - name: Code format check (Ruff)
-        run: uv run ruff check . --output-format=github
-
-      # Mypy: Es un verificador de tipos de codigo estatico. no ejecuta el código, solo lo analiza
-      # Además, es capaz de analizar los tipados de librerias.
-      # Configuración en .mypy.ini en la raíz del proyecto
-      - name: Type check (Mypy)
-        run: uv run mypy src/ --strict --show-error-codes --pretty
-
-      - name: Secrets scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: false
-
-      - name: Dependency audit
-        run: uv run pip-audit
-
-      #  Static security analysis with semgrep
-      - name: SATS with bandit
-        run: |
-          uv run bandit -r src/ -lll -v -f custom --msg-template \
-            "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}"
-        continue-on-error: false
-
-      #  Static security analysis with semgrep
-      - name: SATS with semgrep
-        run: |
-          uv run semgrep scan \
-            --config=p/python \
-            --config=p/fastapi src/ \
-            --config=p/owasp-top-ten \
-            --baseline-commit=${{ github.event.pull_request.base.sha }} \
-            --severity=ERROR \
-            --severity=WARNING \
-            --error \
-            --sarif \
-            --output=semgrep-output.sarif
-        continue-on-error: true
-
-      - name: Upload semgrep analysis Github Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep-output.sarif
+      - name: Quality assurance
+        uses: ./.github/actions/quality-check
 
   # ════════════════════════════════════════════
   # 2. UNIT TESTS && IT TESTS - Ejecución de test unitarios y de integración con cobertura >= 80%
@@ -102,10 +68,26 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: '${{ github.ref_name }}'
-      # Action customizada. Setea la version de python e instala dependencias necesarias
+
       - name: Python setup
         uses: ./.github/actions/python-setup
 
-      # Configuracion de ejecución vive en pyproyect.toml
-      - name: Run unit tests
-        run: uv run pytest --cov=src --cov-fail-under=80
+      # Levanta la app y ejecuta los tests. Una vez terminen, se elimina el contenedor
+      - name: Run app && execute tests
+        run: |
+          echo "Execute docker compose with all necessary services for testing"
+          docker compose -f ./tests/docker-compose-ci.yml up -d
+
+          echo "Checking if pytest is installed"
+          if ! uv run pytest --version > /dev/null 2>&1; then
+            echo "pytest not found"
+            exit 1
+          fi
+          echo "Executing unit test and integration tests with cover"
+          uv run pytest ./tests
+          TEST_EXIT_CODE=$?
+
+          echo "Stopping containers"
+          docker compose -f ./tests/docker-compose-ci.yml down
+
+          exit $TEST_EXIT_CODE

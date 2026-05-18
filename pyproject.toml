@@ -62,6 +62,8 @@ plugins = ["pydantic.mypy"]
 
 # Exclusiones habituales en proyectos IA (regex)
 exclude = "scripts/|tests/"
+show_error_codes = true
+pretty = true
 
 # ============================================================================
 # PYTEST — config por defecto: tests unitarios.
@@ -79,9 +81,28 @@ addopts = [
     "--cache-clear",
     "--tb=short",
     "-v",
+    "--cov",
 ]
 
 log_cli = true
 log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s — %(message)s"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+
+# ============================================================================
+# COVERAGE — fuente y umbral mínimo
+# ============================================================================
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 80
+
+
+# ============================================================================
+# BANDIT — análisis estático de seguridad
+# ============================================================================
+[tool.bandit]
+targets = ["src"]
+severity = "HIGH"

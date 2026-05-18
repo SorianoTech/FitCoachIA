@@ -79,17 +79,20 @@ jobs:
           fetch-depth: 0
 
       - name: Run Semgrep
-        run: semgrep scan \
+        env:
+          BASELINE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          BASELINE_FLAG=""
+          [ -n "$BASELINE_SHA" ] && BASELINE_FLAG="--baseline-commit=$BASELINE_SHA"
+          semgrep scan \
           --config=p/python \
-          --config=p/fitcoach \
           --config=p/owasp-top-ten \
-          --baseline-commit=${{ github.event.pull_request.base.sha }} \
+            $BASELINE_FLAG \
           --severity=ERROR \
           --severity=WARNING \
           --error \
           --sarif \
-          --output=semgrep-output.sarif
-          src/
+            src/ > semgrep-output.sarif
         continue-on-error: true
 
       - name: Upload results

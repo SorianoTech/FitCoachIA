@@ -58,6 +58,36 @@ jobs:
       - name: Quality assurance
         uses: ./.github/actions/quality-check
 
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    permissions:
+      security-events: write
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          ref: '${{ github.ref_name }}'
+
+      - name: Run Semgrep
+        run: semgrep scan \
+          --config=p/python \
+          --config=p/fastapi \
+          --config=p/owasp-top-ten \
+          --baseline-commit=${{ github.event.pull_request.base.sha }} \
+          --severity=ERROR \
+          --severity=WARNING \
+          --error \
+          --sarif \
+          --output=semgrep-output.sarif
+          src/
+        continue-on-error: true
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-output.sarif
   # ════════════════════════════════════════════
   # 2. UNIT TESTS && IT TESTS - Ejecución de test unitarios y de integración con cobertura >= 80%
   # ════════════════════════════════════════════

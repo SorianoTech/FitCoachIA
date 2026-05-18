@@ -37,25 +37,3 @@ runs:
         uv run bandit -f custom --msg-template \
           "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}"
       continue-on-error: false
-
-    #  Static security analysis with semgrep
-    - name: SATS with semgrep
-      shell: bash
-      run: |
-        uv run semgrep scan \
-          --config=p/python \
-          --config=p/fastapi src/ \
-          --config=p/owasp-top-ten \
-          --baseline-commit=${{ github.event.pull_request.base.sha }} \
-          --severity=ERROR \
-          --severity=WARNING \
-          --error \
-          --sarif \
-          --output=semgrep-output.sarif
-      continue-on-error: true
-
-    - name: Upload semgrep analysis Github Security
-      if: always()
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: semgrep-output.sarif

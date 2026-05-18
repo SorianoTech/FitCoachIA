@@ -7,7 +7,7 @@ app.include_router(router)
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     return {
         "message": "¡FitCoach IA está funcionando!",
         "status": "online",
@@ -16,5 +16,5 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     return {"status": "healthy"}

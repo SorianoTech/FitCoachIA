@@ -5,8 +5,12 @@ IMAGE_LATEST=$(IMAGE_BASE):latest
 CONTAINER_NAME=fitcoach-ia
 PORT=8000
 version ?= latest
+BASE_PACKAGE=src
+BASE_TEST_PACKAGE=tests
+UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
+IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-.PHONY: container build run stop clean all help tag images clean-images logs
+.PHONY: container build run stop clean all help tag images clean-images logs tests unit_test it_tests
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -20,10 +24,13 @@ help:
 	@echo "  make images                         - Consulta las imagenes en local"
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
 	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
+	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
+	@echo "  make unit_tests                     - execute unit tests (sin cobertura)"
+	@echo "  make it_tests                       - execute unit tests (sin cobertura)"
 
 container:
 	@$(DOCKER) ps -a
-	
+
 build:
 	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile ./src
 	@if [ "$(version)" != "latest" ]; then \
@@ -33,7 +40,16 @@ build:
 		echo "Imagen construida: $(IMAGE_LATEST)"; \
 	fi
 
-run: 
+unit_tests:
+	PYTHONPATH=$(BASE_PACKAGE) pytest $(UNIT_TEST_PACKAGE) --no-cov
+
+it_tests:
+	PYTHONPATH=$(BASE_PACKAGE) pytest $(IT_TEST_PACKAGE) --no-cov
+
+tests:
+	PYTHONPATH=$(BASE_PACKAGE) pytest $(BASE_TEST_PACKAGE) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80
+
+run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
 	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"

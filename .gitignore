@@ -1,6 +1,7 @@
 # Environments
 venv**/
 .env
+.venv
 
 #initial files
 **/.gitkeep

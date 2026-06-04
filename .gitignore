@@ -11,6 +11,7 @@ venv**/
 
 #local IDE files
 .vscode/
+.claude/
 
 #code review validation
 .ruff_cache

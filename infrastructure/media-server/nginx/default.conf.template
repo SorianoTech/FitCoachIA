@@ -1,0 +1,26 @@
+server {
+    listen ${NGINX_PORT};
+    server_name ${NGINX_HOST};
+
+    location / {
+        root /www;
+    }
+
+    location /data/ {
+        alias /www/data/;
+    }
+
+    location /images/ {
+        alias /www/images/;
+    }
+
+    location /videos/ {
+        alias /www/videos/;
+    }
+
+    location /health {
+        access_log off;
+        add_header 'Content-Type' 'application/json';
+        return 200 '{"status":"UP"}';
+    }
+}

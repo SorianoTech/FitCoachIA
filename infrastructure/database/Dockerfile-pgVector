@@ -1,0 +1,7 @@
+FROM pgvector/pgvector:pg18-trixie
+
+COPY ./ddl /docker-entrypoint-initdb.d/
+
+EXPOSE 5432
+
+CMD ["postgres"]

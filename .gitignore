@@ -7,3 +7,9 @@ ENV/
 .vscode/
 .env.preproduction
 .env
+
+# Media Server
+infrastructure/media-server/www/data
+infrastructure/media-server/www/images
+infrastructure/media-server/www/videos
+

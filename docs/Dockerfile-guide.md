@@ -10,9 +10,9 @@ y otra para ejecutar la app. El resultado es una imagen final ligera y lista par
 | Instrucción | Qué hace |
 |-------------|----------|
 | `FROM python:3.11-slim AS builder` | Usa Python 3.11 como base y llama a esta etapa `builder` |
-| `RUN apt-get install build-essential` | Instala herramientas de compilación necesarias para algunas librerías |
+| `RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*` | Instala herramientas de compilación necesarias para algunas librerías y limpia la caché de apt para no engordar la imagen |
 | `COPY ./requirements.txt .` | Copia la lista de dependencias al contenedor |
-| `RUN pip install --prefix=/install -r requirements.txt` | Instala todas las librerías en la carpeta `/install` |
+| `RUN pip install --prefix=/install -q --no-cache-dir -r requirements.txt` | Instala todas las librerías en `/install` sin caché de pip ni output verboso |
 | `RUN python -m venv /opt/fitcoach` | Crea un entorno virtual aislado para la aplicación |
 
 > **¿Para qué sirve `/install`?**
@@ -46,7 +46,7 @@ y otra para ejecutar la app. El resultado es una imagen final ligera y lista par
 | `WORKDIR /app` | Establece `/app` como directorio de trabajo dentro del contenedor |
 | `COPY --from=builder /install $APP_LIB_DIR` | Trae las librerías instaladas en el Stage 1 a esta imagen limpia |
 | `COPY ./fitcoach .` | Copia el código fuente de la aplicación al contenedor |
-| `ENTRYPOINT ["fastapi", "run", "/app/main.py"]` | Comando fijo que arranca la aplicación al iniciar el contenedor |
+| `ENTRYPOINT ["fastapi", "run", "main.py"]` | Comando fijo que arranca la aplicación al iniciar el contenedor (la ruta es relativa a `WORKDIR /app`) |
 | `CMD ["--port", "8000"]` | Argumento por defecto del comando anterior — se puede sobreescribir al arrancar |
 
 ---

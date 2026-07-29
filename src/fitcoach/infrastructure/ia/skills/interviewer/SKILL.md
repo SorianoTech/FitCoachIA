@@ -1,454 +1,454 @@
 ---
 name: fitness-interviewer
-description: Módulo de entrevista estructurada para recolectar datos iniciales de usuarios en una aplicación de fitness. Realiza 10 preguntas ordenadas para determinar el perfil biométrico, objetivos realistas, contexto de actividad, nutrición, salud y compromiso real. Detecta inconsistencias, banderas rojas y necesidades de referencia a profesionales.
+description: Structured interview module to collect initial user data in a fitness application. Runs 10 ordered questions to determine biometric profile, realistic goals, activity context, nutrition, health and real commitment. Detects inconsistencies, red flags and the need for professional referral.
 version: 1.0
 keywords: fitness assessment, onboarding, user profiling, biometric data, fitness goals, training plan, adherence prediction
 ---
 
-## Cuándo usar este skill
+## When to use this skill
 
-Usa este skill cuando:
-- Un usuario nuevo accede a FitCoachIA por primera vez
-- Se debe realizar el onboarding inicial para personalizar el plan
-- Es necesario recolectar datos basales para cálculos de energética (BMR, TDEE)
-- Se requiere validar la viabilidad y realismo del objetivo del usuario
-- Se debe diagnosticar el contexto de actividad real (NEAT)
+Use this skill when:
+- A new user accesses FitCoachIA for the first time
+- Initial onboarding must be run to personalize the plan
+- Baseline data must be collected for energy calculations (BMR, TDEE)
+- The feasibility and realism of the user's goal must be validated
+- The real activity context (NEAT) must be diagnosed
 
-**No uses este skill si:**
-- El usuario ya ha completado una entrevista anterior
-- El usuario solo busca resolución de una pregunta puntual sin contexto
-- No hay suficiente información de contexto para proceder
+**Do not use this skill if:**
+- The user has already completed a previous interview
+- The user only wants a one-off question answered without context
+- There is not enough contextual information to proceed
 
-## Flujo de la entrevista
+## Interview flow
 
-### 0. Captura de Identidad
-**Pregunta inicial (sin numeración):**
-> ¿Cuál es tu nombre o usuario con el que prefieres que te llame?
+### 0. Identity Capture
+**Opening question (unnumbered):**
+> What is your name, or the name/username you'd like me to call you?
 
-**Información obtenida:** Identidad y preferencia de comunicación.
-
----
-
-### 1. Datos Biométricos Base
-**Pregunta:**
-> ¿Cuál es tu edad, peso, altura y cómo describirías tu composición actual? (mucho/poco músculo, mucha/poca grasa)
-
-**Campos esperados:**
-- Edad (validar 14-100)
-- Peso en kg (validar 30-300 kg)
-- Altura en cm (validar 130-230 cm)
-- Descripción subjetiva de composición
-
-**Información obtenida:**
-- Base para calcular BMR (Harris-Benedict, Mifflin-St Jeor)
-- Base para calcular TDEE
-- **Indicador psicológico crítico:** Compara percepción vs. realidad. Si dice "mucha grasa" pero el IMC es normal, o "mucho músculo" pero es muy sedentario = distorsión corporal → requiere enfoque psicológico de aceptación.
-
-**Validación:**
-- Si IMC < 13.5 o > 45: Señala posible desorden alimenticio o condición médica → **BANDERA ROJA**
-- Si la descripción es extremadamente incongruente con datos: Requiere profundización psicológica
+**Information obtained:** Identity and communication preference.
 
 ---
 
-### 2. El Objetivo Real
-**Pregunta:**
-> ¿Qué quieres lograr prioritariamente: perder grasa, ganar músculo, mejorar rendimiento o una combinación? ¿En cuánto tiempo esperas notar el primer cambio real?
+### 1. Basic Biometric Data
+**Question:**
+> What is your age, weight, height, and how would you describe your current body composition? (a lot/little muscle, a lot/little fat)
 
-**Campos esperados:**
-- Objetivo primario (selección única o ranking)
-- Plazo esperado para "primer cambio"
-- Objetivo secundario (opcional)
+**Expected fields:**
+- Age (validate 14-100)
+- Weight in kg (validate 30-300 kg)
+- Height in cm (validate 130-230 cm)
+- Subjective composition description
 
-**Información obtenida:**
-- Define agresividad del déficit/superávit calórico
-- Detección de expectativas no realistas
-- Si dice "perder 10kg en 1 mes" → **BANDERA ROJA** (educación necesaria)
-- Si dice "5 años" para un cambio pequeño → Falta de motivación o perfeccionismo paralizante
+**Information obtained:**
+- Base for calculating BMR (Harris-Benedict, Mifflin-St Jeor)
+- Base for calculating TDEE
+- **Critical psychological indicator:** Compares perception vs. reality. If they say "a lot of fat" but BMI is normal, or "a lot of muscle" but they are very sedentary = body image distortion → requires a psychological acceptance approach.
 
-**Validación:**
-- Expectativa realista: 0.5-1kg/semana déficit, 0.25-0.5kg/semana ganancia
-- Si el plazo es irreal: Incorporar educación sobre fisiología en el plan
-
-**Seguimiento recomendado:**
-- Si mezcla objetivos incompatibles (perder grasa + ganar músculo rápidamente): Aclarar prioridad
+**Validation:**
+- If BMI < 13.5 or > 45: Indicates possible eating disorder or medical condition → **RED FLAG**
+- If the description is extremely incongruent with the data: Requires psychological deep-dive
 
 ---
 
-### 3. Actividad Diaria (NEAT)
-**Pregunta:**
-> ¿A qué te dedicas laboralmente? ¿Cómo es tu movimiento típico desde que te despiertas: sedentario (oficina), activo (laboral) o muy físico (construcción, camarero, etc.)?
+### 2. The Real Goal
+**Question:**
+> What do you want to achieve as a priority: lose fat, gain muscle, improve performance, or a combination? How soon do you expect to notice the first real change?
 
-**Campos esperados:**
-- Profesión/ocupación
-- Descripción cualitativa de actividad (sedentario/activo/muy físico)
-- Promedio de pasos/hora si es posible
+**Expected fields:**
+- Primary goal (single choice or ranking)
+- Expected timeframe for "first change"
+- Secondary goal (optional)
 
-**Información obtenida:**
-- **CRÍTICO para TDEE:** Un "principiante" camarero = 500-800 kcal extra vs. un "avanzado" en oficina. NEAT > que entreno en mayoría de sedentarios.
-- Define el multiplicador de actividad (1.2-1.5)
+**Information obtained:**
+- Defines aggressiveness of the caloric deficit/surplus
+- Detects unrealistic expectations
+- If they say "lose 10kg in 1 month" → **RED FLAG** (education needed)
+- If they say "5 years" for a small change → Lack of motivation or paralyzing perfectionism
 
-**Validación:**
-- Si dice "sedentario" pero juega tenis 4 veces/semana: Aclarar qué cuenta como NEAT (actividad no entreno)
-- Objetivo: Identificar las kcal reales gastadas antes del entreno
+**Validation:**
+- Realistic expectation: 0.5-1kg/week deficit, 0.25-0.5kg/week gain
+- If the timeframe is unrealistic: Incorporate physiology education into the plan
 
----
-
-### 4. Radiografía Nutricional
-**Pregunta:**
-> ¿Cuántas comidas principales haces al día? ¿Cuáles son esos alimentos que "se te escapan" o consumes por ansiedad/falta de tiempo? (No juzgamos, queremos saber la verdad)
-
-**Campos esperados:**
-- Número de comidas (sin meriendas)
-- Alimentos problemáticos (específicos, no "dulces")
-- Contexto de consumo (ansiedad, tiempo, socialización)
-- Frecuencia aproximada
-
-**Información obtenida:**
-- Identifica hábitos de picoteo real (no el que se niega)
-- Relación con comida (emocional vs. logística)
-- Eliminamos presión de "dieta perfecta" = adherencia realista
-- Base para macro adjustments personalizados
-
-**Validación:**
-- Si come 1 vez/día: Señala restricción extrema → **BANDERA ROJA**
-- Si el picoteo es > 30% del consumo calórico: Debe priorizarse en el plan como estrategia de control
-
-**Profundización opcional:**
-- Si menciona ansiedad: "¿Qué emociones gatillan ese picoteo? ¿Estrés, aburrimiento, soledad?"
+**Recommended follow-up:**
+- If they mix incompatible goals (losing fat + gaining muscle quickly): Clarify priority
 
 ---
 
-### 5. Salud Digestiva y Energía
-**Pregunta:**
-> ¿Sientes hinchazón abdominal frecuente? ¿Sufres bajones de energía o fatiga después de comer hidratos (pan, pasta, arroz)?
+### 3. Daily Activity (NEAT)
+**Question:**
+> What do you do for work? What is your typical movement like from the moment you wake up: sedentary (office), active (labor), or very physical (construction, waiter, etc.)?
 
-**Campos esperados:**
-- Presencia/frecuencia de hinchazón (nunca/a veces/siempre)
-- Presencia/frecuencia de "crash" energético
-- Alimentos específicos que gatillan
+**Expected fields:**
+- Profession/occupation
+- Qualitative activity description (sedentary/active/very physical)
+- Average steps/hour if possible
 
-**Información obtenida:**
-- Evaluación indirecta de microbiota y sensibilidad a insulina
-- Si hay "crash" = metabolismo de glúcidos lento o sensibilidad a insulina → controlar carga glucémica
-- Independiente del objetivo estético, vital para bienestar
-- Posible intolerancia a gluten/lactosa no diagnosticada → **BANDERA AMARILLA**
+**Information obtained:**
+- **CRITICAL for TDEE:** A "beginner" waiter = 500-800 extra kcal vs. an "advanced" office worker. NEAT > training for most sedentary people.
+- Defines the activity multiplier (1.2-1.5)
 
-**Validación:**
-- Si hay síntomas severos (dolor, diarrea, vómito): Sugiere consulta gastroenterológica
-- Síntomas frecuentes pero sin diagnóstico: Proponer eliminación de gluten 2 semanas como test
+**Validation:**
+- If they say "sedentary" but play tennis 4 times/week: Clarify what counts as NEAT (non-training activity)
+- Goal: Identify the real kcal burned before training
 
 ---
 
-### 6. Historial de Lesiones y Molestias
-**Pregunta:**
-> ¿Tienes algún dolor o molestia que aparezca al entrenar? ¿Hay alguna lesión vieja que te dé miedo reactivar o que requiera cuidados especiales?
+### 4. Nutritional X-Ray
+**Question:**
+> How many main meals do you have per day? What foods "slip through" or do you eat out of anxiety/lack of time? (No judgment, we want the truth)
 
-**Campos esperados:**
-- Localización de dolor (articulación, músculo, etc.)
-- Contexto de aparición (movimiento específico)
-- Antecedentes de lesión (cuándo, tipo)
-- Restricciones actuales
-- Tratamiento previo (fisioterapia, cirugía)
+**Expected fields:**
+- Number of meals (excluding snacks)
+- Problem foods (specific, not just "sweets")
+- Consumption context (anxiety, time, socializing)
+- Approximate frequency
 
-**Información obtenida:**
-- **CRÍTICA para adaptación de ejercicios:** Evita agravar patologías
-- Define ROM permitido, tipos de contracción prohibidos
-- Ejemplo: Hombro inestable → evitar presses overhead pesados pero permite tirones
+**Information obtained:**
+- Identifies real snacking habits (not the denied version)
+- Relationship with food (emotional vs. logistical)
+- Removes pressure of a "perfect diet" = realistic adherence
+- Base for personalized macro adjustments
 
-**Validación:**
-- Si hay dolor constante: Sugiere evaluación médica previa
-- Si describe síndrome específico (impingement, estenosis, etc.): Adaptar según protocolo
+**Validation:**
+- If they eat 1 time/day: Indicates extreme restriction → **RED FLAG**
+- If snacking is > 30% of caloric intake: Must be prioritized in the plan as a control strategy
 
-**Seguimiento obligatorio:**
-- "¿Qué ejercicios te producen molestia?"
-- "¿Has ido a fisio? ¿Qué te dijeron?"
-
-**Banderas rojas:**
-- Dolor severo sin diagnóstico
-- Antecedente de cirugía reciente (< 12 semanas)
-- Limitaciones articulares > 50% de ROM
+**Optional deep-dive:**
+- If they mention anxiety: "What emotions trigger that snacking? Stress, boredom, loneliness?"
 
 ---
 
-### 7. Experiencia y "Caja de Herramientas"
-**Pregunta:**
-> ¿Cuánto tiempo llevas entrenando en serio (consistente, con programa)? ¿Qué material tienes disponible: gym completo, casa (cuéntame qué tienes), solo peso corporal?
+### 5. Digestive Health and Energy
+**Question:**
+> Do you often feel abdominal bloating? Do you suffer energy crashes or fatigue after eating carbs (bread, pasta, rice)?
 
-**Campos esperados:**
-- Años/meses de experiencia real (consistente, no ocasional)
-- Tipo de gym o equipo (home gym, gym comercial, al aire libre)
-- Equipamiento específico (mancuernas, barra, máquinas, nada)
-- Acceso (24/7, horarios, viabilidad)
+**Expected fields:**
+- Presence/frequency of bloating (never/sometimes/always)
+- Presence/frequency of energy "crash"
+- Specific trigger foods
 
-**Información obtenida:**
-- Determina volumen tolerable (principiante saturable, avanzado necesita más)
-- **Volumen base:** Principiante 10-15 sets/semana/grupo muscular, avanzado 15-25 sets
-- Equipamiento dicta viabilidad de movimientos clave (sentadilla, peso muerto, press)
-- Acceso determina flexibilidad en horarios
+**Information obtained:**
+- Indirect assessment of gut microbiota and insulin sensitivity
+- If there's a "crash" = slow carb metabolism or insulin sensitivity → control glycemic load
+- Independent of the aesthetic goal, vital for wellbeing
+- Possible undiagnosed gluten/lactose intolerance → **YELLOW FLAG**
 
-**Validación:**
-- Si dice "10 años" pero las fotos muestran sedentarismo: Especificar "entrenamiento consistente"
-- Si solo tiene pesos ligeros en casa para un objetivo de fuerza: Requiere adaptación (periodización, reps altas)
-
----
-
-### 8. Calidad del Descanso
-**Pregunta:**
-> ¿Cuántas horas duermes de media? ¿Te levantas con sensación de haber descansado realmente? ¿Tienes insomnio, despertar nocturno, o duermes pero te sientes cansado?
-
-**Campos esperados:**
-- Horas de sueño (validar 4-12)
-- Calidad subjetiva (nada/poco/suficiente/excelente)
-- Problemas específicos (insomnio inicial, ruptura, despertar temprano)
-- Faktores (estrés, luz azul, ruido, temperatura)
-
-**Información obtenida:**
-- **Hormonas:** Sin sueño profundo, cortisol sube, testosterona/GH bajan
-- Si duerme < 6 horas: Imposible recuperación óptima → reduce intensidad
-- Si duerme 9-10 pero sigue cansado: Posible apnea del sueño, depresión → **BANDERA ROJA**
-
-**Validación:**
-- Ideal: 7-9 horas con calidad alta
-- Si < 6 horas: Educación sobre sueño; periodizar entrenamiento en fases de recuperación
-
-**Profundización opcional:**
-- "¿Entrenas muy tarde? ¿Tomas cafeína después de las 14:00?"
+**Validation:**
+- If there are severe symptoms (pain, diarrhea, vomiting): Suggests gastroenterology consultation
+- Frequent symptoms without diagnosis: Propose a 2-week gluten elimination test
 
 ---
 
-### 9. Relación con la Suplementación
-**Pregunta:**
-> ¿Tomas algo actualmente (proteína, vitaminas, quemadores, pre-entreno)? ¿Cuánto estarías dispuesto a invertir mensualmente en suplementación si fuera necesaria?
+### 6. Injury and Discomfort History
+**Question:**
+> Do you have any pain or discomfort that appears when training? Is there an old injury you're afraid of reactivating, or that requires special care?
 
-**Campos esperados:**
-- Suplementos actuales (nombre, dosis, frecuencia)
-- Razón de uso (objetivo, deficiencia, hábito)
-- Presupuesto mensual máximo (rango)
-- Restricciones (vegan, alergia, preferencia)
+**Expected fields:**
+- Pain location (joint, muscle, etc.)
+- Onset context (specific movement)
+- Injury history (when, type)
+- Current restrictions
+- Prior treatment (physiotherapy, surgery)
 
-**Información obtenida:**
-- Define si incluir ergogénicos en el plan
-- Presupuesto realista evita stack inalcanzable
-- Prioridad: creatina, cafeína, proteína > quemadores dudosos
-- Carencias nutricionales detectadas antes
+**Information obtained:**
+- **CRITICAL for exercise adaptation:** Avoids aggravating pathologies
+- Defines allowed ROM, prohibited contraction types
+- Example: Unstable shoulder → avoid heavy overhead presses but allow pulling movements
 
-**Validación:**
-- Si toma quemadores "milagro" + restrictivo calórico: Educación necesaria
-- Si presupuesto = 0: Plan sin suplementos, énfasis en nutrición
+**Validation:**
+- If there is constant pain: Suggests prior medical evaluation
+- If they describe a specific syndrome (impingement, stenosis, etc.): Adapt per protocol
 
-**Banderas rojas:**
-- Consumo de sustancias no permitidas (AAS, SARMS sin supervisión)
-- Uso de "detox" productos pseudocientíficos
+**Mandatory follow-up:**
+- "Which exercises cause you discomfort?"
+- "Have you been to physio? What did they tell you?"
 
----
-
-### 10. Compromiso y Tiempo Real
-**Pregunta:**
-> ¿Cuántos días a la semana vas a dedicarle al entrenamiento de verdad, sin que suponga un problema en tu vida? ¿Cuánto tiempo por sesión?
-
-**Campos esperados:**
-- Días reales/semana (validar 1-7)
-- Tiempo por sesión en minutos (validar 15-180)
-- Flexibilidad (fijo vs. variable)
-- Conflictos conocidos (trabajo, familia)
-
-**Información obtenida:**
-- **LA BASE de la adherencia.** Preferible 3 días al 100% que 6 al 40%
-- Define volumen total semanal (días × min × intensidad)
-- Identifica periodos de bajo compromiso (épocas ocupadas)
-- Realismo: Si dice "6 días" pero trabaja 12h/día → ajustar expectativas
-
-**Validación:**
-- Si presupuesto < 90 min/semana: Enfoque de eficiencia (full-body, compound-heavy)
-- Si varía mucho (3 días aleatorios): Requiere periodización flexible
-
-**Profundización crítica:**
-- "¿Qué pasaría si tienes una semana estresante en el trabajo? ¿Podrías hacer 2 sesiones cortas en casa?"
-- "¿Has abandonado entrenamientos antes? ¿Qué te llevó al abandono?"
+**Red flags:**
+- Severe pain without diagnosis
+- History of recent surgery (< 12 weeks)
+- Joint limitations > 50% of ROM
 
 ---
 
-## Detección de Banderas Rojas y Derivación
+### 7. Experience and "Toolbox"
+**Question:**
+> How long have you been training seriously (consistently, with a program)? What equipment do you have available: full gym, home (tell me what you have), or bodyweight only?
 
-### BANDERAS ROJAS (referencia profesional obligatoria)
+**Expected fields:**
+- Years/months of real experience (consistent, not occasional)
+- Type of gym or equipment (home gym, commercial gym, outdoors)
+- Specific equipment (dumbbells, barbell, machines, none)
+- Access (24/7, schedules, feasibility)
 
-1. **Psiquiatría/Psicología:**
-   - Signos de TCA (Trastorno de Conducta Alimentaria): pérdida de peso rápida inexplicable, obsesión con calorías, restricción extrema, purga
-   - Dismorfia corporal severa: percepción radicalmente distorsionada
-   - Depresión: fatiga extrema, desesperanza, insomnio severo
-   - Ansiedad paralizante alrededor del entrenamiento
+**Information obtained:**
+- Determines tolerable volume (beginners saturate easily, advanced need more)
+- **Base volume:** Beginner 10-15 sets/week/muscle group, advanced 15-25 sets
+- Equipment dictates feasibility of key movements (squat, deadlift, press)
+- Access determines schedule flexibility
 
-2. **Medicina:**
-   - Dolor constante sin diagnóstico
-   - IMC < 13.5 o > 45
-   - Presión arterial desconocida (si es mayor de 40)
-   - Cirugía reciente (< 12 semanas)
-   - Presíncope o mareos durante/después de entreno
-   - Diabetes tipo 1 sin coordinación médica
-
-3. **Nutrición:**
-   - Signos de desnutrición severa
-   - Intolerancia confirmada sin manejo
-   - Síntomas GI severos (diarrea crónica, dolor)
-
-### BANDERAS AMARILLAS (ajuste de protocolo)
-
-- Sueño < 6 horas consistente
-- Stress laboral/personal severo
-- Lesión crónica manejable
-- Intolerancia no diagnosticada sospechada
-- Presupuesto suplementario = 0
-- Disponibilidad de entreno < 150 min/semana
-- Múltiples lesiones viejas
+**Validation:**
+- If they say "10 years" but photos show sedentary behavior: Specify "consistent training"
+- If they only have light weights at home for a strength goal: Requires adaptation (periodization, higher reps)
 
 ---
 
-## Instrucciones de Ejecución para Claude
+### 8. Rest Quality
+**Question:**
+> How many hours do you sleep on average? Do you wake up feeling truly rested? Do you have insomnia, night waking, or do you sleep but still feel tired?
 
-### FLUJO A SEGUIR:
+**Expected fields:**
+- Sleep hours (validate 4-12)
+- Subjective quality (none/little/enough/excellent)
+- Specific problems (initial insomnia, fragmented sleep, early waking)
+- Factors (stress, blue light, noise, temperature)
 
-1. **Apertura con calidez:**
-   - Presenta el propósito sin abrumar
-   - Énfasis en que no hay respuestas "malas"
-   - Confidencialidad de los datos
+**Information obtained:**
+- **Hormones:** Without deep sleep, cortisol rises, testosterone/GH drop
+- If they sleep < 6 hours: Optimal recovery is impossible → reduce intensity
+- If they sleep 9-10 but still feel tired: Possible sleep apnea, depression → **RED FLAG**
 
-2. **Secuencia ordenada:**
-   - Respeta el orden 0→10 (construcción lógica)
-   - Permite elaboración natural (no cortes corto)
-   - Si el usuario da info de Q3 en Q1, anotalo y sigue flujo
+**Validation:**
+- Ideal: 7-9 hours with high quality
+- If < 6 hours: Sleep education; periodize training with recovery phases
 
-3. **Profundización selectiva:**
-   - Haz preguntas de seguimiento si hay ambigüedad
-   - NO preguntes todo simultáneamente (parece interrogatorio)
-   - Ejemplo tras Q1: "¿Eso significa que percibes que tienes poco tono muscular o mucha grasa abdominal?"
-
-4. **Lenguaje adaptado:**
-   - Si usuario es muy técnico (culturista): Puedes usar TDEE, BMR, macro ratios
-   - Si es principiante: Simplifica a "cuántas calorías quemas", "qué y cuándo comes"
-   - Siempre valida el lenguaje: "¿Sabes qué es el TDEE? Si no, te lo explico en 10 segundos"
-
-5. **Manejo de información sensible:**
-   - Composición corporal, peso, lesiones → Ton empático, sin juzgar
-   - Si el usuario muestra incomodidad: "No tienes que responder nada que no quieras. ¿Hay algún dato que prefieras no compartir?"
-   - Nunca hagas comentarios sobre apariencia
-
-6. **Decisión final:**
-   - Tras completar las 10 Qs: Resumen breve de hallazgos clave
-   - Identifica banderas rojas y comunica con claridad
-   - Propone siguiente paso (diseño de plan, referencia, educación previa)
+**Optional deep-dive:**
+- "Do you train very late? Do you have caffeine after 2:00 PM?"
 
 ---
 
-## Output Esperado
+### 9. Relationship with Supplementation
+**Question:**
+> Are you currently taking anything (protein, vitamins, fat burners, pre-workout)? How much would you be willing to invest monthly in supplementation if necessary?
 
-### Estructura de Datos Recolectados:
+**Expected fields:**
+- Current supplements (name, dose, frequency)
+- Reason for use (goal, deficiency, habit)
+- Maximum monthly budget (range)
+- Restrictions (vegan, allergy, preference)
+
+**Information obtained:**
+- Defines whether to include ergogenics in the plan
+- Realistic budget avoids an unattainable stack
+- Priority: creatine, caffeine, protein > dubious fat burners
+- Nutritional deficiencies detected beforehand
+
+**Validation:**
+- If they take "miracle" fat burners + restrictive caloric intake: Education needed
+- If budget = 0: Supplement-free plan, emphasis on nutrition
+
+**Red flags:**
+- Use of unauthorized substances (AAS, SARMs without supervision)
+- Use of pseudoscientific "detox" products
+
+---
+
+### 10. Real Commitment and Time
+**Question:**
+> How many days a week will you truly dedicate to training, without it becoming a problem in your life? How much time per session?
+
+**Expected fields:**
+- Real days/week (validate 1-7)
+- Time per session in minutes (validate 15-180)
+- Flexibility (fixed vs. variable)
+- Known conflicts (work, family)
+
+**Information obtained:**
+- **THE FOUNDATION of adherence.** 3 days at 100% is preferable to 6 at 40%
+- Defines total weekly volume (days × min × intensity)
+- Identifies low-commitment periods (busy seasons)
+- Realism: If they say "6 days" but work 12h/day → adjust expectations
+
+**Validation:**
+- If budget < 90 min/week: Efficiency approach (full-body, compound-heavy)
+- If it varies a lot (3 random days): Requires flexible periodization
+
+**Critical deep-dive:**
+- "What would happen if you have a stressful week at work? Could you do 2 short sessions at home?"
+- "Have you abandoned training before? What led to the dropout?"
+
+---
+
+## Red Flag Detection and Referral
+
+### RED FLAGS (mandatory professional referral)
+
+1. **Psychiatry/Psychology:**
+   - Signs of an eating disorder: unexplained rapid weight loss, calorie obsession, extreme restriction, purging
+   - Severe body dysmorphia: radically distorted perception
+   - Depression: extreme fatigue, hopelessness, severe insomnia
+   - Paralyzing anxiety around training
+
+2. **Medicine:**
+   - Constant pain without diagnosis
+   - BMI < 13.5 or > 45
+   - Unknown blood pressure (if over 40 years old)
+   - Recent surgery (< 12 weeks)
+   - Pre-syncope or dizziness during/after training
+   - Type 1 diabetes without medical coordination
+
+3. **Nutrition:**
+   - Signs of severe malnutrition
+   - Confirmed intolerance without management
+   - Severe GI symptoms (chronic diarrhea, pain)
+
+### YELLOW FLAGS (protocol adjustment)
+
+- Sleep < 6 hours consistently
+- Severe work/personal stress
+- Manageable chronic injury
+- Suspected undiagnosed intolerance
+- Supplement budget = 0
+- Training availability < 150 min/week
+- Multiple old injuries
+
+---
+
+## Execution Instructions for Claude
+
+### FLOW TO FOLLOW:
+
+1. **Warm opening:**
+   - Present the purpose without overwhelming
+   - Emphasize that there are no "wrong" answers
+   - Confidentiality of the data
+
+2. **Ordered sequence:**
+   - Respect the 0→10 order (logical construction)
+   - Allow natural elaboration (don't cut short)
+   - If the user gives Q3 info during Q1, note it and continue the flow
+
+3. **Selective deep-diving:**
+   - Ask follow-up questions if there is ambiguity
+   - Do NOT ask everything simultaneously (feels like an interrogation)
+   - Example after Q1: "Does that mean you feel you have low muscle tone or a lot of abdominal fat?"
+
+4. **Adapted language:**
+   - If the user is very technical (bodybuilder): You can use TDEE, BMR, macro ratios
+   - If beginner: Simplify to "how many calories you burn", "what and when you eat"
+   - Always validate the language: "Do you know what TDEE is? If not, I'll explain in 10 seconds"
+
+5. **Handling sensitive information:**
+   - Body composition, weight, injuries → Empathetic tone, without judgment
+   - If the user shows discomfort: "You don't have to answer anything you don't want to. Is there any data you'd prefer not to share?"
+   - Never comment on appearance
+
+6. **Final decision:**
+   - After completing the 10 Qs: Brief summary of key findings
+   - Identify red flags and communicate them clearly
+   - Propose next step (plan design, referral, prior education)
+
+---
+
+## Expected Output
+
+### Collected Data Structure:
 
 ```json
 {
-  "usuario": {
-    "nombre_o_usuario": "string",
-    "fecha_registro": "ISO-8601"
+  "user": {
+    "name_or_username": "string",
+    "registration_date": "ISO-8601"
   },
-  "biometricos": {
-    "edad": int,
-    "peso_kg": float,
-    "altura_cm": int,
-    "imc": float,
-    "composicion_percibida": "string",
-    "composicion_estimada": "string (basada en foto si aplica)"
+  "biometrics": {
+    "age": int,
+    "weight_kg": float,
+    "height_cm": int,
+    "bmi": float,
+    "perceived_composition": "string",
+    "estimated_composition": "string (based on photo if applicable)"
   },
-  "objetivo": {
-    "primario": "perder_grasa | ganar_musculo | rendimiento",
-    "secundario": "opcional",
-    "plazo_semanas": int,
-    "expectativa_realista": bool
+  "goal": {
+    "primary": "lose_fat | gain_muscle | performance",
+    "secondary": "optional",
+    "timeframe_weeks": int,
+    "realistic_expectation": bool
   },
-  "actividad": {
-    "profesion": "string",
-    "neat_nivel": "sedentario | activo | muy_fisico",
-    "descripcion": "string"
+  "activity": {
+    "occupation": "string",
+    "neat_level": "sedentary | active | very_physical",
+    "description": "string"
   },
-  "nutricion": {
-    "comidas_dia": int,
-    "alimentos_criticos": [{"nombre": "string", "frecuencia": "string", "contexto": "string"}],
-    "patron_general": "string"
+  "nutrition": {
+    "meals_per_day": int,
+    "critical_foods": [{"name": "string", "frequency": "string", "context": "string"}],
+    "general_pattern": "string"
   },
-  "digestiva_energia": {
-    "hinchazón_frecuencia": "nunca | a_veces | siempre",
-    "crash_energetico": bool,
-    "gatillos": ["string"]
+  "digestive_energy": {
+    "bloating_frequency": "never | sometimes | always",
+    "energy_crash": bool,
+    "triggers": ["string"]
   },
-  "lesiones": [
+  "injuries": [
     {
-      "localizacion": "string",
-      "tipo": "string",
-      "antiguedad": "string",
-      "restriccion": "string",
-      "diagnostico": "string | null"
+      "location": "string",
+      "type": "string",
+      "age": "string",
+      "restriction": "string",
+      "diagnosis": "string | null"
     }
   ],
-  "entrenamiento": {
-    "anos_consistentes": float,
-    "ambiente": "gym | casa | al_aire_libre | mixto",
-    "equipamiento": ["string"]
+  "training": {
+    "consistent_years": float,
+    "environment": "gym | home | outdoors | mixed",
+    "equipment": ["string"]
   },
-  "sueno": {
-    "horas_promedio": float,
-    "calidad": "pobre | regular | buena | excelente",
-    "problemas": ["string"]
+  "sleep": {
+    "average_hours": float,
+    "quality": "poor | fair | good | excellent",
+    "problems": ["string"]
   },
-  "suplementacion": {
-    "actuales": [{"nombre": "string", "dosis": "string", "frecuencia": "string"}],
-    "presupuesto_mensual_usd": float | null,
-    "restricciones": ["string"]
+  "supplementation": {
+    "current": [{"name": "string", "dose": "string", "frequency": "string"}],
+    "monthly_budget_usd": float | null,
+    "restrictions": ["string"]
   },
-  "compromiso": {
-    "dias_semana": int,
-    "minutos_sesion": int,
-    "flexibilidad": "rigido | flexible",
-    "historia_abandono": "string | null"
+  "commitment": {
+    "days_per_week": int,
+    "minutes_per_session": int,
+    "flexibility": "fixed | flexible",
+    "dropout_history": "string | null"
   },
-  "banderas": {
-    "rojas": ["string"],
-    "amarillas": ["string"]
+  "flags": {
+    "red": ["string"],
+    "yellow": ["string"]
   },
-  "calculos_iniciales": {
+  "initial_calculations": {
     "bmr": float,
-    "tdee_estimado": float,
-    "volumen_tolerable_sets": int
+    "estimated_tdee": float,
+    "tolerable_volume_sets": int
   }
 }
 ```
 
 ---
 
-## Validación de Calidad
+## Quality Validation
 
-Antes de finalizar la entrevista, verifica:
+Before ending the interview, verify:
 
-- [ ] Las 10 preguntas fueron respondidas (aunque sea brevemente)
-- [ ] Los datos biométricos forman un perfil coherente
-- [ ] El objetivo es específico y medible (no vago como "estar bien")
-- [ ] El tiempo disponible vs. objetivo son compatibles
-- [ ] Se identificaron banderas rojas y se comunicaron
-- [ ] El usuario siente que fue escuchado, no interrogado
+- [ ] All 10 questions were answered (even briefly)
+- [ ] The biometric data forms a coherent profile
+- [ ] The goal is specific and measurable (not vague like "be fit")
+- [ ] Available time vs. goal are compatible
+- [ ] Red flags were identified and communicated
+- [ ] The user feels heard, not interrogated
 
 ---
 
-## Keywords y Triggers para Claude
+## Keywords and Triggers for Claude
 
 `fitness onboarding`, `user profiling`, `biometric intake`, `goal assessment`, `training readiness`, `new user questionnaire`, `fitness interview`, `TDEE calculation`, `adherence prediction`, `injury screening`
 
 ---
 
-## Notas para Mejora Continua
+## Notes for Continuous Improvement
 
-1. **A/B testing de pregunta 2:** Algunos usuarios responden mejor a "¿Cómo te ves en 6 meses?" que a timeline
-2. **Adaptación cultural:** Idioma coloquial varía (ej: "picoteo" vs. "snacking" vs. "comidas entre comidas")
-3. **Validación de datos:** Integrar con DEXA, InBody u otro si el usuario tiene acceso
-4. **Seguimiento post-entrevista:** Email de resumen 24h después para que corrija datos
-5. **Escalabilidad:** Si el usuario tiene condiciones complejas, tener checklist de referencia
+1. **A/B testing question 2:** Some users respond better to "How do you see yourself in 6 months?" than to a timeline
+2. **Cultural adaptation:** Colloquial language varies (e.g., "snacking" vs. "grazing" vs. "eating between meals")
+3. **Data validation:** Integrate with DEXA, InBody or other if the user has access
+4. **Post-interview follow-up:** Summary email 24h later so they can correct data
+5. **Scalability:** If the user has complex conditions, maintain a referral checklist
 
 ---
 
-**Versión:** 1.0 | **Última actualización:** 2025-04-13 | **Mantenedor:** FitCoachIA Team
+**Version:** 1.0 | **Last updated:** 2025-04-13 | **Maintainer:** FitCoachIA Team

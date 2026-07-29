@@ -22,7 +22,7 @@ ENV PYTHONUNBUFFERED=1
 # No comprueba si hay versión más nueva de pip (más rápido)
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 # Configuramos las rutas a las librerias para que Python encuentre todo
-ENV PYTHONPATH=$APP_LIB_DIR/lib/python3.11/site-packages
+ENV PYTHONPATH=/app:$APP_LIB_DIR/lib/python3.11/site-packages
 # Configurar el path para ejecutar la aplicación
 ENV PATH="$APP_LIB_DIR/bin:$PATH"
 
@@ -32,8 +32,8 @@ WORKDIR /app
 
 COPY --from=builder /install $APP_LIB_DIR
 
-COPY ./fitcoach .
+COPY ./fitcoach ./fitcoach
 
-ENTRYPOINT ["fastapi", "run","main.py"]
+ENTRYPOINT ["fastapi", "run","fitcoach/main.py"]
 
 CMD ["--port", "8000"]

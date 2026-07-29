@@ -1,0 +1,122 @@
+name: Deploy release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+        description: "Release version. Format: X.Y.Z"
+
+env:
+  PYTHON_VERSION: "3.12"
+  DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
+
+jobs:
+  Release:
+    name: Generate-release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      contents: write
+    steps:
+      - name: Validar formato version
+        run: |
+          if [[ "${{ github.event.inputs.version }}" !~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Formato de versión incorrecta. La versión debe tener formato X.Y.Z"
+            exit 1
+          fi
+          echo "Versión válida"
+        continue-on-error: true
+
+      - name: Validar existencia de version
+        run: |
+          echo "Verificamos la version  ${{ github.event.inputs.version }} existe en el repositorio de docker"
+          if docker manifest inspect $DOCKER_IMAGE_BASE:${{ github.event.inputs.version }} > /dev/null 2>&1; then
+            echo "La imagen ya existe. Aumente la versión minor de entrada"
+            exit 1
+          else
+            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla
+          fi
+        continue-on-error: false
+
+      - name: Repository checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      # Activar runner docker buildx, mejor que el clasico runner
+      - name: Set up Docker runner Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: image-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE_BASE }}
+          tags: |
+            type=raw,value=${{ env.DOCKER_IMAGE_BASE }}:${{ github.event.inputs.version }}
+          labels: |
+            org.opencontainers.image.title=FitCoachIA
+            org.opencontainers.image.description=AI fitness coach service
+            org.opencontainers.image.vendor=SorianoTech
+            org.opencontainers.image.licenses=https://github.com/${{ github.repository }}/blob/main/LICENSE.md
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.authors=fitcoachpontia@gmail.com
+            org.opencontainers.image.version=${{ github.event.inputs.version }}
+            org.opencontainers.image.base.name=python:${{ env.PYTHON_VERSION }}
+
+      # Construimos la imagen docker sin pushear para validar las vulnerabilidades.
+      - name: Build image
+        id: docker-image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          push: false
+          tags: ${{ steps.image-metadata.outputs.tags }}
+          labels: ${{ steps.image-metadata.outputs.labels }}
+          load: true  # necesario para que trivy inspeccione localmente
+
+      # Analiza la imagen en búsqueda de vulnerabilidades del SO, librerias y secretos expuestos en la imagen
+      - name: Container scan (trivy)
+        uses: lazy-actions/gitrivy@v2
+        with:
+          issue_title: Image Security Alert
+          token: ${{ github.token }}
+          image: ${{ steps.docker-image.outputs.tags }}
+          severity: CRITICAL,HIGH
+
+      - name: Generate tag and Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Release v${{ github.event.inputs.version }}
+          tag_name: ${{ github.event.inputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          previous_tag: true
+          prerelease: false
+          preserve_order: true
+
+      - name: Push image
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE_BASE }}:${{ github.event.inputs.version }}
+        run: docker push $DOCKER_IMAGE
+
+      - name: deploy
+        uses: ./.github/workflows/deploy.yml
+        with:
+          image: ${{ env.DOCKER_IMAGE_BASE }}:${{ github.event.inputs.version }}
+          host: ${{ secrets.SERVER_HOST }}
+          port: 22
+          key: ${{ secrets.SERVER_PKEY }}
+          username: ${{ secrets.SERVER_USER }}

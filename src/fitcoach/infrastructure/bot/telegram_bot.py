@@ -6,9 +6,15 @@ from telegram import Bot, BotCommand
 
 from fitcoach.infrastructure.config.settings import get_settings
 
-_BOT_COMMANDS = [BotCommand("start", "Inicia la conversación con FitCoachIA")]
-
 _commands_registered = False
+
+
+def to_bot_command(raw: str) -> BotCommand:
+    """Map a ``name:description`` config entry to a Telegram ``BotCommand``."""
+    name, separator, description = raw.partition(":")
+    if not separator or not name.strip() or not description.strip():
+        raise ValueError(f"Invalid Telegram command {raw!r}: expected 'name:description'")
+    return BotCommand(name.strip(), description.strip())
 
 
 @lru_cache
@@ -28,6 +34,7 @@ async def get_bot() -> Bot:
     bot = _create_bot()
     await bot.initialize()
     if not _commands_registered:
-        await bot.set_my_commands(_BOT_COMMANDS)
+        commands = [to_bot_command(raw) for raw in get_settings().bot_telegram_commands]
+        await bot.set_my_commands(commands)
         _commands_registered = True
     return bot

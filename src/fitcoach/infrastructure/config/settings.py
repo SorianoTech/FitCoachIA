@@ -10,10 +10,12 @@ Precedence (high -> low): OS env vars > ``.env.<APP_ENV>`` > ``.env`` > defaults
 
 import os
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-_APP_ENV = os.getenv("APP_ENV", "development")
+_APP_ENV = os.getenv("APP_ENV", "dev")
 
 
 class Settings(BaseSettings):
@@ -26,6 +28,15 @@ class Settings(BaseSettings):
     app_env: str = _APP_ENV
     bot_telegram_token: str
     bot_telegram_url: str  # webhook URL; not needed to send messages
+    # "name:description" pairs joined by commas, e.g. "start:Inicia FitCoach,doubts:Resuelve dudas"
+    bot_telegram_commands: Annotated[list[str], NoDecode]
+
+    @field_validator("bot_telegram_commands", mode="before")
+    @classmethod
+    def _split_commands(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
 
 
 @lru_cache

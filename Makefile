@@ -51,7 +51,7 @@ tests:
 
 run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
-	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
+	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) --env-file .env $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"
 
 stop:

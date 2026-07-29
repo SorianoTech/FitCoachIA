@@ -5,6 +5,13 @@ services:
     build:
       context: ../src
       dockerfile: Dockerfile
+    environment:
+      # Dummy values: just enough for the fail-fast startup check to pass.
+      # Not real credentials -- this container never calls the Telegram API,
+      # it only boots and answers /health.
+      - bot_telegram_token=ci-test-token
+      - bot_telegram_url=http://ci-telegram-mock:9999
+      - bot_telegram_commands=start:Inicia FitCoach
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -13,7 +20,8 @@ services:
       start_period: 15s
     networks:
       - proxy-network
-
+    ports:
+      - 8000:8000
 networks:
   proxy-network:
     driver: bridge

@@ -1,7 +1,5 @@
 """Agent entities: each holds its composed LLM system prompt."""
 
-RAG_CONTEXT_PLACEHOLDER = "{{rag_context}}"
-
 
 class Agent:
     def __init__(self, system_prompt: str) -> None:
@@ -13,7 +11,7 @@ class Agent:
         Does not mutate ``system_prompt``: retrieved context is per-request,
         so the same agent instance is reused across calls with fresh context.
         """
-        return self.system_prompt.replace(RAG_CONTEXT_PLACEHOLDER, rag_context)
+        return self.system_prompt.replace("{{rag_context}}", rag_context)
 
 
 class InterviewerAgent(Agent):

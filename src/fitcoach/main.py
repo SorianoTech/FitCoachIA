@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ from fitcoach.infrastructure.config.settings import get_ia_settings, get_setting
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Fail fast: abort startup on missing/malformed Telegram or IA configuration."""
     configure_logging()
     settings = get_settings()  # ValidationError if token/url/commands are missing

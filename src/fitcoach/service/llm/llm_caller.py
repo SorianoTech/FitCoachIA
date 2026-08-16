@@ -1,8 +1,10 @@
+import json
 import logging
 from functools import lru_cache
 
 import httpx
 
+from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
 
@@ -36,13 +38,34 @@ class LLM:
                 },
             )
             response.raise_for_status()
-
-            data = response.json()
-            return data.get("choices", [])[0].get("message", {}).get("content", "").strip()
+            return self._extract_content(response)
 
         except httpx.HTTPStatusError as e:
             logger.error(f"Error LLM: {e.response.status_code} - {e.response.text}")
             raise
+
+    @staticmethod
+    def _extract_content(response: httpx.Response) -> str:
+        """Texto de una respuesta OpenAI-compatible; "" si la forma no es la esperada.
+
+        Se devuelve "" en lugar de propagar porque el llamante ya trata la respuesta
+        vacia como fallo del modelo. Asi la traza dice que venia mal en el cuerpo, en
+        vez de un stacktrace que no distingue esto de una caida de red.
+        """
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            body = response.text[: Constants.MAX_LOGGED_CHARS]
+            logger.error(f"Respuesta del LLM con forma inesperada: {body}")
+            return ""
+
+        if not isinstance(content, str):
+            # `content: null` es lo que devuelve el modelo cuando responde con
+            # tool_calls en lugar de texto.
+            logger.error(f"'content' no es texto: tipo {type(content).__name__}")
+            return ""
+
+        return content.strip()
 
 
 @lru_cache

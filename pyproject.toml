@@ -36,6 +36,7 @@ dev = [
     "coverage>=7.13.5",
     "ruff>=0.15.12",
     "mypy>=1.10",
+    "types-regex>=2026.7.19",  # stubs de `regex`: solo para mypy, no se instala en runtime
     "pre-commit>=4.6.0",
 ]
 

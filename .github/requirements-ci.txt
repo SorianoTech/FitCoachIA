@@ -7,3 +7,4 @@ mypy==1.20.2
 pip_audit==2.9.0
 ruff==0.15.12
 testcontainers==4.14.2
+types-regex==2026.7.19.20260720

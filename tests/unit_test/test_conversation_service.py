@@ -53,17 +53,15 @@ def _message_payload(
 
 
 def _text_update(chat_id: int, text: str) -> Update:
-    return Update.de_json(
-        {
-            "update_id": 1,
-            "message": {
-                "message_id": 10,
-                "date": 0,
-                "chat": {"id": chat_id, "type": "private"},
-                "text": text,
-            },
-        }
-    )
+    return Update.de_json({
+        "update_id": 1,
+        "message": {
+            "message_id": 10,
+            "date": 0,
+            "chat": {"id": chat_id, "type": "private"},
+            "text": text,
+        },
+    })
 
 
 class TestRemoveEmojis:
@@ -140,9 +138,10 @@ class TestLogHelpers:
         assert user_label(None) == Constants.UNKNOWN_USER
 
     def test_format_llm_input_shows_role_length_and_real_content(self) -> None:
-        llm_input = IAInput(
-            [IAMessage(role="system", message=""), IAMessage(message="Buenos dias")]
-        )
+        llm_input = IAInput([
+            IAMessage(role="system", message=""),
+            IAMessage(message="Buenos dias"),
+        ])
 
         formatted = format_llm_input(llm_input)
 

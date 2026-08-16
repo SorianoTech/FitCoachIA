@@ -145,12 +145,10 @@ class ConversationService:
         system_prompt_with_context = interviewer_agent.insert_context("")
         if not system_prompt_with_context:
             logger.debug(f"{ctx} el system prompt va vacio: el modelo no recibe instrucciones")
-        return IAInput(
-            [
-                IAMessage(role="system", message=system_prompt_with_context),
-                IAMessage(message=user_message),
-            ]
-        )
+        return IAInput([
+            IAMessage(role="system", message=system_prompt_with_context),
+            IAMessage(message=user_message),
+        ])
 
     async def _send(self, chat_id: int, message_thread_id: int | None, text: str) -> None:
         await self._bot.send_message(

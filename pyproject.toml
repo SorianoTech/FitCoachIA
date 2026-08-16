@@ -49,6 +49,7 @@ packages = ["src/fitcoach"]
 target-version = "py311"
 line-length = 100
 output-format = "concise"
+preview = true
 
 # Modo informativo: rutas excluidas del análisis (solo analiza ficheros .py/.pyi)
 extend-exclude = [

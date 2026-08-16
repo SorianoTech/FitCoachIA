@@ -15,6 +15,7 @@ services:
       - ia_token=ci-test-token
       - ia_model=ci-test-model
       - ia_temperature=0.5
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s

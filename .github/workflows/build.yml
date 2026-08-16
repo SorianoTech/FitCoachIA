@@ -120,7 +120,7 @@ jobs:
           PYTHON_VERSION: "3.11"
           REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
 
-      # Levanta la app y ejecuta los tests
+      # Levanta la app y ejecuta los tests. Una vez terminen, se elimina el contenedor
       - name: Run app && execute tests
         run: |
           echo "Execute docker compose with all necessary services for testing"
@@ -131,10 +131,11 @@ jobs:
             echo "pytest not found"
             exit 1
           fi
-
           echo "Executing unit test and integration tests with cover"
-          uv run pytest ./tests
+          PYTHONPATH=app uv run pytest ./tests
+          TEST_EXIT_CODE=$?
 
-      - name: Stop containers
-        if: always()
-        run: docker compose -f ./tests/docker-compose-ci.yml down
+          echo "Stopping containers"
+          docker compose -f ./tests/docker-compose-ci.yml down
+
+          exit $TEST_EXIT_CODE

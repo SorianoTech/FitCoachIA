@@ -33,14 +33,16 @@ Este fichero cumple dos roles distintos que conviven en el mismo archivo:
 | `requires-python = ">=3.11"` | Versión mínima de Python soportada. Alineada con `python:3.11-slim` en `src/Dockerfile` — si un día se sube la imagen base, este valor (y `target-version`/`python_version` de ruff/mypy) debe subir también |
 | `dependencies` | Dependencias **directas** de runtime: solo lo que el código de `src/fitcoach` importa explícitamente |
 
-> **¿Por qué no aparecen `starlette`, `anyio`, `httpx`, etc.?**
-> Son dependencias **transitivas** (las arrastran `fastapi` y otras). `uv` las resuelve automáticamente y las fija en `uv.lock`; listarlas a mano en `dependencies` sería redundante y se desincronizaría con el tiempo.
+> **¿Por qué no aparecen `starlette`, `anyio`, etc.?**
+> Son dependencias **transitivas** (las arrastran `fastapi` y otras). `uv` las resuelve automáticamente al compilar los `requirements`; listarlas a mano en `dependencies` sería redundante y se desincronizaría con el tiempo.
+>
+> `httpx` sí aparece, y no es una excepción arbitraria: `service/llm/llm_caller.py` lo **importa directamente**. Llegaba transitivo por `fastapi[standard]`, pero depender de un transitivo que tu código importa es frágil — el día que `fastapi` deje de arrastrarlo, la app rompe sin que ningún fichero de dependencias haya cambiado. La regla es: si el código lo importa, se declara.
 
 > **¿Por qué `fastapi[standard]` y no `fastapi` a secas?**
 > El extra `standard` incluye `uvicorn`, `fastapi-cli`, `python-multipart`, `email-validator`, etc. — todo lo que `src/Dockerfile` necesita para poder ejecutar `ENTRYPOINT ["fastapi", "run", "fitcoach/main.py"]`. Sin el extra, ese comando no existiría en el entorno.
 
-> **¿Por qué versiones con `>=` y no fijadas como en `src/requirements.txt`?**
-> `src/requirements.txt` es la salida de un `pip freeze`: una lista plana de todo (directo + transitivo) con versiones exactas. En `pyproject.toml` se listan solo las dependencias directas con una cota mínima; es `uv.lock` quien fija las versiones exactas y reproducibles de **todo el árbol**, directo y transitivo. Con la migración a uv, `uv.lock` pasa a ser la fuente de verdad y `requirements.txt` se generaría a partir de él (`uv export`) para consumirlo en Docker/CI, en vez de mantenerse a mano.
+> **¿Por qué versiones con `>=` y no fijadas como en los `requirements.txt`?**
+> `pyproject.toml` declara **intención**: qué necesita el proyecto, con una cota mínima. Los `requirements.txt` son **resultado**: el árbol completo (directo + transitivo) con versiones exactas, generados desde aquí. Esa es la separación clásica entre manifiesto y lockfile. Como `.gitignore` excluye `*.lock`, los ficheros compilados hacen de lockfile versionado del proyecto.
 
 ---
 
@@ -48,11 +50,35 @@ Este fichero cumple dos roles distintos que conviven en el mismo archivo:
 
 | Clave | Qué hace |
 |-------|----------|
-| `dev = [...]` | Dependencias que solo hacen falta para **desarrollar** el proyecto (tests, linting, hooks) — nunca se instalan en la imagen de producción |
+| `dev = [...]` | Dependencias para **desarrollar** en local (tests, linting, hooks) — nunca se instalan en la imagen de producción |
+| `ci = [...]` | Herramientas que solo usa el **pipeline** (bandit, pip-audit, cyclonedx, testcontainers) — no hacen falta ni en producción ni en local |
 
 Es el estándar [PEP 735](https://peps.python.org/pep-0735/), soportado nativamente por `uv`:
 - `uv sync` instala el paquete **más** los grupos de dependencias (por defecto, `dev`).
-- `uv sync --no-dev` instala solo lo que hay en `[project.dependencies]` — lo que se usaría, por ejemplo, al construir la imagen Docker final.
+- `uv sync --no-dev` instala solo lo que hay en `[project.dependencies]`.
+
+---
+
+## Generación de los `requirements.txt`
+
+Los dos ficheros son **artefactos compilados**: no se editan a mano. `pyproject.toml` es la única fuente de verdad.
+
+| Fichero | Contiene | Lo consume |
+|---------|----------|------------|
+| `src/requirements.txt` | Solo `[project.dependencies]` + transitivas | `src/Dockerfile` → imagen de producción |
+| `.github/requirements-ci.txt` | Lo anterior **+** grupos `dev` y `ci` | `.github/actions/python-setup` → entorno de CI |
+
+Para regenerarlos tras tocar dependencias en `pyproject.toml`, hay que lanzar **los dos comandos**: si solo se actualiza uno, los pines comunes se desincronizan y CI deja de validar lo que realmente se despliega.
+
+```bash
+uv pip compile pyproject.toml --universal --python-version 3.11 --no-annotate -o src/requirements.txt
+uv pip compile pyproject.toml --group dev --group ci --universal --python-version 3.11 --no-annotate -o .github/requirements-ci.txt
+```
+
+- `--universal` es obligatorio: se compila en Windows pero se despliega en Linux. Sin él, el resultado se ata a la plataforma que lo genera y se pierden paquetes con marcador (`uvloop` solo existe fuera de Windows, `colorama` solo en Windows).
+- `--python-version 3.11` alinea la resolución con `python:3.11-slim` del `Dockerfile`.
+- `--no-annotate` deja solo la lista de pines, sin los comentarios `# via` que indican qué paquete arrastra a cuál. Esa trazabilidad se consulta cuando hace falta con `uv pip tree`.
+- Al escribir sobre un fichero existente, `uv` respeta los pines actuales como preferencia: solo mueve lo que la nueva restricción obliga a mover. Para forzar la subida de todo, se añade `--upgrade`.
 
 ---
 

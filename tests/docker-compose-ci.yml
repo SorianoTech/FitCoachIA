@@ -26,6 +26,7 @@ services:
       - proxy-network
     ports:
       - 8000:8000
+
 networks:
   proxy-network:
     driver: bridge

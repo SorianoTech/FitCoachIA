@@ -5,6 +5,17 @@ services:
     build:
       context: ../src
       dockerfile: Dockerfile
+    environment:
+      # Dummy values: just enough for the fail-fast startup check to pass.
+      - bot_telegram_token=ci-test-token
+      - bot_telegram_url=http://ci-telegram-mock:9999
+      - bot_telegram_commands=start:Inicia FitCoach
+      - log_level=INFO
+      - ia_base_url=http://ci-llm-mock:9999
+      - ia_token=ci-test-token
+      - ia_model=ci-test-model
+      - ia_temperature=0.5
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -13,6 +24,8 @@ services:
       start_period: 15s
     networks:
       - proxy-network
+    ports:
+      - 8000:8000
 
 networks:
   proxy-network:

@@ -7,7 +7,7 @@ from fitcoach.service.word_counter_service import (
     WordCounterService,
 )
 
-router = APIRouter()
+main_router = APIRouter()
 
 
 class Request(BaseModel):
@@ -23,7 +23,7 @@ def get_word_counter_service() -> WordCounterService:
     return WordCounterService()
 
 
-@router.post("/test", response_model=Response)
+@main_router.post("/test", response_model=Response)
 async def analyze_message(
     payload: Request,
     service: WordCounterService = Depends(get_word_counter_service),

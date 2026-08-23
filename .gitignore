@@ -20,4 +20,6 @@ venv**/
 #Binary
 __pycache__/
 
-uv.lock
+*.lock
+
+.mypy*elop

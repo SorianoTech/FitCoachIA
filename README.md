@@ -48,7 +48,7 @@ FitCoachIA/
 │   │   ├── service/              # Casos de uso y lógica de negocio
 │   │   └── main.py               # Punto de entrada de la aplicación
 │   ├── Dockerfile                # Dockerización de la aplicación
-│   └── requirements.txt          # Dependencias del contenedor
+│   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
 ├── tests/
 │   ├── unit_test/                     # Tests unitarios
 │   └── it/                       # Tests de integración
@@ -63,12 +63,13 @@ FitCoachIA/
 │   │   ├── build.yml             # Pipeline de calidad, seguridad y tests (feature branches)
 │   │   ├── release.yml           # Publicación de imagen Docker y release en GitHub (main)
 │   │   └── validate-merge-source.yml  # Valida que los PRs a main vengan de develop
-│   └── requirements-ci.txt       # Dependencias del entorno CI (herramientas + src/requirements.txt)
+│   └── requirements-ci.txt       # Dependencias del entorno CI: runtime + dev + ci (generado desde pyproject.toml)
 ├── scripts/                      # Scripts de utilidad
 ├── .env.development              # Variables de entorno para desarrollo
 ├── .env.example                  # Plantilla de variables de entorno
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit)
 ├── docker-compose.yml            # Configuración de Docker Compose
+├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
 ├── pyproject.toml                # Configuración de ruff, mypy y pytest
 ├── LICENSE.md
 ├── Makefile                      # Automatización de tareas

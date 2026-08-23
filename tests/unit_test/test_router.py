@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fitcoach.api.router import get_word_counter_service, router
+from fitcoach.api.router import get_word_counter_service, main_router
 from fitcoach.service.word_counter_service import (
     EmptyMessageError,
     MessageTooLongError,
@@ -20,7 +20,7 @@ def mock_service() -> MagicMock:
 @pytest.fixture
 def client(mock_service: MagicMock) -> TestClient:
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(main_router)
     app.dependency_overrides[get_word_counter_service] = lambda: mock_service
     return TestClient(app)
 

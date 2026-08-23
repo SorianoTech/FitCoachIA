@@ -10,7 +10,7 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-.PHONY: container build run stop clean all help tag images clean-images logs tests unit_test it_tests
+.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -41,17 +41,18 @@ build:
 	fi
 
 unit_tests:
-	PYTHONPATH=$(BASE_PACKAGE) pytest $(UNIT_TEST_PACKAGE) --no-cov
+	pytest $(UNIT_TEST_PACKAGE) --no-cov
 
 it_tests:
-	PYTHONPATH=$(BASE_PACKAGE) pytest $(IT_TEST_PACKAGE) --no-cov
+	pytest $(IT_TEST_PACKAGE) --no-cov
 
 tests:
-	PYTHONPATH=$(BASE_PACKAGE) pytest $(BASE_TEST_PACKAGE) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80
+	pytest $(BASE_TEST_PACKAGE) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80
 
 run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
-	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
+	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) --env-file .env \
+		$(if $(log_level),-e log_level=$(log_level),) $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"
 
 stop:

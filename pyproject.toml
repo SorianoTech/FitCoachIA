@@ -89,7 +89,11 @@ select = [
     "T20",    # detecta print()/pprint() residuales
     "PT",     # buenas prácticas en tests pytest
 ]
+<<<<<<< HEAD
 ignore = ["B008", "E501"]
+=======
+ignore = ["B008"]
+>>>>>>> develop
 
 [tool.ruff.lint.per-file-ignores]
 # Permitir asserts (S101) y no exigir docstrings (D) en tests.
@@ -100,7 +104,11 @@ ignore = ["B008", "E501"]
 # MYPY — análisis estático de tipos
 # ============================================================================
 [tool.mypy]
+<<<<<<< HEAD
 python_version = "3.11"
+=======
+python_version = "3.12"
+>>>>>>> develop
 strict = true
 
 # Imprescindibles para proyectos de IA generativa
@@ -129,7 +137,11 @@ pretty = true
 # ============================================================================
 [tool.pytest.ini_options]
 minversion = "8.0"
+<<<<<<< HEAD
 testpaths = ["tests/unit_test", "tests/it"]
+=======
+testpaths = ["tests/unit"]
+>>>>>>> develop
 pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
@@ -156,8 +168,11 @@ source = ["src"]
 
 [tool.coverage.report]
 fail_under = 80
+<<<<<<< HEAD
 
 [tool.uv.workspace]
 members = [
     "telegram-bot",
 ]
+=======
+>>>>>>> develop

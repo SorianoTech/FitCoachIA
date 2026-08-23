@@ -69,11 +69,11 @@ FitCoachIA/
 ├── .env.example                  # Plantilla de variables de entorno
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit)
 ├── docker-compose.yml            # Configuración de Docker Compose
+<<<<<<< HEAD
 ├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
+=======
+├── pyproject.toml                # Configuración de ruff, mypy y pytest
 ├── LICENSE.md
-├── Makefile                      # Automatización de tareas
-└── README.md
-```
 
 ### Comandos disponibles con Makefile
 

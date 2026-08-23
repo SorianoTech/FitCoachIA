@@ -1,0 +1,20 @@
+services:
+  fitcoach-ia:
+    build:
+      context: ../src
+      dockerfile: Dockerfile
+    ports:
+      - "${IT_PORT:-8001}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - proxy-network
+
+networks:
+  proxy-network:
+    driver: bridge

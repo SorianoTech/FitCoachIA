@@ -1,0 +1,141 @@
+name: Test and build project
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'feat/**'
+      - 'fix/**'
+      - 'bugfix/**'
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'Makefile'
+      - '.env.example'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'Makefile'
+      - '.env.example'
+      - 'docs/**'
+    branches:
+      - 'feature/**'
+      - 'feat/**'
+      - 'fix/**'
+      - 'bugfix/**'
+env:
+  PYTHON_VERSION: "3.12"
+  RUFF_PYTHON_VERSION: py312
+  ENVIRONMENT: development
+  REQUIREMENTS_FILE_PATH: "./.github/requirements-ci.txt"
+  SOURCECODE_PATH: ./src/fitcoach/
+  CONFIG_FILE: pyproject.toml
+
+concurrency:
+  group: ${{ github.ref_name }}-${{ github.workflow_sha }}
+  cancel-in-progress: false
+
+jobs:
+  # ════════════════════════════════════════════
+  # 1. QUALITY — lint, format, tipos
+  #    SECURITY — secrets, deps, SAST (Static Application Security Test)
+  # ════════════════════════════════════════════
+  quality-security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          ref: '${{ github.ref_name }}'
+          fetch-depth: 0
+
+      # Action customizada. Setea la version de python e instala dependencias necesarias
+      - name: Python setup
+        uses: ./.github/actions/python-setup
+        env:
+          PYTHON_VERSION: "3.11"
+          REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
+
+      - name: Quality assurance
+        uses: ./.github/actions/quality-check
+        env:
+          SOURCECODE_PATH: ${{ env.SOURCECODE_PATH }}
+          CONFIG_FILE: ${{ env.CONFIG_FILE }}
+
+  semgrep-analysis:
+    runs-on: ubuntu-latest
+    needs: quality-security-gate
+    container:
+      image: semgrep/semgrep
+    permissions:
+      security-events: write
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          ref: '${{ github.ref_name }}'
+          fetch-depth: 0
+
+      - name: Run Semgrep
+        env:
+          BASELINE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          BASELINE_FLAG=""
+          [ -n "$BASELINE_SHA" ] && BASELINE_FLAG="--baseline-commit=$BASELINE_SHA"
+          semgrep scan \
+          --config=p/python \
+          --config=p/owasp-top-ten \
+            $BASELINE_FLAG \
+          --severity=ERROR \
+          --severity=WARNING \
+          --error \
+          --sarif \
+            src/ > semgrep-output.sarif
+        continue-on-error: true
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-output.sarif
+  # ════════════════════════════════════════════
+  # 2. UNIT TESTS && IT TESTS - Ejecución de test unitarios y de integración con cobertura >= 80%
+  # ════════════════════════════════════════════
+  test-gate:
+    runs-on: ubuntu-latest
+    needs: semgrep-analysis
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          ref: '${{ github.ref_name }}'
+
+      - name: Python setup
+        uses: ./.github/actions/python-setup
+        env:
+          PYTHON_VERSION: "3.11"
+          REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
+
+      # Levanta la app y ejecuta los tests. Una vez terminen, se elimina el contenedor
+      - name: Run app && execute tests
+        run: |
+          echo "Execute docker compose with all necessary services for testing"
+          docker compose -f ./tests/docker-compose-ci.yml up -d
+
+          echo "Checking if pytest is installed"
+          if ! uv run pytest --version > /dev/null 2>&1; then
+            echo "pytest not found"
+            exit 1
+          fi
+          echo "Executing unit test and integration tests with cover"
+          PYTHONPATH=app uv run pytest ./tests
+          TEST_EXIT_CODE=$?
+
+          echo "Stopping containers"
+          docker compose -f ./tests/docker-compose-ci.yml down
+
+          exit $TEST_EXIT_CODE

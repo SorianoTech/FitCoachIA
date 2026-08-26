@@ -1,0 +1,101 @@
+# ============================================================================
+# RUFF — linter y formateador
+# ============================================================================
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+output-format = "concise"
+
+# Modo informativo: rutas excluidas del análisis (solo analiza ficheros .py/.pyi)
+extend-exclude = [
+    "**/__init__.py",            # re-exports y agregadores; suelen romper F401/D104
+    "build",                     # artefactos de build
+    "dist",                      # artefactos de empaquetado
+    "**/Dockerfile*",            # ficheros Docker (no son Python)
+    "**/docker-compose*.yml",    # composición Docker (no es Python)
+    "docker/**",                 # recursos auxiliares Docker
+    "**/requirements*.txt",      # listados de dependencias (no son Python)
+    "scripts/**",
+]
+
+[tool.ruff.lint]
+# Familias de reglas habilitadas. Cada prefijo agrupa un conjunto temático.
+select = [
+    "E",      # estilo PEP 8 (errores)
+    "F",      # imports/variables sin usar, errores lógicos
+    "UP",     # sintaxis modernizable a la versión target
+    "B",      # bugs y malas prácticas frecuentes
+    "C4",     # comprehensions más idiomáticas/eficientes
+    "I",      # orden y agrupación de imports
+    "N",      # convenciones de nombres PEP 8
+    "S",      # problemas de seguridad estáticos
+    "T20",    # detecta print()/pprint() residuales
+    "PT",     # buenas prácticas en tests pytest
+]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Permitir asserts (S101) y no exigir docstrings (D) en tests.
+"tests/**/*.py" = ["S101", "D"]
+
+
+# ============================================================================
+# MYPY — análisis estático de tipos
+# ============================================================================
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+# Imprescindibles para proyectos de IA generativa
+ignore_missing_imports = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true
+
+# Para APIs y modelos (Pydantic, dataclasses)
+plugins = ["pydantic.mypy"]
+
+# Exclusiones habituales en proyectos IA (regex)
+exclude = "scripts/|tests/"
+show_error_codes = true
+pretty = true
+
+# ============================================================================
+# PYTEST — config por defecto: tests unitarios.
+# Para integración, override por CLI:
+#   pytest tests/integration --no-cov
+# ============================================================================
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests/unit"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+addopts = [
+    "--cache-clear",
+    "--tb=short",
+    "-v",
+    "--cov",
+]
+
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s — %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+
+# ============================================================================
+# COVERAGE — fuente y umbral mínimo
+# ============================================================================
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 80

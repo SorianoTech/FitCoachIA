@@ -1,20 +1,20 @@
-name: Validar origen del merge a main
+name: Validar origen del merge a develop
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
-      - main
+      - develop
 
 jobs:
   validate-merge-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Validar que el PR sea desde develop
+      - name: Validar que el PR sea desde una rama feature/** o fix/**
         run: |
-          if [[ "${{ github.head_ref }}" != "develop" ]]; then
-            echo "Solo se permiten merges desde 'develop' a 'main'"
+          if [[ "${{ github.head_ref }}" != feature/* && "${{ github.head_ref }}" != fix/* ]]; then
+            echo "Solo se permiten merges desde ramas 'feature/**' o 'fix/**' a 'develop'"
             echo "Tu rama: ${{ github.head_ref }}"
             exit 1
           fi
-          echo "PR válido desde develop"
+          echo "PR válido desde ${{ github.head_ref }}"

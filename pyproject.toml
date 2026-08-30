@@ -72,7 +72,7 @@ pretty = true
 # ============================================================================
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests/unit"]
+testpaths = ["tests/unit_test"]
 pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]

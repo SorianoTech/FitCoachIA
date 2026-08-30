@@ -7,3 +7,9 @@ mypy==1.20.2
 pip_audit==2.9.0
 ruff==0.15.12
 testcontainers==4.14.2
+
+# No es dependencia de la app: lo aporta el entorno de Python. Se fija aqui
+# porque pip-audit audita el entorno completo y la version por defecto
+# arrastra PYSEC-2026-3447. No va en src/requirements.txt para no meterlo
+# en la imagen de produccion, que no lo necesita.
+setuptools==83.0.0

@@ -87,11 +87,11 @@ jobs:
 
       # Analiza la imagen en búsqueda de vulnerabilidades del SO, librerias y secretos expuestos en la imagen
       - name: Container scan (trivy)
-        uses: lazy-actions/gitrivy@v2
+        uses: lazy-actions/gitrivy@v3
         with:
           issue_title: Image Security Alert
           token: ${{ github.token }}
-          image: ${{ steps.docker-image.outputs.tags }}
+          image: $DOCKER_IMAGE_BASE:${{ github.event.inputs.version }}
           severity: CRITICAL,HIGH
 
       - name: Generate tag and Release

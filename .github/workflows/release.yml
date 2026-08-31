@@ -36,7 +36,7 @@ jobs:
             echo "La imagen ya existe. Aumente la versión minor de entrada"
             exit 1
           else
-            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla
+            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla"
           fi
         continue-on-error: false
 

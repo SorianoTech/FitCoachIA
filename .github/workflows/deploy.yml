@@ -14,11 +14,6 @@ on:
         required: true
         type: string
         description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
-      port:
-        required: false
-        type: number
-        description: "SSH remote port (default: 22)"
-        default: 22
     # Como secrets y no como inputs: un input string no se enmascara en los logs.
     secrets:
       SERVER_HOST:
@@ -26,8 +21,6 @@ on:
       SERVER_PKEY:
         required: true
       SERVER_USER:
-        required: true
-      DOCKER_USER:
         required: true
       DOCKER_IMAGE_NAME:
         required: true
@@ -37,12 +30,17 @@ env:
   DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
   CONTAINER_NAME: "fitcoach-ia"
   APP_PORT: "8000"
+  DEPLOY_TARGET_DIR: "/home/${{ secrets.SERVER_USER }}"
+  SSH_PORT: 22
 
 jobs:
   Deploy:
     name: Deploy-to-server
     runs-on: ubuntu-latest
     steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+
       - name: Obtener nombre imagen
         id: image_version
         run: |
@@ -64,12 +62,12 @@ jobs:
           REMOTE_HOST: ${{ secrets.SERVER_HOST }}
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_PKEY }}
           REMOTE_USER: ${{ secrets.SERVER_USER }}
-          REMOTE_PORT: ${{ inputs.port }}
-          SOURCE: /home/${{ secrets.DOCKER_USER }}
+          REMOTE_PORT: ${{ env.SSH_PORT }}
+          SOURCE: docker-compose.yml
+          TARGET: ${{ env.DEPLOY_TARGET_DIR }}/
           SCRIPT_BEFORE_REQUIRED: true
           SCRIPT_BEFORE: |
             set -e
-            REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
             CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
             NEW_IMAGE="${{ inputs.image }}"
@@ -79,23 +77,11 @@ jobs:
 
             step "Contexto"
             log "Servidor:           $(hostname)"
-            log "Repositorio:        $REPO_DIR"
             log "Imagen a desplegar: $NEW_IMAGE"
             log "Contenedor:         $CONTAINER_NAME"
             log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
 
-            step "1/5 Sincronizar repositorio"
-            if [ -d "$REPO_DIR/.git" ]; then
-              log "Repositorio encontrado -> git pull --ff-only"
-              git -C "$REPO_DIR" pull --ff-only
-            else
-              log "Repositorio no encontrado -> git clone"
-              git clone ${{ github.repositoryUrl }}
-            fi
-            log "Contenido de $REPO_DIR:"
-            ls "$REPO_DIR" | head -10 | sed 's/^/      /'
-
-            step "2/5 Estado actual del contenedor"
+            step "1/4 Estado actual del contenedor"
             CURRENT_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
             if [ -z "$CURRENT_IMAGE" ]; then
               log "No existe ningún contenedor '$CONTAINER_NAME'"
@@ -105,7 +91,7 @@ jobs:
               log "  estado:        $(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")"
             fi
 
-            step "3/5 Decisión sobre el contenedor actual"
+            step "2/4 Decisión sobre el contenedor actual"
             if [ "$CURRENT_IMAGE" = "$NEW_IMAGE" ]; then
               log "La imagen actual coincide con la solicitada -> recreación forzada"
               docker rm -f "$CONTAINER_NAME"
@@ -117,11 +103,11 @@ jobs:
               log "Nada que conservar ni eliminar"
             fi
 
-            step "4/5 Imágenes locales de la aplicación (antes del pull)"
+            step "3/4 Imágenes locales de la aplicación (antes del pull)"
             docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}  creada {{.CreatedSince}}' \
               | grep "$IMAGE_BASE" || log "Ninguna imagen local de la aplicación"
 
-            step "5/5 Descargar nueva imagen"
+            step "4/4 Descargar nueva imagen"
             log "docker pull $NEW_IMAGE (con el contenedor anterior aún vivo)"
             docker pull "$NEW_IMAGE"
             log "Descargada: $(docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "$NEW_IMAGE" || true)"
@@ -129,11 +115,11 @@ jobs:
           SCRIPT_AFTER_REQUIRED: true
           SCRIPT_AFTER: |
             set -e
-            REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
             CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
             NEW_IMAGE="${{ inputs.image }}"
             VERSION="${{ steps.image_version.outputs.VERSION }}"
+            COMPOSE_FILE="${{ env.DEPLOY_TARGET_DIR }}/docker-compose.yml"
             DEPLOY_OK=false
 
             step() { echo ""; echo "=== $* ==="; }
@@ -141,8 +127,8 @@ jobs:
 
             step "1/4 Levantar la nueva versión"
             log "Imagen:  $NEW_IMAGE"
-            log "Comando: VERSION=$VERSION docker compose -f $REPO_DIR/docker-compose.yml up -d"
-            if VERSION="$VERSION" docker compose -f "$REPO_DIR/docker-compose.yml" up -d; then
+            log "Comando: VERSION=$VERSION docker compose -f $COMPOSE_FILE up -d"
+            if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" up -d; then
               log "compose up completado"
               log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
 

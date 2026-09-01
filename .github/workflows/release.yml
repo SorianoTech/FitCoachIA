@@ -125,10 +125,8 @@ jobs:
     uses: ./.github/workflows/deploy.yml
     with:
       image: ${{ needs.Release.outputs.image }}
-      port: 22
     secrets:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_PKEY: ${{ secrets.SERVER_PKEY }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
-      DOCKER_USER: ${{ secrets.DOCKER_USER }}
       DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}

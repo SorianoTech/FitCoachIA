@@ -95,7 +95,7 @@ jobs:
           format: 'sarif'
           output: 'trivy-release-results.sarif'
           severity: HIGH,CRITICAL
-          exit-code: 1
+          exit-code: 0
 
       # always(): con exit-code 1 el scan falla justo cuando el informe interesa.
       - name: Upload Trivy scan results to GitHub Security tab

@@ -14,23 +14,23 @@ on:
         required: true
         type: string
         description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
-      host:
-        required: true
-        type: string
-        description: "SSH remote host"
       port:
         required: false
         type: number
         description: "SSH remote port (default: 22)"
         default: 22
-      key:
+    # Como secrets y no como inputs: un input string no se enmascara en los logs.
+    secrets:
+      SERVER_HOST:
         required: true
-        type: string
-        description: "SSH private key to connect to remote host"
-      username:
+      SERVER_PKEY:
         required: true
-        type: string
-        description: "SSH username to acces to remote host"
+      SERVER_USER:
+        required: true
+      DOCKER_USER:
+        required: true
+      DOCKER_IMAGE_NAME:
+        required: true
 
 env:
   PYTHON_VERSION: "3.12"
@@ -44,17 +44,16 @@ jobs:
     steps:
       - name: Obtener nombre imagen
         id: image_version
-        run: echo "VERSION=$(echo "${{ inputs.image }}" | cut -d':' -f2)" >> $GITHUB_ENV
+        run: echo "VERSION=$(echo "${{ inputs.image }}" | cut -d':' -f2)" >> $GITHUB_OUTPUT
 
+      # Los SCRIPT_* corren en el servidor remoto: el env del runner no cruza el SSH.
       - name: deploy
         uses: easingthemes/ssh-deploy@v5.1.0
-        env:
-          IMAGE_NAME: ${{ env.DOCKER_IMAGE_BASE }}
-          IMAGE_VERSION: ${{ steps.image_version.outputs.VERSION }}
         with:
-          REMOTE_HOST: ${{ inputs.host || secrets.SERVER_HOST }}
-          SSH_PRIVATE_KEY: ${{ inputs.key || secrets.SERVER_PKEY }}
-          REMOTE_USER: ${{ inputs.username || secrets.SERVER_USER}}
+          REMOTE_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_PKEY }}
+          REMOTE_USER: ${{ secrets.SERVER_USER }}
+          REMOTE_PORT: ${{ inputs.port }}
           SOURCE: /home/${{ secrets.DOCKER_USER }}
           SCRIPT_BEFORE_REQUIRED: true
           SCRIPT_BEFORE: |
@@ -71,17 +70,17 @@ jobs:
             fi
 
             # 2. Parar y eliminar contenedor actual (libera puertos/volúmenes antes del sync)
-            echo "Parando contenedor $CONTAINER_NAME si existe..."
-            docker rm -f $CONTAINER_NAME 2>/dev/null && echo "Contenedor eliminado" || echo "No había contenedor previo"
+            echo "Parando contenedor ${{ env.CONTAINER_NAME }} si existe..."
+            docker rm -f ${{ env.CONTAINER_NAME }} 2>/dev/null && echo "Contenedor eliminado" || echo "No había contenedor previo"
 
             # 3. Limpiar imágenes locales viejas (libera disco antes del pull)
-            echo "Verificando imágenes locales de ${IMAGE_NAME}..."
-            EXISTING=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${IMAGE_NAME}:" || true)
+            echo "Verificando imágenes locales de ${{ env.DOCKER_IMAGE_BASE }}..."
+            EXISTING=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${{ env.DOCKER_IMAGE_BASE }}:" || true)
             if [ -n "$EXISTING" ]; then
               echo "Eliminando imágenes existentes: $EXISTING"
               docker rmi $EXISTING
             else
-              echo "No hay imágenes locales de ${IMAGE_NAME}"
+              echo "No hay imágenes locales de ${{ env.DOCKER_IMAGE_BASE }}"
             fi
 
             # 4. Descargar nueva imagen
@@ -94,16 +93,16 @@ jobs:
             REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
 
             # 5. Levantar la nueva versión usando el docker-compose.yml ya sincronizado por rsync
-            echo "Levantando aplicación con VERSION=$VERSION"
-            VERSION=$VERSION docker compose -f $REPO_DIR/docker-compose.yml up -d
+            echo "Levantando aplicación con VERSION=${{ steps.image_version.outputs.VERSION }}"
+            VERSION=${{ steps.image_version.outputs.VERSION }} docker compose -f $REPO_DIR/docker-compose.yml up -d
 
             # 6. Verificar que el contenedor está en ejecución
             echo "Esperando arranque del contenedor..."
             sleep 5
-            if docker ps --filter "name=^${CONTAINER_NAME}$" --filter "status=running" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
-              echo "Contenedor $CONTAINER_NAME levantado correctamente"
+            if docker ps --filter "name=^${{ env.CONTAINER_NAME }}$" --filter "status=running" --format "{{.Names}}" | grep -q "^${{ env.CONTAINER_NAME }}$"; then
+              echo "Contenedor ${{ env.CONTAINER_NAME }} levantado correctamente"
             else
-              echo "ERROR: El contenedor $CONTAINER_NAME no está en ejecución"
-              docker logs $CONTAINER_NAME --tail 50 || true
+              echo "ERROR: El contenedor ${{ env.CONTAINER_NAME }} no está en ejecución"
+              docker logs ${{ env.CONTAINER_NAME }} --tail 50 || true
               exit 1
             fi

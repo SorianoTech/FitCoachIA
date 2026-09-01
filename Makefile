@@ -10,7 +10,16 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-.PHONY: container build run stop clean all help tag images clean-images logs tests unit_test it_tests
+COMPOSE_IT=tests/docker-compose-test.yml
+IT_PORT ?= 8001
+IT_BASE_URL ?= http://localhost:$(IT_PORT)
+export IT_PORT
+export IT_BASE_URL
+
+COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
+COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
+
+.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -24,9 +33,9 @@ help:
 	@echo "  make images                         - Consulta las imagenes en local"
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
 	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
-	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
-	@echo "  make unit_tests                     - execute unit tests (sin cobertura)"
-	@echo "  make it_tests                       - execute unit tests (sin cobertura)"
+	@echo "  make tests                          - execute all tests (unit test and it tests). Levanta el contenedor de integracion, analiza cobertura y falla si cobertura < 80%"
+	@echo "  make unit_tests                     - execute unit tests (sin cobertura, sin Docker)"
+	@echo "  make it_tests                       - levanta el contenedor de integracion, ejecuta los tests de integracion (sin cobertura) y lo detiene"
 
 container:
 	@$(DOCKER) ps -a
@@ -41,13 +50,21 @@ build:
 	fi
 
 unit_tests:
-	PYTHONPATH=$(BASE_PACKAGE) pytest $(UNIT_TEST_PACKAGE) --no-cov
+	pytest --no-cov -o testpaths=$(UNIT_TEST_PACKAGE)
 
 it_tests:
-	PYTHONPATH=$(BASE_PACKAGE) pytest $(IT_TEST_PACKAGE) --no-cov
+	@$(COMPOSE_UP)
+	@pytest --no-cov -o testpaths=$(IT_TEST_PACKAGE); \
+	STATUS=$$?; \
+	$(COMPOSE_DOWN); \
+	exit $$STATUS
 
 tests:
-	PYTHONPATH=$(BASE_PACKAGE) pytest $(BASE_TEST_PACKAGE) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80
+	@$(COMPOSE_UP)
+	@pytest --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
+	STATUS=$$?; \
+	$(COMPOSE_DOWN); \
+	exit $$STATUS
 
 run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))

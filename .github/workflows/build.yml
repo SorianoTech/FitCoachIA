@@ -96,9 +96,10 @@ jobs:
         continue-on-error: true
 
       - name: Upload results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep-output.sarif
+
   # ════════════════════════════════════════════
   # 2. UNIT TESTS && IT TESTS - Ejecución de test unitarios y de integración con cobertura >= 80%
   # ════════════════════════════════════════════
@@ -120,22 +121,7 @@ jobs:
           PYTHON_VERSION: "3.11"
           REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
 
-      # Levanta la app y ejecuta los tests. Una vez terminen, se elimina el contenedor
+      # Levanta el contenedor de integración, ejecuta unitarios + integración con cobertura,
+      # y lo detiene. Mismo comando que en local, para que no puedan divergir.
       - name: Run app && execute tests
-        run: |
-          echo "Execute docker compose with all necessary services for testing"
-          docker compose -f ./tests/docker-compose-ci.yml up -d
-
-          echo "Checking if pytest is installed"
-          if ! uv run pytest --version > /dev/null 2>&1; then
-            echo "pytest not found"
-            exit 1
-          fi
-          echo "Executing unit test and integration tests with cover"
-          PYTHONPATH=app uv run pytest ./tests
-          TEST_EXIT_CODE=$?
-
-          echo "Stopping containers"
-          docker compose -f ./tests/docker-compose-ci.yml down
-
-          exit $TEST_EXIT_CODE
+        run: make tests

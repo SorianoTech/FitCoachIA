@@ -1,4 +1,4 @@
-name: Deploy release
+name: Generate and deploy release
 
 on:
   workflow_dispatch:
@@ -19,15 +19,23 @@ jobs:
     if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
     permissions:
       contents: write
+      security-events: write
+    outputs:
+      image: ${{ steps.image-metadata.outputs.tags }}
     steps:
       - name: Validar formato version
         run: |
-          if [[ "${{ github.event.inputs.version }}" !~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if ! [[ "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Formato de versión incorrecta. La versión debe tener formato X.Y.Z"
             exit 1
           fi
           echo "Versión válida"
-        continue-on-error: true
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Validar existencia de version
         run: |
@@ -36,7 +44,7 @@ jobs:
             echo "La imagen ya existe. Aumente la versión minor de entrada"
             exit 1
           else
-            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla
+            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla"
           fi
         continue-on-error: false
 
@@ -48,24 +56,16 @@ jobs:
 
       # Activar runner docker buildx, mejor que el clasico runner
       - name: Set up Docker runner Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4.2.0
 
-      - name: Log in to registry
-        uses: docker/login-action@v3
-        env:
-          DOCKER_USER: ${{ secrets.DOCKER_USER }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        with:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # metadata-action concatena images x tags: value debe ser solo el tag.
       - name: Generate image metadata
         id: image-metadata
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKER_IMAGE_BASE }}
           tags: |
-            type=raw,value=${{ env.DOCKER_IMAGE_BASE }}:${{ github.event.inputs.version }}
+            type=raw,value=${{ github.event.inputs.version }}
           labels: |
             org.opencontainers.image.title=FitCoachIA
             org.opencontainers.image.description=AI fitness coach service
@@ -89,12 +89,20 @@ jobs:
 
       # Analiza la imagen en búsqueda de vulnerabilidades del SO, librerias y secretos expuestos en la imagen
       - name: Container scan (trivy)
-        uses: lazy-actions/gitrivy@v2
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          issue_title: Image Security Alert
-          token: ${{ github.token }}
-          image: ${{ steps.docker-image.outputs.tags }}
-          severity: CRITICAL,HIGH
+          image-ref: ${{ steps.image-metadata.outputs.tags }}
+          format: 'sarif'
+          output: 'trivy-release-results.sarif'
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
+      # always(): con exit-code 1 el scan falla justo cuando el informe interesa.
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-release-results.sarif'
 
       - name: Generate tag and Release
         uses: softprops/action-gh-release@v3
@@ -103,20 +111,22 @@ jobs:
           tag_name: ${{ github.event.inputs.version }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          previous_tag: true
           prerelease: false
           preserve_order: true
 
       - name: Push image
         env:
-          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE_BASE }}:${{ github.event.inputs.version }}
+          DOCKER_IMAGE: ${{ steps.image-metadata.outputs.tags }}
         run: docker push $DOCKER_IMAGE
 
-      - name: deploy
-        uses: ./.github/workflows/deploy.yml
-        with:
-          image: ${{ env.DOCKER_IMAGE_BASE }}:${{ github.event.inputs.version }}
-          host: ${{ secrets.SERVER_HOST }}
-          port: 22
-          key: ${{ secrets.SERVER_PKEY }}
-          username: ${{ secrets.SERVER_USER }}
+  Deploy:
+    name: Deploy
+    needs: Release
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image: ${{ needs.Release.outputs.image }}
+    secrets:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_PKEY: ${{ secrets.SERVER_PKEY }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}

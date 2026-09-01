@@ -14,96 +14,197 @@ on:
         required: true
         type: string
         description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
-      host:
+    # Como secrets y no como inputs: un input string no se enmascara en los logs.
+    secrets:
+      SERVER_HOST:
         required: true
-        type: string
-        description: "SSH remote host"
-      port:
-        required: false
-        type: number
-        description: "SSH remote port (default: 22)"
-        default: 22
-      key:
+      SERVER_PKEY:
         required: true
-        type: string
-        description: "SSH private key to connect to remote host"
-      username:
+      SERVER_USER:
         required: true
-        type: string
-        description: "SSH username to acces to remote host"
+      DOCKER_IMAGE_NAME:
+        required: true
 
 env:
   PYTHON_VERSION: "3.12"
   DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
   CONTAINER_NAME: "fitcoach-ia"
+  APP_PORT: "8000"
+  DEPLOY_TARGET_DIR: "/home/${{ secrets.SERVER_USER }}"
+  SSH_PORT: 22
 
 jobs:
   Deploy:
     name: Deploy-to-server
     runs-on: ubuntu-latest
     steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+
       - name: Obtener nombre imagen
         id: image_version
-        run: echo "VERSION=$(echo "${{ inputs.image }}" | cut -d':' -f2)" >> $GITHUB_ENV
+        run: |
+          IMAGE="${{ inputs.image }}"
+          VERSION="${IMAGE##*:}"
+          echo "Imagen solicitada: $IMAGE"
+          echo "Tag extraído:      $VERSION"
+          if [ "$IMAGE" != "${{ env.DOCKER_IMAGE_BASE }}:$VERSION" ]; then
+            echo "ERROR: la imagen no pertenece a la imagen base configurada"
+            exit 1
+          fi
+          echo "Imagen validada contra la base configurada"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
+      # Los SCRIPT_* corren en el servidor remoto: el env del runner no cruza el SSH.
       - name: deploy
         uses: easingthemes/ssh-deploy@v5.1.0
-        env:
-          IMAGE_NAME: ${{ env.DOCKER_IMAGE_BASE }}
-          IMAGE_VERSION: ${{ steps.image_version.outputs.VERSION }}
         with:
-          REMOTE_HOST: ${{ inputs.host || secrets.SERVER_HOST }}
-          SSH_PRIVATE_KEY: ${{ inputs.key || secrets.SERVER_PKEY }}
-          REMOTE_USER: ${{ inputs.username || secrets.SERVER_USER}}
-          SOURCE: /home/${{ secrets.DOCKER_USER }}
+          REMOTE_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_PKEY }}
+          REMOTE_USER: ${{ secrets.SERVER_USER }}
+          REMOTE_PORT: ${{ env.SSH_PORT }}
+          SOURCE: docker-compose.yml
+          TARGET: ${{ env.DEPLOY_TARGET_DIR }}/
           SCRIPT_BEFORE_REQUIRED: true
           SCRIPT_BEFORE: |
             set -e
-            REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
+            CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
+            IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
+            NEW_IMAGE="${{ inputs.image }}"
 
-            # 1. Asegurar que el repositorio está disponible y actualizado en el servidor
-            if [ -d "$REPO_DIR/.git" ]; then
-              echo "Repositorio encontrado. Actualizando con git pull..."
-              git -C "$REPO_DIR" pull --ff-only
+            step() { echo ""; echo "=== $* ==="; }
+            log()  { echo "    $*"; }
+
+            step "Contexto"
+            log "Servidor:           $(hostname)"
+            log "Imagen a desplegar: $NEW_IMAGE"
+            log "Contenedor:         $CONTAINER_NAME"
+            log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
+
+            step "1/4 Estado actual del contenedor"
+            CURRENT_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
+            if [ -z "$CURRENT_IMAGE" ]; then
+              log "No existe ningún contenedor '$CONTAINER_NAME'"
             else
-              echo "Repositorio no encontrado. Clonando ..."
-              git clone ${{ github.repositoryUrl }}
+              log "Contenedor '$CONTAINER_NAME' encontrado"
+              log "  imagen actual: $CURRENT_IMAGE"
+              log "  estado:        $(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")"
             fi
 
-            # 2. Parar y eliminar contenedor actual (libera puertos/volúmenes antes del sync)
-            echo "Parando contenedor $CONTAINER_NAME si existe..."
-            docker rm -f $CONTAINER_NAME 2>/dev/null && echo "Contenedor eliminado" || echo "No había contenedor previo"
-
-            # 3. Limpiar imágenes locales viejas (libera disco antes del pull)
-            echo "Verificando imágenes locales de ${IMAGE_NAME}..."
-            EXISTING=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${IMAGE_NAME}:" || true)
-            if [ -n "$EXISTING" ]; then
-              echo "Eliminando imágenes existentes: $EXISTING"
-              docker rmi $EXISTING
+            step "2/4 Decisión sobre el contenedor actual"
+            if [ "$CURRENT_IMAGE" = "$NEW_IMAGE" ]; then
+              log "La imagen actual coincide con la solicitada -> recreación forzada"
+              docker rm -f "$CONTAINER_NAME"
+              log "Contenedor $CONTAINER_NAME eliminado"
+            elif [ -n "$CURRENT_IMAGE" ]; then
+              log "Versión distinta en ejecución: $CURRENT_IMAGE"
+              log "Se CONSERVA (contenedor e imagen) hasta verificar $NEW_IMAGE"
             else
-              echo "No hay imágenes locales de ${IMAGE_NAME}"
+              log "Nada que conservar ni eliminar"
             fi
 
-            # 4. Descargar nueva imagen
-            echo "Descargando imagen ${{ inputs.image }}..."
-            docker pull ${{ inputs.image }}
+            step "3/4 Imágenes locales de la aplicación (antes del pull)"
+            docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}  creada {{.CreatedSince}}' \
+              | grep "$IMAGE_BASE" || log "Ninguna imagen local de la aplicación"
+
+            step "4/4 Descargar nueva imagen"
+            log "docker pull $NEW_IMAGE (con el contenedor anterior aún vivo)"
+            docker pull "$NEW_IMAGE"
+            log "Descargada: $(docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "$NEW_IMAGE" || true)"
 
           SCRIPT_AFTER_REQUIRED: true
           SCRIPT_AFTER: |
             set -e
-            REPO_DIR=$(basename "${{ github.repositoryUrl }}" .git)
+            CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
+            IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
+            NEW_IMAGE="${{ inputs.image }}"
+            VERSION="${{ steps.image_version.outputs.VERSION }}"
+            COMPOSE_FILE="${{ env.DEPLOY_TARGET_DIR }}/docker-compose.yml"
+            DEPLOY_OK=false
 
-            # 5. Levantar la nueva versión usando el docker-compose.yml ya sincronizado por rsync
-            echo "Levantando aplicación con VERSION=$VERSION"
-            VERSION=$VERSION docker compose -f $REPO_DIR/docker-compose.yml up -d
+            step() { echo ""; echo "=== $* ==="; }
+            log()  { echo "    $*"; }
 
-            # 6. Verificar que el contenedor está en ejecución
-            echo "Esperando arranque del contenedor..."
-            sleep 5
-            if docker ps --filter "name=^${CONTAINER_NAME}$" --filter "status=running" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
-              echo "Contenedor $CONTAINER_NAME levantado correctamente"
+            step "1/4 Levantar la nueva versión"
+            log "Imagen:  $NEW_IMAGE"
+            log "Comando: VERSION=$VERSION docker compose -f $COMPOSE_FILE up -d"
+            if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" up -d; then
+              log "compose up completado"
+              log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
+
+              step "2/4 Verificar arranque (espera inicial 5s + 5 intentos x 5s)"
+              sleep 5
+              for i in $(seq 1 5); do
+                STATUS=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo missing)
+                RESTARTS=$(docker inspect -f '{{.RestartCount}}' "$CONTAINER_NAME" 2>/dev/null || echo "?")
+                log "intento $i/5 -> estado=$STATUS reinicios=$RESTARTS"
+                if [ "$STATUS" = "running" ] && docker exec "$CONTAINER_NAME" python -c \
+                    "import urllib.request;urllib.request.urlopen('http://localhost:${{ env.APP_PORT }}/health',timeout=2)" >/dev/null 2>&1; then
+                  log "Health check OK en /health -> nueva versión operativa"
+                  DEPLOY_OK=true
+                  break
+                fi
+                sleep 5
+              done
             else
-              echo "ERROR: El contenedor $CONTAINER_NAME no está en ejecución"
-              docker logs $CONTAINER_NAME --tail 50 || true
+              log "ERROR: 'docker compose up -d' ha fallado"
+            fi
+
+            if [ "$DEPLOY_OK" != true ]; then
+              step "FALLO: $NEW_IMAGE no ha arrancado"
+              log "Últimas 50 líneas del contenedor:"
+              docker logs "$CONTAINER_NAME" --tail 50 || true
+              log "Se va a eliminar el contenedor $CONTAINER_NAME y la imagen $NEW_IMAGE"
+              docker rm -f "$CONTAINER_NAME" || true
+              docker rmi "$NEW_IMAGE" || true
+              log "Eliminación completada correctamente"
               exit 1
             fi
+
+            step "3/4 Limpiar contenedores huérfanos de '$CONTAINER_NAME'"
+            NEW_ID=$(docker inspect -f '{{.Id}}' "$CONTAINER_NAME")
+            log "Contenedor en servicio: ${NEW_ID%${NEW_ID#????????????}}"
+            ORPHANS=$(docker ps -a --filter "name=^${CONTAINER_NAME}" --format '{{.ID}}|{{.Names}}|{{.Image}}' \
+              | grep -v "^${NEW_ID%${NEW_ID#????????????}}|" || true)
+            if [ -z "$ORPHANS" ]; then
+              log "Sin huérfanos: ningún otro contenedor con ese nombre"
+            else
+              echo "$ORPHANS" | while IFS='|' read -r id name image; do
+                log "Eliminando huérfano: $name ($image, $id)"
+                docker rm -f "$id" || true
+              done
+            fi
+
+            step "4/4 Limpiar imágenes antiguas"
+            log "Criterio: repositorio de la app + tag semver X.Y.Z + distinto de $VERSION"
+            CANDIDATES=""
+            for img in $(docker images --format '{{.Repository}}:{{.Tag}}'); do
+              case "$img" in "$IMAGE_BASE":*) ;; *) continue ;; esac
+              if [ "$img" = "$NEW_IMAGE" ]; then
+                log "conservada (recién desplegada): $img"
+                continue
+              fi
+              if echo "${img##*:}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                CANDIDATES="$CANDIDATES $img"
+              else
+                log "conservada (tag no semver):     $img"
+              fi
+            done
+            if [ -z "$CANDIDATES" ]; then
+              log "No hay imágenes antiguas que eliminar"
+            else
+              log "Marcadas para eliminar:$CANDIDATES"
+              for img in $CANDIDATES; do
+                if docker rmi "$img" >/dev/null 2>&1; then
+                  log "eliminada:     $img"
+                else
+                  log "NO eliminada (en uso u otro error): $img"
+                fi
+              done
+            fi
+
+            step "Resultado"
+            log "Contenedor $CONTAINER_NAME operativo con $NEW_IMAGE"
+            log "Imágenes restantes de la aplicación:"
+            docker images --format '      {{.Repository}}:{{.Tag}}  {{.Size}}' | grep "$IMAGE_BASE" || true
+            log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"

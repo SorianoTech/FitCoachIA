@@ -11,7 +11,7 @@ class MessageTooLongError(ValueError):
 
 
 class WordCounterService:
-    MAX_LENGTH = 250
+    MAX_LENGTH = 100
     _WORD_PATTERN = re.compile(r"\b\w+\b", flags=re.UNICODE)
 
     def most_repeated_word(self, message: str | None) -> str:

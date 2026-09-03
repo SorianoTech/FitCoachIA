@@ -1,5 +1,7 @@
 import httpx
 
+from fitcoach.service.word_counter_service import WordCounterService
+
 
 class TestTestEndpointIntegration:
     def test_health_endpoint_responds(self, client: httpx.Client) -> None:
@@ -44,14 +46,14 @@ class TestTestEndpointIntegration:
         assert "empty" in response.json()["detail"].lower()
 
     def test_returns_400_when_message_exceeds_max_length(self, client: httpx.Client) -> None:
-        response = client.post("/test", json={"message": "a" * 251})
+        response = client.post("/test", json={"message": "a" * (WordCounterService.MAX_LENGTH + 1)})
 
         assert response.status_code == 400
         assert "exceeds" in response.json()["detail"].lower()
 
     def test_accepts_message_with_exactly_max_length(self, client: httpx.Client) -> None:
-        message = "word " * 50
-        assert len(message) == 250
+        message = "word " * 20
+        assert len(message) == WordCounterService.MAX_LENGTH
 
         response = client.post("/test", json={"message": message})
 

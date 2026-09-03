@@ -10,8 +10,9 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-# Usa siempre el intérprete del venv del proyecto, evitando depender del
-# pytest que gane por orden del PATH del shell (activa el venv efectivamente).
+# Usa siempre el pytest del venv del proyecto, evitando depender de cuál
+# pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
+# --system) se sobreescribe con `make tests PYTEST=pytest`.
 VENV=venv
 PYTEST=$(VENV)/Scripts/pytest.exe
 

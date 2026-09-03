@@ -10,6 +10,11 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
+# Usa siempre el intérprete del venv del proyecto, evitando depender del
+# pytest que gane por orden del PATH del shell (activa el venv efectivamente).
+VENV=venv
+PYTEST=$(VENV)/Scripts/pytest
+
 COMPOSE_IT=tests/docker-compose-test.yml
 IT_PORT ?= 8001
 IT_BASE_URL ?= http://localhost:$(IT_PORT)
@@ -50,18 +55,18 @@ build:
 	fi
 
 unit_tests:
-	pytest --no-cov -o testpaths=$(UNIT_TEST_PACKAGE)
+	$(PYTEST) --no-cov -o testpaths=$(UNIT_TEST_PACKAGE)
 
 it_tests:
 	@$(COMPOSE_UP)
-	@pytest --no-cov -o testpaths=$(IT_TEST_PACKAGE); \
+	@$(PYTEST) --no-cov -o testpaths=$(IT_TEST_PACKAGE); \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \
 	exit $$STATUS
 
 tests:
 	@$(COMPOSE_UP)
-	@pytest --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
+	@$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \
 	exit $$STATUS

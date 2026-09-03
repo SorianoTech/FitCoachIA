@@ -32,7 +32,7 @@ class TestWordCounterService:
         assert self.service.most_repeated_word(message) == "alpha"
 
     def test_accepts_message_with_exactly_max_length(self) -> None:
-        message = "word " * 50  # 250 chars exactos
+        message = "word " * 20  # 100 chars exactos
         assert len(message) == WordCounterService.MAX_LENGTH
         assert self.service.most_repeated_word(message) == "word"
 

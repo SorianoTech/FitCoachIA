@@ -3,17 +3,17 @@ name: Deploy release
 on:
   workflow_dispatch:
     inputs:
-      image:
+      version:
         required: true
         type: string
-        description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
+        description: "Release version to deploy. Format: X.Y.Z"
 
   workflow_call:
     inputs:
-      image:
+      version:
         required: true
         type: string
-        description: "Docker image to deploy (<docker_user>/<docker_repo>:<tag>)"
+        description: "Release version to deploy. Format: X.Y.Z"
     # Como secrets y no como inputs: un input string no se enmascara en los logs.
     secrets:
       SERVER_HOST:
@@ -41,18 +41,17 @@ jobs:
       - name: Repository checkout
         uses: actions/checkout@v4
 
-      - name: Obtener nombre imagen
+      - name: Componer nombre de imagen
         id: image_version
         run: |
-          IMAGE="${{ inputs.image }}"
-          VERSION="${IMAGE##*:}"
-          echo "Imagen solicitada: $IMAGE"
-          echo "Tag extraído:      $VERSION"
-          if [ "$IMAGE" != "${{ env.DOCKER_IMAGE_BASE }}:$VERSION" ]; then
-            echo "ERROR: la imagen no pertenece a la imagen base configurada"
+          VERSION="${{ inputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: version debe tener formato X.Y.Z"
             exit 1
           fi
-          echo "Imagen validada contra la base configurada"
+          IMAGE="${{ env.DOCKER_IMAGE_BASE }}:$VERSION"
+          echo "Imagen a desplegar: $IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       # Los SCRIPT_* corren en el servidor remoto: el env del runner no cruza el SSH.
@@ -70,7 +69,7 @@ jobs:
             set -e
             CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
-            NEW_IMAGE="${{ inputs.image }}"
+            NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
 
             step() { echo ""; echo "=== $* ==="; }
             log()  { echo "    $*"; }
@@ -117,7 +116,7 @@ jobs:
             set -e
             CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
-            NEW_IMAGE="${{ inputs.image }}"
+            NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
             VERSION="${{ steps.image_version.outputs.VERSION }}"
             COMPOSE_FILE="${{ env.DEPLOY_TARGET_DIR }}/docker-compose.yml"
             DEPLOY_OK=false

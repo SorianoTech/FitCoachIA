@@ -21,7 +21,7 @@ jobs:
       contents: write
       security-events: write
     outputs:
-      image: ${{ steps.image-metadata.outputs.tags }}
+      version: ${{ github.event.inputs.version }}
     steps:
       - name: Validar formato version
         run: |
@@ -124,7 +124,7 @@ jobs:
     needs: Release
     uses: ./.github/workflows/deploy.yml
     with:
-      image: ${{ needs.Release.outputs.image }}
+      version: ${{ needs.Release.outputs.version }}
     secrets:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_PKEY: ${{ secrets.SERVER_PKEY }}

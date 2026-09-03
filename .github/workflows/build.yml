@@ -123,5 +123,6 @@ jobs:
 
       # Levanta el contenedor de integración, ejecuta unitarios + integración con cobertura,
       # y lo detiene. Mismo comando que en local, para que no puedan divergir.
+      # PYTEST=pytest: en CI no hay venv (deps instaladas --system), a diferencia de local.
       - name: Run app && execute tests
-        run: make tests
+        run: make tests PYTEST=pytest

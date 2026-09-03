@@ -13,7 +13,7 @@ IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 # Usa siempre el intérprete del venv del proyecto, evitando depender del
 # pytest que gane por orden del PATH del shell (activa el venv efectivamente).
 VENV=venv
-PYTEST=$(VENV)/Scripts/pytest
+PYTEST=$(VENV)/Scripts/pytest.exe
 
 COMPOSE_IT=tests/docker-compose-test.yml
 IT_PORT ?= 8001

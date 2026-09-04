@@ -5,8 +5,27 @@ IMAGE_LATEST=$(IMAGE_BASE):latest
 CONTAINER_NAME=fitcoach-ia
 PORT=8000
 version ?= latest
+BASE_PACKAGE=src
+BASE_TEST_PACKAGE=tests
+UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
+IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-.PHONY: container build run stop clean all help tag images clean-images logs
+# Usa siempre el pytest del venv del proyecto, evitando depender de cuál
+# pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
+# --system) se sobreescribe con `make tests PYTEST=pytest`.
+VENV=venv
+PYTEST=$(VENV)/Scripts/pytest.exe
+
+COMPOSE_IT=tests/docker-compose-test.yml
+IT_PORT ?= 8001
+IT_BASE_URL ?= http://localhost:$(IT_PORT)
+export IT_PORT
+export IT_BASE_URL
+
+COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
+COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
+
+.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -20,10 +39,13 @@ help:
 	@echo "  make images                         - Consulta las imagenes en local"
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
 	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
+	@echo "  make tests                          - execute all tests (unit test and it tests). Levanta el contenedor de integracion, analiza cobertura y falla si cobertura < 80%"
+	@echo "  make unit_tests                     - execute unit tests (sin cobertura, sin Docker)"
+	@echo "  make it_tests                       - levanta el contenedor de integracion, ejecuta los tests de integracion (sin cobertura) y lo detiene"
 
 container:
 	@$(DOCKER) ps -a
-	
+
 build:
 	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile ./src
 	@if [ "$(version)" != "latest" ]; then \
@@ -33,7 +55,24 @@ build:
 		echo "Imagen construida: $(IMAGE_LATEST)"; \
 	fi
 
-run: 
+unit_tests:
+	$(PYTEST) --no-cov -o testpaths=$(UNIT_TEST_PACKAGE)
+
+it_tests:
+	@$(COMPOSE_UP)
+	@$(PYTEST) --no-cov -o testpaths=$(IT_TEST_PACKAGE); \
+	STATUS=$$?; \
+	$(COMPOSE_DOWN); \
+	exit $$STATUS
+
+tests:
+	@$(COMPOSE_UP)
+	@$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
+	STATUS=$$?; \
+	$(COMPOSE_DOWN); \
+	exit $$STATUS
+
+run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
 	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"

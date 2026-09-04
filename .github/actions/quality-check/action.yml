@@ -1,0 +1,41 @@
+name: Quality assurance
+description: Check code quality and security review over code
+
+runs:
+  using: composite
+  steps:
+    # Ruff: linter de Python que detecta errores, malas prácticas y problemas de estilo.
+    # Falla el job si encuentra algo, evitando que código sucio llegue a main.
+    # Configuración en toml. ruff sale con código != 0 al detectar violaciones.
+    - name: Code format check (Ruff)
+      shell: bash
+      run: uv run ruff check . --output-format=github
+      continue-on-error: false
+
+    # Mypy: Es un verificador de tipos de codigo estatico. no ejecuta el código, solo lo analiza
+    # Además, es capaz de analizar los tipados de librerias.
+    # Configuración en toml en la raíz del proyecto
+    - name: Type check (Mypy)
+      shell: bash
+      run: uv run mypy src/
+      continue-on-error: false
+
+    - name: Secrets scan (gitleaks)
+      uses: gitleaks/gitleaks-action@v2.3.9
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      continue-on-error: false
+
+    - name: Dependency audit
+      shell: bash
+      run: uv run pip-audit
+
+    #  Static security analysis with semgrep
+    - name: SATS with bandit
+      shell: bash
+      env:
+        SOURCECODE_PATH: ${{ env.SOURCECODE_PATH }}
+        CONFIG_FILE: ${{ env.CONFIG_FILE }}
+      run: |
+        uv run bandit -c $CONFIG_FILE -r -f custom --severity-level all --msg-template "{relpath}[{line}] - ID {test_id}: SEVERITY: {severity} - {msg}" targets $SOURCECODE_PATH
+      continue-on-error: false

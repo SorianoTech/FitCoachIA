@@ -1,11 +1,5 @@
 # Environments
-.venv
-localenv
-env/
-venv/
-ENV/
-.vscode/
-.env.preproduction
+venv**/
 .env
 
 # Media Server
@@ -13,3 +7,23 @@ infrastructure/media-server/www/data
 infrastructure/media-server/www/images
 infrastructure/media-server/www/videos
 
+.venv
+
+#initial files
+**/.gitkeep
+
+# test execution files
+.coverage
+.pytest_cache
+
+#local IDE files
+.vscode/
+.claude/
+
+#code review validation
+.ruff_cache
+
+#Binary
+__pycache__/
+
+uv.lock

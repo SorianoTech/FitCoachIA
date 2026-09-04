@@ -1,0 +1,132 @@
+name: Generate and deploy release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+        description: "Release version. Format: X.Y.Z"
+
+env:
+  PYTHON_VERSION: "3.12"
+  DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
+
+jobs:
+  Release:
+    name: Generate-release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      contents: write
+      security-events: write
+    outputs:
+      version: ${{ github.event.inputs.version }}
+    steps:
+      - name: Validar formato version
+        run: |
+          if ! [[ "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Formato de versión incorrecta. La versión debe tener formato X.Y.Z"
+            exit 1
+          fi
+          echo "Versión válida"
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Validar existencia de version
+        run: |
+          echo "Verificamos la version  ${{ github.event.inputs.version }} existe en el repositorio de docker"
+          if docker manifest inspect $DOCKER_IMAGE_BASE:${{ github.event.inputs.version }} > /dev/null 2>&1; then
+            echo "La imagen ya existe. Aumente la versión minor de entrada"
+            exit 1
+          else
+            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla"
+          fi
+        continue-on-error: false
+
+      - name: Repository checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      # Activar runner docker buildx, mejor que el clasico runner
+      - name: Set up Docker runner Buildx
+        uses: docker/setup-buildx-action@v4.2.0
+
+      # metadata-action concatena images x tags: value debe ser solo el tag.
+      - name: Generate image metadata
+        id: image-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE_BASE }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.version }}
+          labels: |
+            org.opencontainers.image.title=FitCoachIA
+            org.opencontainers.image.description=AI fitness coach service
+            org.opencontainers.image.vendor=SorianoTech
+            org.opencontainers.image.licenses=https://github.com/${{ github.repository }}/blob/main/LICENSE.md
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.authors=fitcoachpontia@gmail.com
+            org.opencontainers.image.version=${{ github.event.inputs.version }}
+            org.opencontainers.image.base.name=python:${{ env.PYTHON_VERSION }}
+
+      # Construimos la imagen docker sin pushear para validar las vulnerabilidades.
+      - name: Build image
+        id: docker-image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          push: false
+          tags: ${{ steps.image-metadata.outputs.tags }}
+          labels: ${{ steps.image-metadata.outputs.labels }}
+          load: true  # necesario para que trivy inspeccione localmente
+
+      # Analiza la imagen en búsqueda de vulnerabilidades del SO, librerias y secretos expuestos en la imagen
+      - name: Container scan (trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image-metadata.outputs.tags }}
+          format: 'sarif'
+          output: 'trivy-release-results.sarif'
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
+      # always(): con exit-code 1 el scan falla justo cuando el informe interesa.
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-release-results.sarif'
+
+      - name: Generate tag and Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Release v${{ github.event.inputs.version }}
+          tag_name: ${{ github.event.inputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          prerelease: false
+          preserve_order: true
+
+      - name: Push image
+        env:
+          DOCKER_IMAGE: ${{ steps.image-metadata.outputs.tags }}
+        run: docker push $DOCKER_IMAGE
+
+  Deploy:
+    name: Deploy
+    needs: Release
+    uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ needs.Release.outputs.version }}
+    secrets:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_PKEY: ${{ secrets.SERVER_PKEY }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}

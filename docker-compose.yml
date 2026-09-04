@@ -79,12 +79,13 @@ services:
 
   fitcoach-ia:
     container_name: fitcoach-ia
-    build:
-      context: ./src
-      dockerfile: Dockerfile
+    #    build:
+    #      context: ./src
+    #      dockerfile: Dockerfile
+    restart: unless-stopped
+    image: fitcoachia/fitcoach-app:${VERSION:-latest}
     networks:
       - fit-coach-net
-    restart: unless-stopped
     depends_on:
       pgvector:
         condition: service_healthy

@@ -21,9 +21,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings = get_settings()  # ValidationError if token/url/commands are missing
     get_ia_settings()  # ValidationError if any ia_* var is missing/malformed
-    get_database_settings()  # ValidationError if the PostgreSQL URL is missing
     for raw in settings.bot_telegram_commands:
         to_bot_command(raw)  # ValueError if a pair is malformed
+    get_database_settings()  # ValidationError if the PostgreSQL URL is missing
     try:
         yield
     finally:

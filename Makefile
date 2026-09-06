@@ -32,7 +32,7 @@ container:
 	@$(DOCKER) ps -a
 
 build:
-	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile ./src
+	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile .
 	@if [ "$(version)" != "latest" ]; then \
 		$(DOCKER) tag $(IMAGE_BASE):$(version) $(IMAGE_LATEST); \
 		echo "Imagen construida: $(IMAGE_BASE):$(version) (también etiquetada como latest)"; \

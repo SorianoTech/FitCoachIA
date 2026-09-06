@@ -1,10 +1,9 @@
 services:
   fitcoach-ia:
-    container_name: fitcoach-ia
     restart: unless-stopped
     build:
-      context: ../src
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile
     environment:
       # Dummy values: just enough for the fail-fast startup check to pass.
       - bot_telegram_token=ci-test-token
@@ -15,6 +14,7 @@ services:
       - ia_token=ci-test-token
       - ia_model=ci-test-model
       - ia_temperature=0.5
+      - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -25,7 +25,22 @@ services:
     networks:
       - proxy-network
     ports:
-      - 8000:8000
+      - 8001:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fitcoach
+      POSTGRES_PASSWORD: fitcoach
+      POSTGRES_USER: fitcoach
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcoach -d fitcoach"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 networks:
   proxy-network:

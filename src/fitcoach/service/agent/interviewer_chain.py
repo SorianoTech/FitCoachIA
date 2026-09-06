@@ -44,8 +44,9 @@ class InterviewerChain:
             repaired_result = await self._invoke([
                 SystemMessage(
                     content=(
-                        "Return only a valid JSON object matching the required interviewer result "
-                        f"schema. Fix these validation errors: {exc}"
+                        "Return only a valid JSON object matching this JSON schema. Do not return "
+                        f"Markdown or prose. Schema: {InterviewerTurn.model_json_schema()}. "
+                        f"Fix these validation errors: {exc}"
                     )
                 ),
                 HumanMessage(content=raw_result),
@@ -82,6 +83,7 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
         temperature=settings.temperature,
         max_tokens=settings.max_tokens or None,
         timeout=settings.timeout_seconds or None,
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
 
 

@@ -61,3 +61,5 @@ async def test_repairs_an_invalid_result_once(model: MagicMock) -> None:
 
     assert result.reply == "¿Cuál es tu objetivo?"
     assert model.ainvoke.await_count == 2
+    repair_prompt = model.ainvoke.await_args_list[1].args[0][0].content
+    assert "JSON schema" in repair_prompt

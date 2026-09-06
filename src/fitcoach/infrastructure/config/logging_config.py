@@ -67,3 +67,4 @@ def configure_logging() -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(QualnameFormatter(_LOG_FORMAT))
     logging.basicConfig(level=get_logging_settings().level, handlers=[handler])
+    logging.getLogger("httpx").setLevel(logging.WARNING)

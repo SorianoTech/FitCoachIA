@@ -58,6 +58,23 @@ class IASettings(BaseSettings):
     temperature: float
     timeout_seconds: int = 0
     max_tokens: int = 0
+    history_window_messages: int = 20
+
+
+class DatabaseSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file_encoding="utf-8",
+        env_prefix="database_",
+        extra="ignore",
+    )
+
+    url: str
+
+
+@lru_cache
+def get_database_settings() -> DatabaseSettings:
+    return DatabaseSettings()
 
 
 @lru_cache

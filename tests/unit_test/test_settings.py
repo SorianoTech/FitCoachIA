@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from fitcoach.infrastructure.config.settings import Settings
+from fitcoach.infrastructure.config.settings import DatabaseSettings, IASettings, Settings
 
 
 class TestSettingsBotTelegramCommands:
@@ -52,3 +52,25 @@ class TestSettingsBotTelegramCommands:
 
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
+
+
+class TestIASettings:
+    def test_defaults_history_window_to_twenty_messages(self) -> None:
+        settings = IASettings(
+            _env_file=None,
+            base_url="http://test-llm:9999",
+            token="test-token",  # noqa: S106
+            model="test-model",
+            temperature=0.5,
+        )
+
+        assert settings.history_window_messages == 20
+
+
+class TestDatabaseSettings:
+    def test_loads_database_url_from_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("database_url", "postgresql+asyncpg://user:pass@db:5432/fitcoach")
+
+        settings = DatabaseSettings(_env_file=None)
+
+        assert settings.url == "postgresql+asyncpg://user:pass@db:5432/fitcoach"

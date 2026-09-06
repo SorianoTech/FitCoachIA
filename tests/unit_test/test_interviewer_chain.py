@@ -5,13 +5,15 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from fitcoach.domain.conversation import ConversationMessage
-from fitcoach.service.agent.interviewer_chain import InterviewerChain
+from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerResultError
 
 
 @pytest.fixture
 def model() -> MagicMock:
     model = MagicMock()
-    model.ainvoke = AsyncMock(return_value=AIMessage(content="  Hola  "))
+    model.ainvoke = AsyncMock(
+        return_value=AIMessage(content='{"status":"in_progress","reply":"Hola"}')
+    )
     return model
 
 
@@ -25,7 +27,7 @@ async def test_responds_with_composed_prompt_history_and_user_message(model: Mag
 
     result = await chain.respond("Quiero perder grasa", history)
 
-    assert result == "Hola"
+    assert result.reply == "Hola"
     model.ainvoke.assert_awaited_once()
     messages = model.ainvoke.await_args.args[0]
     assert isinstance(messages[0], SystemMessage)
@@ -39,10 +41,23 @@ async def test_responds_with_composed_prompt_history_and_user_message(model: Mag
 
 
 @pytest.mark.asyncio
-async def test_returns_empty_string_when_model_response_is_not_text(model: MagicMock) -> None:
+async def test_raises_when_model_response_is_not_text(model: MagicMock) -> None:
     model.ainvoke.return_value = AIMessage(content=[{"type": "text", "text": "Hola"}])
+    chain = InterviewerChain(model)
+
+    with pytest.raises(InterviewerResultError, match="non-text"):
+        await chain.respond("Hola", [])
+
+
+@pytest.mark.asyncio
+async def test_repairs_an_invalid_result_once(model: MagicMock) -> None:
+    model.ainvoke.side_effect = [
+        AIMessage(content="not json"),
+        AIMessage(content='{"status":"in_progress","reply":"¿Cuál es tu objetivo?"}'),
+    ]
     chain = InterviewerChain(model)
 
     result = await chain.respond("Hola", [])
 
-    assert result == ""
+    assert result.reply == "¿Cuál es tu objetivo?"
+    assert model.ainvoke.await_count == 2

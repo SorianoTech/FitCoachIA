@@ -14,8 +14,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - default
+      - proxy-network
     ports:
-      - "8000:8000"
+      - "8001:8000"
 
   postgres:
     container_name: dev-fitcoach-postgres
@@ -34,3 +37,7 @@ services:
 
 volumes:
   fitcoach-dev-postgres:
+
+networks:
+  proxy-network:
+    external: true

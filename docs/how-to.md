@@ -11,7 +11,7 @@
 
 | Entorno | Compose | Proyecto | API | Base de datos |
 |---|---|---|---|---|
-| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `dev-fitcoach-ia`, puerto 8000 | volumen `fitcoach-dev-postgres` |
+| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `dev-fitcoach-ia`, puerto 8001 y `proxy-network` | volumen `fitcoach-dev-postgres` |
 | Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia`, detrás del proxy | volumen `fitcoach-prod-postgres` |
 
 `APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
@@ -93,6 +93,7 @@ Esta opción ejecuta PostgreSQL y la API en contenedores. El contenedor de la AP
 automáticamente `alembic upgrade head` antes de iniciar FastAPI.
 
 ```bash
+docker network inspect proxy-network >/dev/null 2>&1 || docker network create proxy-network
 make dev-up
 ```
 

@@ -25,6 +25,13 @@ def loader(tmp_path: Path) -> PromptLoader:
 
 
 class TestPromptLoader:
+    def test_default_roots_load_the_interviewer_prompt_and_skill(self) -> None:
+        result = PromptLoader().load_assembled_system_prompt("interviewer")
+
+        assert "{{skill_content}}" not in result
+        assert "fitness-interviewer" in result
+        assert "{{rag_context}}" in result
+
     def test_load_assembled_system_prompt_injects_skill_and_keeps_rag_placeholder(
         self, loader: PromptLoader
     ) -> None:

@@ -13,8 +13,9 @@ class PromptLoader:
         prompts_root: Path | None = None,
         skills_root: Path | None = None,
     ) -> None:
-        self._prompts_root = prompts_root
-        self._skills_root = skills_root
+        package_root = Path(__file__).resolve().parent
+        self._prompts_root = prompts_root or package_root
+        self._skills_root = skills_root or package_root.parent / "ia" / "skills"
 
     def load_assembled_system_prompt(self, asset_name: str = "") -> str:
         """Return the agent's system prompt with its skill injected.
@@ -22,13 +23,8 @@ class PromptLoader:
         ``{{rag_context}}`` is left untouched: it is filled per request, not at load time.
         """
 
-        template = ""
-        if self._prompts_root is not None:
-            template = self._read(self._prompts_root / asset_name / "system_prompt.txt", asset_name)
-
-        skill = ""
-        if self._skills_root is not None:
-            skill = self._read(self._skills_root / asset_name / "SKILL.md", asset_name)
+        template = self._read(self._prompts_root / asset_name / "system_prompt.txt", asset_name)
+        skill = self._read(self._skills_root / asset_name / "SKILL.md", asset_name)
 
         return template.replace("{{skill_content}}", skill)
 

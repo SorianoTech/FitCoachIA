@@ -117,8 +117,9 @@ docker network inspect proxy-network >/dev/null 2>&1 || docker network create pr
 make prod-up version=0.3.0
 ```
 
-No ejecutes `make prod-up` en el servidor de desarrollo ni `make dev-up` en producción: ambos
-entornos mantienen contenedores y volúmenes separados.
+Desarrollo y producción pueden convivir en el mismo servidor. Usa `make dev-up` para el entorno
+de desarrollo y `make prod-up version=<version>` para producción; cada uno mantiene sus propios
+contenedores, volumen PostgreSQL y configuración `APP_ENV`.
 
 ## Pruebas y comprobaciones
 

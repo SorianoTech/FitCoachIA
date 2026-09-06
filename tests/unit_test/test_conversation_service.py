@@ -1,11 +1,15 @@
 import logging
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
 from telegram import Bot, Message, Update
 
 from fitcoach.domain.constants import Constants
+from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.service.agent.interviewer_chain import InterviewerChain
 from fitcoach.service.conversation_service import (
     ConversationService,
     format_llm_input,
@@ -29,6 +33,16 @@ def mock_llm() -> AsyncMock:
 @pytest.fixture
 def service(mock_bot: AsyncMock, mock_llm: AsyncMock) -> ConversationService:
     return ConversationService(bot=mock_bot, llm=mock_llm)
+
+
+@pytest.fixture
+def mock_interviewer() -> AsyncMock:
+    return AsyncMock(spec=InterviewerChain)
+
+
+@pytest.fixture
+def mock_conversation_repository() -> AsyncMock:
+    return AsyncMock(spec=ConversationRepository)
 
 
 def _message_payload(
@@ -181,6 +195,40 @@ class TestSlowModelWarning:
         await service.handle_update(_text_update(456, "hola"))
 
         assert not [r for r in caplog.records if "respuesta lenta" in r.message]
+
+
+class TestPersistentConversation:
+    @pytest.mark.asyncio
+    async def test_loads_recent_history_and_persists_a_successful_turn(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        history = [
+            ConversationMessage(
+                chat_id=456,
+                role="user",
+                content="Me llamo Ana",
+                created_at=datetime.now(UTC),
+            )
+        ]
+        mock_conversation_repository.get_recent.return_value = history
+        mock_interviewer.respond.return_value = "Hola Ana"
+        service = ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+            history_window_messages=12,
+        )
+
+        await service.handle_update(_text_update(456, "Quiero ganar músculo"))
+
+        mock_conversation_repository.get_recent.assert_awaited_once_with(456, 12)
+        mock_interviewer.respond.assert_awaited_once_with("Quiero ganar músculo", history)
+        mock_conversation_repository.add_turn.assert_awaited_once_with(
+            456, "Quiero ganar músculo", "Hola Ana"
+        )
 
 
 class TestUnexpectedErrorHandling:

@@ -12,7 +12,9 @@ from telegram import Bot, Message, Update
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.telegram import Commands
+from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent import agent_factory
+from fitcoach.service.agent.interviewer_chain import InterviewerChain
 from fitcoach.service.llm.llm_caller import LLM
 
 logger = logging.getLogger(__name__)
@@ -58,9 +60,25 @@ class ConversationService:
     sin levantar ni Telegram ni el modelo.
     """
 
-    def __init__(self, bot: Bot, llm: LLM) -> None:
+    def __init__(
+        self,
+        bot: Bot,
+        llm: LLM | None = None,
+        interviewer: InterviewerChain | None = None,
+        conversation_repository: ConversationRepository | None = None,
+        history_window_messages: int = 20,
+    ) -> None:
+        if (interviewer is None) != (conversation_repository is None):
+            raise ValueError(
+                "The interviewer and conversation repository must be configured together"
+            )
+        if interviewer is None and llm is None:
+            raise ValueError("An interviewer or LLM must be configured")
         self._bot = bot
         self._llm = llm
+        self._interviewer = interviewer
+        self._conversation_repository = conversation_repository
+        self._history_window_messages = history_window_messages
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -122,7 +140,7 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            llm_output = await self._llm.chat(messages=llm_input)
+            llm_output = await self._reply_with_interviewer(chat_id, user_message, llm_input)
         except Exception:
             logger.exception(f"{ctx} fallo al invocar el modelo")
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
@@ -139,6 +157,27 @@ class ConversationService:
 
         logger.info(f"{ctx} respuesta del LLM en {elapsed_ms:.0f}ms: {llm_output!r}")
         await self._send(chat_id, message_thread_id, llm_output)
+        if self._conversation_repository is not None:
+            await self._conversation_repository.add_turn(chat_id, user_message, llm_output)
+
+    async def _reply_with_interviewer(
+        self,
+        chat_id: int,
+        user_message: str,
+        llm_input: IAInput,
+    ) -> str:
+        if self._interviewer is None:
+            if self._llm is None:
+                raise RuntimeError("No LLM has been configured")
+            return await self._llm.chat(messages=llm_input)
+
+        if self._conversation_repository is None:
+            raise RuntimeError("No conversation repository has been configured")
+        history = await self._conversation_repository.get_recent(
+            chat_id,
+            self._history_window_messages,
+        )
+        return await self._interviewer.respond(user_message, history)
 
     def _build_llm_input(self, ctx: str, user_message: str) -> IAInput:
         interviewer_agent = agent_factory.build_interviewer_agent()

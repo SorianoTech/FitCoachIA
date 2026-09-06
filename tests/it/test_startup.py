@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 import fitcoach.main as main_module
 from fitcoach.infrastructure.config.logging_config import get_logging_settings
-from fitcoach.infrastructure.config.settings import IASettings, Settings
+from fitcoach.infrastructure.config.settings import DatabaseSettings, IASettings, Settings
 from fitcoach.main import app
 
 _VALID_TELEGRAM_KWARGS: dict[str, object] = {
@@ -23,16 +23,21 @@ _VALID_IA_KWARGS: dict[str, object] = {
     "model": "test-model",
     "temperature": 0.5,
 }
+_VALID_DATABASE_KWARGS: dict[str, object] = {
+    "url": "postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach",
+}
 
 
 @pytest.fixture(autouse=True)
 def _clear_settings_cache() -> Iterator[None]:
     main_module.get_settings.cache_clear()
     main_module.get_ia_settings.cache_clear()
+    main_module.get_database_settings.cache_clear()
     get_logging_settings.cache_clear()
     yield
     main_module.get_settings.cache_clear()
     main_module.get_ia_settings.cache_clear()
+    main_module.get_database_settings.cache_clear()
     get_logging_settings.cache_clear()
 
 
@@ -48,10 +53,19 @@ def _patch_ia_settings(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> Non
     )
 
 
+def _patch_database_settings(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> None:
+    monkeypatch.setattr(
+        main_module,
+        "get_database_settings",
+        lambda: DatabaseSettings(_env_file=None, **kwargs),
+    )
+
+
 class TestStartupFailFast:
     def test_starts_successfully_with_valid_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_settings(monkeypatch, **_VALID_TELEGRAM_KWARGS)
         _patch_ia_settings(monkeypatch, **_VALID_IA_KWARGS)
+        _patch_database_settings(monkeypatch, **_VALID_DATABASE_KWARGS)
 
         with TestClient(app) as client:
             response = client.get("/health")

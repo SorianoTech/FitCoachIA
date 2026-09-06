@@ -6,8 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from telegram import Bot, Update
 
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
+from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
+from fitcoach.infrastructure.database.dependencies import get_conversation_repository
+from fitcoach.infrastructure.database.postgres_conversation_repository import (
+    PostgresConversationRepository,
+)
+from fitcoach.service.agent.interviewer_chain import InterviewerChain, get_interviewer_chain
 from fitcoach.service.conversation_service import ConversationService
-from fitcoach.service.llm.llm_caller import LLM, get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +37,17 @@ async def parse_update(request: Request) -> Update:
 
 
 def get_conversation_service(
-    bot: Bot = Depends(get_bot), llm: LLM = Depends(get_llm)
+    bot: Bot = Depends(get_bot),
+    interviewer: InterviewerChain = Depends(get_interviewer_chain),
+    repository: PostgresConversationRepository = Depends(get_conversation_repository),
+    ia_settings: IASettings = Depends(get_ia_settings),
 ) -> ConversationService:
-    return ConversationService(bot=bot, llm=llm)
+    return ConversationService(
+        bot=bot,
+        interviewer=interviewer,
+        conversation_repository=repository,
+        history_window_messages=ia_settings.history_window_messages,
+    )
 
 
 @webhook.post("/response")

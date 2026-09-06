@@ -8,10 +8,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from telegram import Bot
 
-from fitcoach.api.webhook import webhook
+from fitcoach.api.webhook import get_conversation_service, webhook
 from fitcoach.domain.constants import Constants
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.main import app as fitcoach_app
+from fitcoach.service.conversation_service import ConversationService
 from fitcoach.service.llm.llm_caller import LLM, get_llm
 
 
@@ -29,8 +30,9 @@ def mock_llm() -> AsyncMock:
 def client(mock_bot: AsyncMock, mock_llm: AsyncMock) -> TestClient:
     app = FastAPI()
     app.include_router(webhook)
-    app.dependency_overrides[get_bot] = lambda: mock_bot
-    app.dependency_overrides[get_llm] = lambda: mock_llm
+    app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
+        bot=mock_bot, llm=mock_llm
+    )
     return TestClient(app)
 
 
@@ -402,6 +404,9 @@ class TestWebhookRouteRegistration:
     ) -> None:
         fitcoach_app.dependency_overrides[get_bot] = lambda: mock_bot
         fitcoach_app.dependency_overrides[get_llm] = lambda: mock_llm
+        fitcoach_app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
+            bot=mock_bot, llm=mock_llm
+        )
         try:
             response = TestClient(fitcoach_app).post(
                 "/webhook/response", json=_text_update(123, "/start")
@@ -409,6 +414,7 @@ class TestWebhookRouteRegistration:
         finally:
             fitcoach_app.dependency_overrides.pop(get_bot, None)
             fitcoach_app.dependency_overrides.pop(get_llm, None)
+            fitcoach_app.dependency_overrides.pop(get_conversation_service, None)
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}

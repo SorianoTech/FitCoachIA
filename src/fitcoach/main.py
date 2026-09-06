@@ -7,7 +7,12 @@ from fitcoach.api.router import main_router
 from fitcoach.api.webhook import webhook
 from fitcoach.infrastructure.bot.telegram_bot import to_bot_command
 from fitcoach.infrastructure.config.logging_config import configure_logging
-from fitcoach.infrastructure.config.settings import get_ia_settings, get_settings
+from fitcoach.infrastructure.config.settings import (
+    get_database_settings,
+    get_ia_settings,
+    get_settings,
+)
+from fitcoach.infrastructure.database.session import close_database
 
 
 @asynccontextmanager
@@ -16,9 +21,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings = get_settings()  # ValidationError if token/url/commands are missing
     get_ia_settings()  # ValidationError if any ia_* var is missing/malformed
+    get_database_settings()  # ValidationError if the PostgreSQL URL is missing
     for raw in settings.bot_telegram_commands:
         to_bot_command(raw)  # ValueError if a pair is malformed
-    yield
+    try:
+        yield
+    finally:
+        await close_database()
 
 
 app = FastAPI(title="FitCoach IA - API de Prueba", lifespan=lifespan)

@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fitcoach.domain.conversation import ConversationMessage, MessageRole
+from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.infrastructure.database.models import ConversationMessageRecord
 
 
@@ -27,6 +27,18 @@ class PostgresConversationRepository:
             for record in reversed(records)
         ]
 
-    async def add(self, chat_id: int, role: MessageRole, content: str) -> None:
-        self._session.add(ConversationMessageRecord(chat_id=chat_id, role=role, content=content))
+    async def add_turn(
+        self,
+        chat_id: int,
+        user_content: str,
+        assistant_content: str,
+    ) -> None:
+        self._session.add_all([
+            ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
+            ConversationMessageRecord(
+                chat_id=chat_id,
+                role="assistant",
+                content=assistant_content,
+            ),
+        ])
         await self._session.commit()

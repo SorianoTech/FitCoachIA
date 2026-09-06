@@ -13,8 +13,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "8000:8000"
     networks:
       - proxy-network
   postgres:

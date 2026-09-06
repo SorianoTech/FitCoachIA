@@ -17,8 +17,6 @@ services:
     networks:
       - default
       - proxy-network
-    ports:
-      - "8001:8000"
 
   postgres:
     container_name: dev-fitcoach-postgres

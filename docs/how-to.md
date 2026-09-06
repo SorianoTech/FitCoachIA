@@ -11,8 +11,8 @@
 
 | Entorno | Compose | Proyecto | API | Base de datos |
 |---|---|---|---|---|
-| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `dev-fitcoach-ia`, puerto 8001 y `proxy-network` | volumen `fitcoach-dev-postgres` |
-| Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia`, puerto 8000 y `proxy-network` | volumen `fitcoach-prod-postgres` |
+| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `dev-fitcoach-ia`, `proxy-network` | volumen `fitcoach-dev-postgres` |
+| Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia`, `proxy-network` | volumen `fitcoach-prod-postgres` |
 
 `APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
 `.env.<APP_ENV>` si existe y después `.env`; las variables del sistema tienen prioridad.
@@ -112,7 +112,7 @@ make dev-down
 ## Desplegar producción
 
 Producción utiliza `docker-compose.yml`, el proyecto `fitcoach-prod`, la red externa
-`proxy-network` y publica la API en el puerto 8000. Antes del primer despliegue, crea esa red y
+`proxy-network`. Nginx Proxy Manager publica la API; antes del primer despliegue, crea esa red y
 configura un `.env` exclusivo en el servidor de producción.
 
 ```bash

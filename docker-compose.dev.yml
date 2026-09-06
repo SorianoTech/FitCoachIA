@@ -33,6 +33,19 @@ services:
       timeout: 5s
       retries: 10
 
+  adminer:
+    container_name: dev-fitcoach-adminer
+    image: adminer:4.8.1-standalone
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - proxy-network
+
 volumes:
   fitcoach-dev-postgres:
 

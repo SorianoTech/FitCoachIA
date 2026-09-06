@@ -103,6 +103,23 @@ Consulta los logs de la API:
 make dev-logs
 ```
 
+### Consultar la base de datos con Adminer
+
+El entorno de desarrollo incluye Adminer, una interfaz web para consultar los mensajes, sesiones y
+perfiles del entrevistador. No publica ningún puerto en el host: crea un Proxy Host en Nginx Proxy
+Manager que apunte a `dev-fitcoach-adminer`, puerto `8080` y protocolo `http`.
+
+Protege ese Proxy Host antes de publicarlo mediante una *Access List* de Nginx Proxy Manager y, si
+es posible, una restricción por IP. No añadas Adminer a `docker-compose.yml` de producción.
+
+En la pantalla de inicio de sesión de Adminer selecciona PostgreSQL. El campo del servidor ya estará
+rellenado con `postgres`; usa los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` de
+`.env.dev`. Tras iniciar sesión, las tablas relevantes son:
+
+- `conversation_messages`: preguntas y respuestas por chat.
+- `interview_sessions`: estado y fechas de cada entrevista.
+- `interviewer_profiles`: informe y perfil JSON al completar una entrevista.
+
 Detén el entorno con:
 
 ```bash

@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Bot, Message, Update
@@ -8,6 +8,7 @@ from telegram import Bot, Message, Update
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent.interviewer_chain import InterviewerChain
 from fitcoach.service.conversation_service import (
@@ -228,6 +229,64 @@ class TestPersistentConversation:
         mock_interviewer.respond.assert_awaited_once_with("Quiero ganar músculo", history)
         mock_conversation_repository.add_turn.assert_awaited_once_with(
             456, "Quiero ganar músculo", "Hola Ana"
+        )
+
+    @pytest.mark.asyncio
+    async def test_sends_report_and_persists_profile_when_interview_completes(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        profile = MagicMock()
+        mock_interviewer.respond.return_value = InterviewerTurn.model_construct(
+            status="completed",
+            reply="He completado tu perfil.",
+            report="Resumen de tu entrevista",
+            profile=profile,
+        )
+        service = ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+        )
+
+        await service.handle_update(_text_update(456, "Mi respuesta final"))
+
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text="Resumen de tu entrevista",
+        )
+        mock_conversation_repository.complete_interview.assert_awaited_once_with(
+            456,
+            "Mi respuesta final",
+            "He completado tu perfil.",
+            profile,
+            "Resumen de tu entrevista",
+        )
+
+    @pytest.mark.asyncio
+    async def test_completed_interview_offers_restart(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.get_interview_status.return_value = "completed"
+        service = ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+        )
+
+        await service.handle_update(_text_update(456, "Quiero cambiar mi objetivo"))
+
+        mock_interviewer.respond.assert_not_awaited()
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.INTERVIEW_COMPLETED_MESSAGE,
         )
 
 

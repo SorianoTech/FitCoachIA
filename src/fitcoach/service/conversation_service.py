@@ -11,6 +11,7 @@ from telegram import Bot, Message, Update
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.domain.telegram import Commands
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent import agent_factory
@@ -121,6 +122,8 @@ class ConversationService:
             case Commands.START:
                 await self._send(chat_id, message_thread_id, Constants.WELCOME_MESSAGE)
             case Commands.INTERVIEW:
+                if self._conversation_repository is not None:
+                    await self._conversation_repository.restart_interview(chat_id)
                 await self._reply_with_llm(
                     ctx, chat_id, message_thread_id, Constants.INTERVIEW_SEED_MESSAGE
                 )
@@ -129,6 +132,17 @@ class ConversationService:
                 logger.info(f"{ctx} opcion todavia no implementada")
                 await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
             case None:
+                if self._conversation_repository is not None:
+                    status = await self._conversation_repository.get_interview_status(chat_id)
+                    if status == "completed":
+                        await self._send(
+                            chat_id,
+                            message_thread_id,
+                            Constants.INTERVIEW_COMPLETED_MESSAGE,
+                        )
+                        return
+                    if status is None:
+                        await self._conversation_repository.restart_interview(chat_id)
                 await self._reply_with_llm(ctx, chat_id, message_thread_id, input_text)
 
     async def _reply_with_llm(
@@ -140,13 +154,21 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            llm_output = await self._reply_with_interviewer(chat_id, user_message, llm_input)
+            result = await self._reply_with_interviewer(chat_id, user_message, llm_input)
         except Exception:
             logger.exception(f"{ctx} fallo al invocar el modelo")
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
             return
         elapsed_ms = (time.perf_counter() - started) * 1000
 
+        if isinstance(result, str):
+            llm_output = result
+        elif result.status == "completed":
+            if result.report is None:
+                raise RuntimeError("Completed interviewer result is missing report")
+            llm_output = result.report
+        else:
+            llm_output = result.reply
         if not llm_output.strip():
             logger.error(f"{ctx} el modelo devolvio una respuesta vacia tras {elapsed_ms:.0f}ms")
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
@@ -158,14 +180,25 @@ class ConversationService:
         logger.info(f"{ctx} respuesta del LLM en {elapsed_ms:.0f}ms: {llm_output!r}")
         await self._send(chat_id, message_thread_id, llm_output)
         if self._conversation_repository is not None:
-            await self._conversation_repository.add_turn(chat_id, user_message, llm_output)
+            if isinstance(result, InterviewerTurn) and result.status == "completed":
+                if result.profile is None or result.report is None:
+                    raise RuntimeError("Completed interviewer result is missing profile or report")
+                await self._conversation_repository.complete_interview(
+                    chat_id,
+                    user_message,
+                    result.reply,
+                    result.profile,
+                    result.report,
+                )
+            else:
+                await self._conversation_repository.add_turn(chat_id, user_message, llm_output)
 
     async def _reply_with_interviewer(
         self,
         chat_id: int,
         user_message: str,
         llm_input: IAInput,
-    ) -> str:
+    ) -> str | InterviewerTurn:
         if self._interviewer is None:
             if self._llm is None:
                 raise RuntimeError("No LLM has been configured")

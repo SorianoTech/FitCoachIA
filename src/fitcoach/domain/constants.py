@@ -28,6 +28,9 @@ Tu nueva vida te espera, ¡Adelante!
     NOT_IMPLEMENTED_MESSAGE: Final = "Option not implemented yet"
     LLM_ERROR_MESSAGE: Final = "Ops, our brains exploded ... try it again"
     SERVER_ERROR_MESSAGE: Final = "Ops, our server has an error. Try again past 5 minutes"
+    INTERVIEW_COMPLETED_MESSAGE: Final = (
+        "Tu entrevista ya está completada. Envía /interview si quieres actualizar tu perfil."
+    )
 
     # --- Mensaje con el que se siembra la conversacion del modelo ---
     INTERVIEW_SEED_MESSAGE: Final = (

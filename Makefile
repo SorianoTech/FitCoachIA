@@ -53,22 +53,22 @@ it_tests:
 	pytest $(IT_TEST_PACKAGE) --no-cov
 
 dev-up:
-	@$(DOCKER) compose -f docker-compose.dev.yml up -d --build
+	@FITCOACH_ENV_FILE=.env.dev $(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml up -d --build
 
 dev-down:
-	@$(DOCKER) compose -f docker-compose.dev.yml down
+	@FITCOACH_ENV_FILE=.env.dev $(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml down
 
 dev-logs:
-	@$(DOCKER) compose -f docker-compose.dev.yml logs -f
+	@FITCOACH_ENV_FILE=.env.dev $(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml logs -f
 
 prod-up:
-	@VERSION=$(version) $(DOCKER) compose up -d
+	@FITCOACH_ENV_FILE=.env.prod VERSION=$(version) $(DOCKER) compose --env-file .env.prod up -d
 
 prod-down:
-	@$(DOCKER) compose down
+	@FITCOACH_ENV_FILE=.env.prod $(DOCKER) compose --env-file .env.prod down
 
 prod-logs:
-	@$(DOCKER) compose logs -f
+	@FITCOACH_ENV_FILE=.env.prod $(DOCKER) compose --env-file .env.prod logs -f
 
 tests:
 	pytest $(BASE_TEST_PACKAGE) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80

@@ -1,6 +1,8 @@
 # Environments
 venv**/
 .env
+.env.dev
+.env.prod
 .venv
 
 #initial files

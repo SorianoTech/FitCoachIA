@@ -17,13 +17,15 @@
 `APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
 `.env.<APP_ENV>` si existe y después `.env`; las variables del sistema tienen prioridad.
 
-En cada servidor o copia de trabajo, crea su propio fichero `.env` desde la raíz del repositorio:
+En el mismo servidor, crea un fichero por entorno desde la raíz del repositorio:
 
 ```bash
-cp .env.example .env
+cp .env.example .env.dev
+cp .env.example .env.prod
 ```
 
-Completa al menos estas variables en `.env`:
+Completa al menos estas variables en cada fichero. Usa el bot y endpoint de desarrollo en
+`.env.dev`, y las credenciales de producción en `.env.prod`:
 
 ```dotenv
 bot_telegram_url=...

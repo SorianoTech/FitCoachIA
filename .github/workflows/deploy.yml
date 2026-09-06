@@ -95,7 +95,8 @@ jobs:
 
             # 5. Levantar la nueva versión usando el docker-compose.yml ya sincronizado por rsync
             echo "Levantando aplicación con VERSION=$VERSION"
-            VERSION=$VERSION docker compose -f $REPO_DIR/docker-compose.yml up -d
+            FITCOACH_ENV_FILE=.env.prod VERSION=$VERSION docker compose \
+              --env-file $REPO_DIR/.env.prod -f $REPO_DIR/docker-compose.yml up -d
 
             # 6. Verificar que el contenedor está en ejecución
             echo "Esperando arranque del contenedor..."

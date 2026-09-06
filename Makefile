@@ -10,7 +10,7 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests
+.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests dev-up dev-down dev-logs prod-up prod-down prod-logs
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -27,6 +27,12 @@ help:
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
 	@echo "  make unit_tests                     - execute unit tests (sin cobertura)"
 	@echo "  make it_tests                       - execute unit tests (sin cobertura)"
+	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado"
+	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
+	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
+	@echo "  make prod-up [version=x.y.z]        - Levanta el entorno de produccion"
+	@echo "  make prod-down                      - Detiene el entorno de produccion"
+	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
 
 container:
 	@$(DOCKER) ps -a
@@ -45,6 +51,24 @@ unit_tests:
 
 it_tests:
 	pytest $(IT_TEST_PACKAGE) --no-cov
+
+dev-up:
+	@$(DOCKER) compose -f docker-compose.dev.yml up -d --build
+
+dev-down:
+	@$(DOCKER) compose -f docker-compose.dev.yml down
+
+dev-logs:
+	@$(DOCKER) compose -f docker-compose.dev.yml logs -f
+
+prod-up:
+	@VERSION=$(version) $(DOCKER) compose up -d
+
+prod-down:
+	@$(DOCKER) compose down
+
+prod-logs:
+	@$(DOCKER) compose logs -f
 
 tests:
 	pytest $(BASE_TEST_PACKAGE) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80

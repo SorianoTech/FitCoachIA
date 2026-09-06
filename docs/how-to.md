@@ -126,6 +126,13 @@ contenedores, volumen PostgreSQL y configuración `APP_ENV`.
 
 ## Pruebas y comprobaciones
 
+## Entrevistas y perfil
+
+El agente `interviewer` guarda el historial por chat mientras la entrevista está en progreso. Al
+completar las preguntas, valida y guarda el perfil estructurado en PostgreSQL y envía un informe de
+resumen por Telegram. Los mensajes posteriores indican que el perfil está completado; envía
+`/interview` para reemplazar el perfil actual e iniciar una entrevista limpia.
+
 ```bash
 # Suite completa con cobertura mínima del 80 %
 uv run pytest tests --cov=src/fitcoach --cov-fail-under=80

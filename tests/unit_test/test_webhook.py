@@ -341,7 +341,7 @@ class TestLogTraceability:
         assert "'respuesta del agente'" in reply_logs[0].message
         assert regex.search(r"en \d+ms", reply_logs[0].message)
 
-    def test_debug_logs_the_real_llm_payload(
+    def test_debug_logs_the_composed_interviewer_prompt(
         self, client: TestClient, mock_llm: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         mock_llm.chat.return_value = "respuesta del agente"
@@ -352,7 +352,8 @@ class TestLogTraceability:
         payload_logs = [r for r in _webhook_records(caplog) if "entrada al LLM:" in r.message]
         assert len(payload_logs) == 1
         assert payload_logs[0].levelno == logging.DEBUG
-        assert "system[0 chars]=''" in payload_logs[0].message
+        assert "system[" in payload_logs[0].message
+        assert 'Interviewer ("Secretario")' in payload_logs[0].message
         assert "user[4 chars]='hola'" in payload_logs[0].message
 
     def test_emoji_only_message_is_logged_as_warning_not_error(

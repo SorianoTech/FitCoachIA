@@ -11,6 +11,7 @@ from telegram import Bot, Message, Update
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.domain.telegram import Commands
 from fitcoach.repository.conversation_repository import ConversationRepository
@@ -155,6 +156,19 @@ class ConversationService:
         started = time.perf_counter()
         try:
             result = await self._reply_with_interviewer(chat_id, user_message, llm_input)
+        except InterviewerError as exc:
+            logger.warning(
+                "%s fallo controlado del modelo code=%s retryable=%s",
+                ctx,
+                exc.code,
+                exc.retryable,
+            )
+            await self._send(
+                chat_id,
+                message_thread_id,
+                self._message_for_interviewer_error(exc.code),
+            )
+            return
         except Exception:
             logger.exception(f"{ctx} fallo al invocar el modelo")
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
@@ -236,6 +250,20 @@ class ConversationService:
             )
         except Exception:
             logger.exception(f"{ctx} tampoco se pudo avisar al usuario del error")
+
+    @staticmethod
+    def _message_for_interviewer_error(code: InterviewerErrorCode) -> str:
+        messages = {
+            InterviewerErrorCode.AUTHENTICATION: Constants.LLM_AUTHENTICATION_ERROR_MESSAGE,
+            InterviewerErrorCode.QUOTA: Constants.LLM_QUOTA_ERROR_MESSAGE,
+            InterviewerErrorCode.RATE_LIMITED: Constants.LLM_RATE_LIMIT_ERROR_MESSAGE,
+            InterviewerErrorCode.INVALID_REQUEST: Constants.LLM_INVALID_REQUEST_ERROR_MESSAGE,
+            InterviewerErrorCode.OUTPUT_LIMIT: Constants.LLM_OUTPUT_LIMIT_ERROR_MESSAGE,
+            InterviewerErrorCode.TIMEOUT: Constants.LLM_TIMEOUT_ERROR_MESSAGE,
+            InterviewerErrorCode.UNAVAILABLE: Constants.LLM_UNAVAILABLE_ERROR_MESSAGE,
+            InterviewerErrorCode.INVALID_OUTPUT: Constants.LLM_INVALID_OUTPUT_ERROR_MESSAGE,
+        }
+        return messages[code]
 
     @staticmethod
     def _build_context(update: Update, message: Message | None) -> str:

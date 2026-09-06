@@ -8,6 +8,7 @@ from telegram import Bot, Message, Update
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent.interviewer_chain import InterviewerChain
@@ -288,6 +289,46 @@ class TestPersistentConversation:
             message_thread_id=None,
             text=Constants.INTERVIEW_COMPLETED_MESSAGE,
         )
+
+
+class TestInterviewerErrorHandling:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("code", "expected_message"),
+        [
+            (InterviewerErrorCode.AUTHENTICATION, Constants.LLM_AUTHENTICATION_ERROR_MESSAGE),
+            (InterviewerErrorCode.QUOTA, Constants.LLM_QUOTA_ERROR_MESSAGE),
+            (InterviewerErrorCode.RATE_LIMITED, Constants.LLM_RATE_LIMIT_ERROR_MESSAGE),
+            (InterviewerErrorCode.INVALID_REQUEST, Constants.LLM_INVALID_REQUEST_ERROR_MESSAGE),
+            (InterviewerErrorCode.OUTPUT_LIMIT, Constants.LLM_OUTPUT_LIMIT_ERROR_MESSAGE),
+            (InterviewerErrorCode.TIMEOUT, Constants.LLM_TIMEOUT_ERROR_MESSAGE),
+            (InterviewerErrorCode.UNAVAILABLE, Constants.LLM_UNAVAILABLE_ERROR_MESSAGE),
+            (InterviewerErrorCode.INVALID_OUTPUT, Constants.LLM_INVALID_OUTPUT_ERROR_MESSAGE),
+        ],
+    )
+    async def test_sends_a_safe_message_for_each_interviewer_error(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        code: InterviewerErrorCode,
+        expected_message: str,
+    ) -> None:
+        mock_interviewer.respond.side_effect = InterviewerError(code, retryable=True)
+        service = ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+        )
+
+        await service.handle_update(_text_update(456, "Hola"))
+
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=expected_message,
+        )
+        mock_conversation_repository.add_turn.assert_not_awaited()
 
 
 class TestUnexpectedErrorHandling:

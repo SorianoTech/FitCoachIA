@@ -27,6 +27,33 @@ Tu nueva vida te espera, ¡Adelante!
     NO_CONTENT_MESSAGE: Final = "I didn't receive any information. Please, send it again .... "
     NOT_IMPLEMENTED_MESSAGE: Final = "Option not implemented yet"
     LLM_ERROR_MESSAGE: Final = "Ops, our brains exploded ... try it again"
+    LLM_AUTHENTICATION_ERROR_MESSAGE: Final = (
+        "No puedo conectar con el modelo por un problema de configuración. "
+        "Avísanos para que podamos solucionarlo."
+    )
+    LLM_QUOTA_ERROR_MESSAGE: Final = (
+        "El servicio de inteligencia artificial no tiene crédito disponible ahora mismo. "
+        "Inténtalo más tarde."
+    )
+    LLM_RATE_LIMIT_ERROR_MESSAGE: Final = (
+        "El servicio está recibiendo demasiadas solicitudes. Inténtalo de nuevo en unos minutos."
+    )
+    LLM_INVALID_REQUEST_ERROR_MESSAGE: Final = (
+        "No he podido procesar esta solicitud. Prueba a enviarla de nuevo."
+    )
+    LLM_OUTPUT_LIMIT_ERROR_MESSAGE: Final = (
+        "No he podido terminar la respuesta del modelo. Inténtalo de nuevo en unos minutos."
+    )
+    LLM_TIMEOUT_ERROR_MESSAGE: Final = (
+        "El modelo está tardando demasiado en responder. Inténtalo de nuevo en unos minutos."
+    )
+    LLM_UNAVAILABLE_ERROR_MESSAGE: Final = (
+        "El servicio de inteligencia artificial no está disponible temporalmente. "
+        "Inténtalo de nuevo en unos minutos."
+    )
+    LLM_INVALID_OUTPUT_ERROR_MESSAGE: Final = (
+        "No he podido interpretar la respuesta del modelo. Inténtalo de nuevo."
+    )
     SERVER_ERROR_MESSAGE: Final = "Ops, our server has an error. Try again past 5 minutes"
     INTERVIEW_COMPLETED_MESSAGE: Final = (
         "Tu entrevista ya está completada. Envía /interview si quieres actualizar tu perfil."

@@ -11,6 +11,7 @@ Uso:
 import argparse
 import json
 import logging
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -25,6 +26,7 @@ log = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 # Construcción del texto a vectorizar
 # ──────────────────────────────────────────────
+
 
 def build_metadata_text(exercise: dict) -> str:
     """
@@ -48,6 +50,7 @@ def build_metadata_text(exercise: dict) -> str:
 # ──────────────────────────────────────────────
 # Carga de un ejercicio individual
 # ──────────────────────────────────────────────
+
 
 def load_exercise(cur, exercise: dict, media_dir: Path, embedding: list[float]) -> None:
     """Inserta o actualiza un ejercicio y su media en la base de datos."""
@@ -99,7 +102,7 @@ def load_exercise(cur, exercise: dict, media_dir: Path, embedding: list[float]) 
 
     # Leer binarios de imagen y gif
     image_data = _read_file(media_dir / exercise.get("image", ""))
-    gif_data   = _read_file(media_dir / exercise.get("gif_url", ""))
+    gif_data = _read_file(media_dir / exercise.get("gif_url", ""))
 
     # Upsert en tabla exercise_media
     cur.execute(
@@ -113,7 +116,7 @@ def load_exercise(cur, exercise: dict, media_dir: Path, embedding: list[float]) 
             "image_path": exercise.get("image"),
             "gif_path": exercise.get("gif_url"),
             "image_data": psycopg2.Binary(image_data) if image_data else None,
-            "gif_data":   psycopg2.Binary(gif_data)   if gif_data   else None,
+            "gif_data": psycopg2.Binary(gif_data) if gif_data else None,
         },
     )
 
@@ -126,17 +129,37 @@ def _read_file(path: Path) -> bytes | None:
     return None
 
 
+# Esquemas de red admitidos para --json. Cualquier otro (file:, ftp:, gopher:,
+# esquemas personalizados…) se rechaza antes de llegar a urlopen.
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
+
+
+def _load_json_source(json_path: str) -> list | dict:
+    """
+    Lee el JSON de origen desde una URL http(s) o desde una ruta local.
+
+    El esquema se valida contra una lista blanca antes de abrir la URL, por lo
+    que urlopen nunca recibe un esquema inesperado (ruff S310 / bandit B310).
+    """
+    scheme = urllib.parse.urlsplit(json_path).scheme.lower()
+    if scheme in _ALLOWED_URL_SCHEMES:
+        # noqa justificado: el esquema ya está restringido a http/https.
+        with urllib.request.urlopen(json_path) as response:  # noqa: S310
+            return json.loads(response.read().decode("utf-8"))
+    if len(scheme) > 1:
+        # Un esquema de una sola letra es una unidad de Windows ("C:\..."), no una URL.
+        raise ValueError(f"Esquema no permitido en --json: {scheme}://")
+    return json.loads(Path(json_path).read_text(encoding="utf-8"))
+
+
 # ──────────────────────────────────────────────
 # Punto de entrada principal
 # ──────────────────────────────────────────────
 
+
 def main(json_path: str, media_dir: str, db_url: str, batch_size: int) -> None:
     # Cargar datos
-    if json_path.startswith(("http://", "https://")):
-        with urllib.request.urlopen(json_path) as response:
-            exercises = json.loads(response.read().decode("utf-8"))
-    else:
-        exercises = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    exercises = _load_json_source(json_path)
     if isinstance(exercises, dict):
         # Soporte para {"exercises": [...]} o un único objeto
         exercises = exercises.get("exercises", [exercises])
@@ -162,7 +185,7 @@ def main(json_path: str, media_dir: str, db_url: str, batch_size: int) -> None:
         texts = [build_metadata_text(ex) for ex in batch]
         embeddings = model.encode(texts, show_progress_bar=False).tolist()
 
-        for exercise, embedding in zip(batch, embeddings):
+        for exercise, embedding in zip(batch, embeddings, strict=True):
             try:
                 load_exercise(cur, exercise, media_path, embedding)
             except Exception as exc:
@@ -182,10 +205,12 @@ def main(json_path: str, media_dir: str, db_url: str, batch_size: int) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Carga ejercicios en PostgreSQL + pgVector")
-    parser.add_argument("--json",       required=True, help="Ruta al fichero JSON de ejercicios")
-    parser.add_argument("--media-dir",  default=".",   help="Directorio raíz de imágenes y vídeos")
-    parser.add_argument("--db-url",     required=True, help="URL de conexión PostgreSQL")
-    parser.add_argument("--batch-size", type=int, default=32, help="Ejercicios por batch de embedding")
+    parser.add_argument("--json", required=True, help="Ruta al fichero JSON de ejercicios")
+    parser.add_argument("--media-dir", default=".", help="Directorio raíz de imágenes y vídeos")
+    parser.add_argument("--db-url", required=True, help="URL de conexión PostgreSQL")
+    parser.add_argument(
+        "--batch-size", type=int, default=32, help="Ejercicios por batch de embedding"
+    )
     args = parser.parse_args()
 
     main(args.json, args.media_dir, args.db_url, args.batch_size)

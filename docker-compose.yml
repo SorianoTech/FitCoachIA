@@ -79,11 +79,11 @@ services:
 
   fitcoach-ia:
     container_name: fitcoach-ia
-    #    build:
-    #      context: ./src
-    #      dockerfile: Dockerfile
+    build:
+      context: ./src
+      dockerfile: Dockerfile
     restart: unless-stopped
-    image: fitcoachia/fitcoach-app:${VERSION:-latest}
+    # image: fitcoachia/fitcoach-app:${VERSION:-latest}
     networks:
       - fit-coach-net
     depends_on:
@@ -95,5 +95,7 @@ volumes:
   pgvector_volume:
 
 networks:
+  proxy-network:
+    external: true
   fit-coach-net:
     driver: bridge

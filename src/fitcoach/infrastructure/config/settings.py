@@ -59,6 +59,7 @@ class IASettings(BaseSettings):
     timeout_seconds: int = 0
     max_tokens: int = 0
     history_window_messages: int = 20
+    skill: str = "interviewer"
 
 
 class DatabaseSettings(BaseSettings):

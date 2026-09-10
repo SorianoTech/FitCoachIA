@@ -17,14 +17,17 @@ class PromptLoader:
         self._prompts_root = prompts_root or package_root
         self._skills_root = skills_root or package_root.parent / "ia" / "skills"
 
-    def load_assembled_system_prompt(self, asset_name: str = "") -> str:
+    def load_assembled_system_prompt(
+        self, asset_name: str = "", skill_name: str | None = None
+    ) -> str:
         """Return the agent's system prompt with its skill injected.
 
         ``{{rag_context}}`` is left untouched: it is filled per request, not at load time.
         """
 
         template = self._read(self._prompts_root / asset_name / "system_prompt.txt", asset_name)
-        skill = self._read(self._skills_root / asset_name / "SKILL.md", asset_name)
+        skill_asset = skill_name or asset_name
+        skill = self._read(self._skills_root / skill_asset / "SKILL.md", skill_asset)
 
         return template.replace("{{skill_content}}", skill)
 

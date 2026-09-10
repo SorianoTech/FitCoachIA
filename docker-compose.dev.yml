@@ -10,6 +10,7 @@ services:
       - ${FITCOACH_ENV_FILE:-.env}
     environment:
       APP_ENV: dev
+      ia_skill: interviewer-dev
       database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}
     depends_on:
       postgres:

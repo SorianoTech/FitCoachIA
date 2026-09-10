@@ -41,6 +41,19 @@ class TestPromptLoader:
         assert "# fitness-interviewer skill body" in result
         assert "{{rag_context}}" in result
 
+    def test_load_assembled_system_prompt_can_select_a_skill_variant(
+        self, loader: PromptLoader, tmp_path: Path
+    ) -> None:
+        dev_skills = tmp_path / "skills" / "interviewer-dev"
+        dev_skills.mkdir(parents=True)
+        (dev_skills / "SKILL.md").write_text("# short development skill", encoding="utf-8")
+        loader = PromptLoader(prompts_root=loader._prompts_root, skills_root=tmp_path / "skills")
+
+        result = loader.load_assembled_system_prompt("interviewer", "interviewer-dev")
+
+        assert "# short development skill" in result
+        assert "# fitness-interviewer skill body" not in result
+
     def test_load_assembled_system_prompt_raises_when_system_prompt_missing(
         self, tmp_path: Path
     ) -> None:

@@ -28,9 +28,9 @@ class InterviewerResultError(InterviewerError):
 
 
 class InterviewerChain:
-    def __init__(self, model: AsyncChatModel) -> None:
+    def __init__(self, model: AsyncChatModel, skill_name: str = "interviewer") -> None:
         self._model = model
-        self._agent = build_interviewer_agent()
+        self._agent = build_interviewer_agent(skill_name=skill_name)
 
     async def respond(
         self, user_message: str, history: Sequence[ConversationMessage]
@@ -124,4 +124,5 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
 
 @lru_cache
 def get_interviewer_chain() -> InterviewerChain:
-    return InterviewerChain(_build_model(get_ia_settings()))
+    settings = get_ia_settings()
+    return InterviewerChain(_build_model(settings), skill_name=settings.skill)

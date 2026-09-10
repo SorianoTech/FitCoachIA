@@ -163,7 +163,14 @@ ia_temperature=0.5
 ia_timeout_seconds=60
 ia_max_tokens=2048
 ia_history_window_messages=20
+ia_skill=interviewer
 ```
+
+En desarrollo, `docker-compose.dev.yml` establece automáticamente `ia_skill=interviewer-dev`.
+Esa variante pregunta solo identidad, datos básicos y objetivo/compromiso, y después genera el
+mismo perfil estructurado y el informe final usando valores conservadores para los campos que no
+se preguntan. Sirve para probar rápidamente la persistencia y el flujo de finalización; no debe
+usarse en producción.
 
 No incluyas `ia_token`, perfiles, informes ni datos sanitarios en commits, logs públicos, tickets o
 conversaciones no protegidas. Si una credencial se expone, revócala y genera otra.

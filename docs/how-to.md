@@ -150,6 +150,12 @@ completar las preguntas, valida y guarda el perfil estructurado en PostgreSQL y 
 resumen por Telegram. Los mensajes posteriores indican que el perfil está completado; envía
 `/interview` para reemplazar el perfil actual e iniciar una entrevista limpia.
 
+Para probar rápidamente la generación del informe final en desarrollo, `make dev-up` configura
+automáticamente la skill `interviewer-dev`. Esta variante solo hace tres preguntas y conserva el
+mismo contrato de perfil, persistencia e informe que producción. La skill completa se mantiene
+activa en producción con `ia_skill=interviewer`. Después de completar una prueba, consulta el
+informe en Adminer o envía `/interview` para empezar otra.
+
 ```bash
 # Suite completa con cobertura mínima del 80 %
 uv run pytest tests --cov=src/fitcoach --cov-fail-under=80

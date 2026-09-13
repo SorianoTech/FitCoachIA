@@ -22,7 +22,7 @@ export IT_BASE_URL
 COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
 COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
 
-.PHONY: container build run stop clean all help clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -37,6 +37,7 @@ help:
 	@echo "  make clean                          - Detiene el contenedor y elimina todas las imagenes $(IMAGE_BASE)"
 	@echo "  make all                            - Construye y ejecuta todo (limpiando primero)"
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
+	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
 	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado"
 	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
@@ -97,6 +98,16 @@ logs:
 clean: stop clean-images
 
 all: clean build run
+
+# Borra unicamente la imagen de la version indicada, respetando el resto de tags
+clean-image:
+	@IMAGE=$$($(DOCKER) images --filter "reference=$(IMAGE_BASE):$(version)" -q); \
+	if [ -z "$$IMAGE" ]; then \
+		echo "No se encontro la imagen $(IMAGE_BASE):$(version). Nada que eliminar."; \
+		exit 0; \
+	fi; \
+	echo "Eliminando $(IMAGE_BASE):$(version)..."; \
+	$(DOCKER) rmi $(IMAGE_BASE):$(version)
 
 # Borra todas las imagenes que contengan el nombre fitcoachia/fitcoach-app. Busca los IDs, elimina duplicados y borra las imagenes
 clean-images:

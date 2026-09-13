@@ -90,6 +90,7 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make all` | Secuencia completa: limpia, construye y arranca |
 | `make container` | Lista todos los contenedores (activos y detenidos) |
 | `make images` | Lista todas las imágenes Docker locales |
+| `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tag version=x.y.z` | Aplica un tag de versión a la imagen `latest` local |
 | `make tests` | Todos los tests con cobertura (falla si < 80%) |

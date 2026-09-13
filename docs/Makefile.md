@@ -8,6 +8,7 @@
 *   `make container`: Muestra todos los contenedores (en ejecución y detenidos).
 *   `make images`: Muestra todas las imágenes Docker disponibles en local.
 *   `make tag version=x.y.z`: Aplica un tag de versión a la imagen `latest` local (ej: `make tag version=1.0.0`).
+*   `make clean-image [version=x.y.z]`: Elimina únicamente la imagen de la versión indicada. Si no se indica versión, borra `latest`.
 *   `make clean-images`: Elimina todas las imágenes locales de la aplicación.
 *   `make logs`: Muestra los logs en tiempo real del contenedor en ejecución.
 *   `make tests`: Ejecuta todos los tests (unitarios e integración), analiza cobertura y falla si cobertura < 80%.

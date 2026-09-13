@@ -119,6 +119,7 @@ jobs:
             NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
             VERSION="${{ steps.image_version.outputs.VERSION }}"
             COMPOSE_FILE="${{ env.DEPLOY_TARGET_DIR }}/docker-compose.yml"
+            ENV_FILE="${{ env.DEPLOY_TARGET_DIR }}/.env.prod"
             DEPLOY_OK=false
 
             step() { echo ""; echo "=== $* ==="; }
@@ -126,8 +127,8 @@ jobs:
 
             step "1/4 Levantar la nueva versión"
             log "Imagen:  $NEW_IMAGE"
-            log "Comando: VERSION=$VERSION docker compose -f $COMPOSE_FILE up -d"
-            if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" up -d; then
+            log "Comando: VERSION=$VERSION docker compose --env-file $ENV_FILE -f $COMPOSE_FILE up -d"
+            if VERSION="$VERSION" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d; then
               log "compose up completado"
               log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
 

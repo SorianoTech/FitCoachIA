@@ -1,6 +1,7 @@
 # Environments
 venv**/
 .env
+.env.*
 .venv
 
 #initial files
@@ -20,4 +21,6 @@ venv**/
 #Binary
 __pycache__/
 
-uv.lock
+*.lock
+
+.mypy*elop

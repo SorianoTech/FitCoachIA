@@ -1,0 +1,55 @@
+name: fitcoach-dev
+
+services:
+  fitcoach-ia:
+    container_name: dev-fitcoach-ia
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    env_file:
+      - ${FITCOACH_ENV_FILE:-.env.dev}
+    environment:
+      APP_ENV: dev
+      ia_skill: ${ia_skill:-interviewer-dev}
+      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - proxy-network
+
+  postgres:
+    container_name: dev-fitcoach-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fitcoach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ${POSTGRES_USER:-fitcoach}
+    volumes:
+      - fitcoach-dev-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    container_name: dev-fitcoach-adminer
+    image: adminer:4.8.1-standalone
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - proxy-network
+
+volumes:
+  fitcoach-dev-postgres:
+
+networks:
+  proxy-network:
+    external: true

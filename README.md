@@ -48,7 +48,7 @@ FitCoachIA/
 │   │   ├── service/              # Casos de uso y lógica de negocio
 │   │   └── main.py               # Punto de entrada de la aplicación
 │   ├── Dockerfile                # Dockerización de la aplicación
-│   └── requirements.txt          # Dependencias del contenedor
+│   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
 ├── tests/
 │   ├── unit_test/                     # Tests unitarios
 │   └── it/                       # Tests de integración
@@ -63,12 +63,13 @@ FitCoachIA/
 │   │   ├── build.yml             # Pipeline de calidad, seguridad y tests (feature branches)
 │   │   ├── release.yml           # Publicación de imagen Docker y release en GitHub (main)
 │   │   └── validate-merge-source.yml  # Valida que los PRs a main vengan de develop
-│   └── requirements-ci.txt       # Dependencias del entorno CI (herramientas + src/requirements.txt)
+│   └── requirements-ci.txt       # Dependencias del entorno CI: runtime + dev + ci (generado desde pyproject.toml)
 ├── scripts/                      # Scripts de utilidad
 ├── .env.development              # Variables de entorno para desarrollo
 ├── .env.example                  # Plantilla de variables de entorno
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit)
 ├── docker-compose.yml            # Configuración de Docker Compose
+├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
 ├── pyproject.toml                # Configuración de ruff, mypy y pytest
 ├── LICENSE.md
 ├── Makefile                      # Automatización de tareas
@@ -89,11 +90,10 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make all` | Secuencia completa: limpia, construye y arranca |
 | `make container` | Lista todos los contenedores (activos y detenidos) |
 | `make images` | Lista todas las imágenes Docker locales |
+| `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tag version=x.y.z` | Aplica un tag de versión a la imagen `latest` local |
 | `make tests` | Todos los tests con cobertura (falla si < 80%) |
-| `make unit_tests` | Solo tests unitarios (sin cobertura) |
-| `make it_tests` | Solo tests de integración (sin cobertura) |
 
 
 ## Instalación y Despliegue
@@ -166,12 +166,6 @@ Los tests de integración (`tests/it`) atacan por HTTP el contenedor construido 
 ```bash
 # Todos los tests: unitarios con cobertura (falla si < 80%) + integración contra el contenedor
 make tests
-
-# Solo tests unitarios (sin cobertura, sin Docker)
-make unit_tests
-
-# Solo tests de integración (levanta el contenedor, ejecuta, lo detiene)
-make it_tests
 ```
 
 La configuración por defecto de pytest (paths, formato de logs, verbosidad) vive en `pyproject.toml` bajo `[tool.pytest.ini_options]`.

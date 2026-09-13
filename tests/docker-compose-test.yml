@@ -1,20 +1,45 @@
+name: fitcoach-test
+
 services:
   fitcoach-ia:
     build:
-      context: ../src
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile
+    container_name: fitcoachia-test
+    environment:
+      # Dummy values: just enough for the fail-fast startup check to pass.
+      - bot_telegram_token=test-token
+      - bot_telegram_url=http://test-telegram-mock:9999
+      - bot_telegram_commands=start:Inicia FitCoach
+      - log_level=INFO
+      - ia_base_url=http://test-llm-mock:9999
+      - ia_token=test-token
+      - ia_model=test-model
+      - ia_temperature=0.5
+      - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
     ports:
       - "${IT_PORT:-8001}:8000"
+    # python -c en lugar de curl: la imagen final es python:3.11-slim y no trae curl.
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 5s
-    networks:
-      - proxy-network
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-networks:
-  proxy-network:
-    driver: bridge
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-test
+    environment:
+      POSTGRES_DB: fitcoach
+      POSTGRES_PASSWORD: fitcoach
+      POSTGRES_USER: fitcoach
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcoach -d fitcoach"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

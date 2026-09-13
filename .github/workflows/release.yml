@@ -81,7 +81,8 @@ jobs:
         id: docker-image
         uses: docker/build-push-action@v5
         with:
-          context: ./src
+          context: .
+          file: ./src/Dockerfile
           push: false
           tags: ${{ steps.image-metadata.outputs.tags }}
           labels: ${{ steps.image-metadata.outputs.labels }}

@@ -17,7 +17,6 @@ from fitcoach.domain.telegram import Commands
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent import agent_factory
 from fitcoach.service.agent.interviewer_chain import InterviewerChain
-from fitcoach.service.llm.llm_caller import LLM
 
 logger = logging.getLogger(__name__)
 
@@ -65,19 +64,11 @@ class ConversationService:
     def __init__(
         self,
         bot: Bot,
-        llm: LLM | None = None,
-        interviewer: InterviewerChain | None = None,
-        conversation_repository: ConversationRepository | None = None,
+        interviewer: InterviewerChain,
+        conversation_repository: ConversationRepository,
         history_window_messages: int = 20,
     ) -> None:
-        if (interviewer is None) != (conversation_repository is None):
-            raise ValueError(
-                "The interviewer and conversation repository must be configured together"
-            )
-        if interviewer is None and llm is None:
-            raise ValueError("An interviewer or LLM must be configured")
         self._bot = bot
-        self._llm = llm
         self._interviewer = interviewer
         self._conversation_repository = conversation_repository
         self._history_window_messages = history_window_messages
@@ -123,9 +114,8 @@ class ConversationService:
             case Commands.START:
                 await self._send(chat_id, message_thread_id, Constants.WELCOME_MESSAGE)
             case Commands.INTERVIEW:
-                if self._conversation_repository is not None:
-                    await self._conversation_repository.restart_interview(chat_id)
-                await self._reply_with_llm(
+                await self._conversation_repository.restart_interview(chat_id)
+                await self._call_interviewer(
                     ctx, chat_id, message_thread_id, Constants.INTERVIEW_SEED_MESSAGE
                 )
             case Commands.DOUBTS | Commands.PROGRESS:
@@ -133,20 +123,19 @@ class ConversationService:
                 logger.info(f"{ctx} opcion todavia no implementada")
                 await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
             case None:
-                if self._conversation_repository is not None:
-                    status = await self._conversation_repository.get_interview_status(chat_id)
-                    if status == "completed":
-                        await self._send(
-                            chat_id,
-                            message_thread_id,
-                            Constants.INTERVIEW_COMPLETED_MESSAGE,
-                        )
-                        return
-                    if status is None:
-                        await self._conversation_repository.restart_interview(chat_id)
-                await self._reply_with_llm(ctx, chat_id, message_thread_id, input_text)
+                status = await self._conversation_repository.get_interview_status(chat_id)
+                if status == "completed":
+                    await self._send(
+                        chat_id,
+                        message_thread_id,
+                        Constants.INTERVIEW_COMPLETED_MESSAGE,
+                    )
+                    return
+                if status is None:
+                    await self._conversation_repository.restart_interview(chat_id)
+                await self._call_interviewer(ctx, chat_id, message_thread_id, input_text)
 
-    async def _reply_with_llm(
+    async def _call_interviewer(
         self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
     ) -> None:
         """Invoca al modelo y responde al usuario, degradando con un mensaje si falla."""
@@ -155,7 +144,7 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            result = await self._reply_with_interviewer(chat_id, user_message, llm_input)
+            result = await self._reply_with_interviewer(chat_id, llm_input)
         except InterviewerError as exc:
             logger.warning(
                 "%s fallo controlado del modelo code=%s retryable=%s",
@@ -175,14 +164,13 @@ class ConversationService:
             return
         elapsed_ms = (time.perf_counter() - started) * 1000
 
-        if isinstance(result, str):
-            llm_output = result
-        elif result.status == "completed":
+        if result.status == "completed":
             if result.report is None:
                 raise RuntimeError("Completed interviewer result is missing report")
             llm_output = result.report
         else:
             llm_output = result.reply
+
         if not llm_output.strip():
             logger.error(f"{ctx} el modelo devolvio una respuesta vacia tras {elapsed_ms:.0f}ms")
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
@@ -193,38 +181,29 @@ class ConversationService:
 
         logger.info(f"{ctx} respuesta del LLM en {elapsed_ms:.0f}ms: {llm_output!r}")
         await self._send(chat_id, message_thread_id, llm_output)
-        if self._conversation_repository is not None:
-            if isinstance(result, InterviewerTurn) and result.status == "completed":
-                if result.profile is None or result.report is None:
-                    raise RuntimeError("Completed interviewer result is missing profile or report")
-                await self._conversation_repository.complete_interview(
-                    chat_id,
-                    user_message,
-                    result.reply,
-                    result.profile,
-                    result.report,
-                )
-            else:
-                await self._conversation_repository.add_turn(chat_id, user_message, llm_output)
+        if result.status == "completed":
+            if result.profile is None or result.report is None:
+                raise RuntimeError("Completed interviewer result is missing profile or report")
+            await self._conversation_repository.complete_interview(
+                chat_id,
+                user_message,
+                result.reply,
+                result.profile,
+                result.report,
+            )
+        else:
+            await self._conversation_repository.add_turn(chat_id, user_message, llm_output)
 
     async def _reply_with_interviewer(
         self,
         chat_id: int,
-        user_message: str,
         llm_input: IAInput,
-    ) -> str | InterviewerTurn:
-        if self._interviewer is None:
-            if self._llm is None:
-                raise RuntimeError("No LLM has been configured")
-            return await self._llm.chat(messages=llm_input)
-
-        if self._conversation_repository is None:
-            raise RuntimeError("No conversation repository has been configured")
+    ) -> InterviewerTurn:
         history = await self._conversation_repository.get_recent(
             chat_id,
             self._history_window_messages,
         )
-        return await self._interviewer.respond(user_message, history)
+        return await self._interviewer.respond(llm_input.get_user_message(), history)
 
     def _build_llm_input(self, ctx: str, user_message: str) -> IAInput:
         interviewer_agent = agent_factory.build_interviewer_agent()

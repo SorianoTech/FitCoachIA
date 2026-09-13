@@ -19,22 +19,11 @@ from fitcoach.service.conversation_service import (
     truncate,
     user_label,
 )
-from fitcoach.service.llm.llm_caller import LLM
 
 
 @pytest.fixture
 def mock_bot() -> AsyncMock:
     return AsyncMock(spec=Bot)
-
-
-@pytest.fixture
-def mock_llm() -> AsyncMock:
-    return AsyncMock(spec=LLM)
-
-
-@pytest.fixture
-def service(mock_bot: AsyncMock, mock_llm: AsyncMock) -> ConversationService:
-    return ConversationService(bot=mock_bot, llm=mock_llm)
 
 
 @pytest.fixture
@@ -45,6 +34,19 @@ def mock_interviewer() -> AsyncMock:
 @pytest.fixture
 def mock_conversation_repository() -> AsyncMock:
     return AsyncMock(spec=ConversationRepository)
+
+
+@pytest.fixture
+def service(
+    mock_bot: AsyncMock,
+    mock_interviewer: AsyncMock,
+    mock_conversation_repository: AsyncMock,
+) -> ConversationService:
+    return ConversationService(
+        bot=mock_bot,
+        interviewer=mock_interviewer,
+        conversation_repository=mock_conversation_repository,
+    )
 
 
 def _message_payload(
@@ -172,12 +174,14 @@ class TestSlowModelWarning:
     async def test_warns_when_the_model_takes_longer_than_the_threshold(
         self,
         service: ConversationService,
-        mock_llm: AsyncMock,
+        mock_interviewer: AsyncMock,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         monkeypatch.setattr(Constants, "SLOW_LLM_MS", -1)  # cualquier latencia lo supera
-        mock_llm.chat.return_value = "respuesta"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="respuesta"
+        )
         caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
 
         await service.handle_update(_text_update(456, "hola"))
@@ -188,10 +192,12 @@ class TestSlowModelWarning:
     async def test_does_not_warn_when_the_model_responds_fast(
         self,
         service: ConversationService,
-        mock_llm: AsyncMock,
+        mock_interviewer: AsyncMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        mock_llm.chat.return_value = "respuesta"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="respuesta"
+        )
         caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
 
         await service.handle_update(_text_update(456, "hola"))
@@ -216,7 +222,9 @@ class TestPersistentConversation:
             )
         ]
         mock_conversation_repository.get_recent.return_value = history
-        mock_interviewer.respond.return_value = "Hola Ana"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="Hola Ana"
+        )
         service = ConversationService(
             bot=mock_bot,
             interviewer=mock_interviewer,
@@ -350,10 +358,12 @@ class TestUnexpectedErrorHandling:
         self,
         service: ConversationService,
         mock_bot: AsyncMock,
-        mock_llm: AsyncMock,
+        mock_interviewer: AsyncMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        mock_llm.chat.return_value = "respuesta"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="respuesta"
+        )
         mock_bot.send_message.side_effect = RuntimeError("telegram caido")
         caplog.set_level(logging.ERROR, logger="fitcoach.service.conversation_service")
 

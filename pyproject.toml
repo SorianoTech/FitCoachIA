@@ -35,25 +35,34 @@ dependencies = [
 # DEPENDENCY-GROUPS — ver docs/toml.md
 # ============================================================================
 [dependency-groups]
-dev = [
+# Ejecucion de tests: lo que necesita `make tests`, en local y en CI.
+test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.1.0",
     "coverage>=7.13.5",
+]
+
+# Analisis estatico: linter y tipos.
+lint = [
     "ruff>=0.15.12",
     "mypy>=1.10",
     "types-regex>=2026.7.19",  # stubs de `regex`: solo para mypy, no se instala en runtime
-    "pre-commit>=4.6.0",
 ]
 
-# Herramientas que solo usa el pipeline (no hacen falta para desarrollar en local).
+# Seguridad: lo invoca el pipeline, reproducible en local.
 ci = [
     "bandit>=1.9.4",
-    "cyclonedx-python-lib>=9.1.0",
-    "docker>=7.1.0",
     "pip-audit>=2.9.0",
-    "testcontainers>=4.14.2",
     "setuptools>=83.0.0",  # lo aporta el entorno; se fija por PYSEC-2026-3447
+]
+
+# Agregado de desarrollo local: todo lo anterior mas lo que CI no usa.
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "ci"},
+    "pre-commit>=4.6.0",
 ]
 
 [tool.hatch.build.targets.wheel]

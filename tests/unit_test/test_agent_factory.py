@@ -20,7 +20,7 @@ class TestBuildInterviewerAgent:
 
         assert isinstance(agent, InterviewerAgent)
         assert agent.system_prompt == "assembled prompt {{rag_context}}"
-        loader.load_assembled_system_prompt.assert_called_once_with("interviewer")
+        loader.load_assembled_system_prompt.assert_called_once_with("interviewer", "interviewer")
 
     def test_propagates_the_loader_error_when_assets_are_missing(self, loader: MagicMock) -> None:
         loader.load_assembled_system_prompt.side_effect = PromptAssetNotFoundError("missing asset")

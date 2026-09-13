@@ -93,8 +93,6 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tag version=x.y.z` | Aplica un tag de versión a la imagen `latest` local |
 | `make tests` | Todos los tests con cobertura (falla si < 80%) |
-| `make unit_tests` | Solo tests unitarios (sin cobertura) |
-| `make it_tests` | Solo tests de integración (sin cobertura) |
 
 
 ## Instalación y Despliegue
@@ -160,17 +158,13 @@ La action `.github/actions/python-setup.yml` es reutilizable entre los workflows
 
 ## Tests
 
-El proyecto requiere que `PYTHONPATH` apunte a `src/` para que los imports de la aplicación se resuelvan correctamente.
+Los imports de la aplicación se resuelven solos: `pythonpath = ["src"]` en `pyproject.toml` ya apunta a `src/`, sin necesidad de exportar `PYTHONPATH` a mano.
+
+Los tests de integración (`tests/it`) atacan por HTTP el contenedor construido desde `src/Dockerfile`, así que requieren Docker en marcha. `make tests` e `make it_tests` lo levantan y lo detienen automáticamente.
 
 ```bash
-# Todos los tests con análisis de cobertura (falla si cobertura < 80%)
-PYTHONPATH=src pytest tests --cov=src/fitcoach --cov-fail-under=80
-
-# Solo tests unitarios (sin análisis de cobertura)
-PYTHONPATH=src pytest tests/unit --no-cov
-
-# Solo tests de integración (sin análisis de cobertura)
-PYTHONPATH=src pytest tests/it --no-cov
+# Todos los tests: unitarios con cobertura (falla si < 80%) + integración contra el contenedor
+make tests
 ```
 
 La configuración por defecto de pytest (paths, formato de logs, verbosidad) vive en `pyproject.toml` bajo `[tool.pytest.ini_options]`.

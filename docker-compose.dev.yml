@@ -7,10 +7,10 @@ services:
       context: .
       dockerfile: src/Dockerfile
     env_file:
-      - ${FITCOACH_ENV_FILE:-.env}
+      - ${FITCOACH_ENV_FILE:-.env.dev}
     environment:
       APP_ENV: dev
-      ia_skill: interviewer-dev
+      ia_skill: ${ia_skill:-interviewer-dev}
       database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}
     depends_on:
       postgres:

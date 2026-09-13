@@ -50,12 +50,15 @@ Este fichero cumple dos roles distintos que conviven en el mismo archivo:
 
 | Clave | Qué hace |
 |-------|----------|
-| `dev = [...]` | Dependencias para **desarrollar** en local (tests, linting, hooks) — nunca se instalan en la imagen de producción |
-| `ci = [...]` | Herramientas que solo usa el **pipeline** (bandit, pip-audit, cyclonedx, testcontainers) — no hacen falta ni en producción ni en local |
+| `test = [...]` | Ejecución de tests (`pytest`, `pytest-asyncio`, `pytest-cov`, `coverage`) — lo que necesita `make tests`, en local y en CI |
+| `lint = [...]` | Análisis estático (`ruff`, `mypy`, stubs de `types-regex`) |
+| `ci = [...]` | Seguridad que invoca el pipeline (`bandit`, `pip-audit`, el pin de `setuptools`) — reproducible en local |
+| `dev = [...]` | Agregado de desarrollo local: incluye `test` + `lint` + `ci` vía `include-group`, más `pre-commit` — nunca se instala en la imagen de producción ni en CI |
 
 Es el estándar [PEP 735](https://peps.python.org/pep-0735/), soportado nativamente por `uv`:
-- `uv sync` instala el paquete **más** los grupos de dependencias (por defecto, `dev`).
+- `uv sync` instala el paquete **más** los grupos de dependencias (por defecto, `dev`, que arrastra el resto vía `include-group`).
 - `uv sync --no-dev` instala solo lo que hay en `[project.dependencies]`.
+- CI no instala `dev`: compila explícitamente `test` + `lint` + `ci`, así que `pre-commit` y sus transitivas (`virtualenv`, `nodeenv`, `identify`...) nunca llegan al pipeline — nadie los invoca ahí.
 
 ---
 
@@ -66,13 +69,13 @@ Los dos ficheros son **artefactos compilados**: no se editan a mano. `pyproject.
 | Fichero | Contiene | Lo consume |
 |---------|----------|------------|
 | `src/requirements.txt` | Solo `[project.dependencies]` + transitivas | `src/Dockerfile` → imagen de producción |
-| `.github/requirements-ci.txt` | Lo anterior **+** grupos `dev` y `ci` | `.github/actions/python-setup` → entorno de CI |
+| `.github/requirements-ci.txt` | Lo anterior **+** grupos `test`, `lint` y `ci` | `.github/actions/python-setup` → entorno de CI |
 
 Para regenerarlos tras tocar dependencias en `pyproject.toml`, hay que lanzar **los dos comandos**: si solo se actualiza uno, los pines comunes se desincronizan y CI deja de validar lo que realmente se despliega.
 
 ```bash
 uv pip compile pyproject.toml --universal --python-version 3.11 --no-annotate -o src/requirements.txt
-uv pip compile pyproject.toml --group dev --group ci --universal --python-version 3.11 --no-annotate -o .github/requirements-ci.txt
+uv pip compile pyproject.toml --group test --group lint --group ci --universal --python-version 3.11 --no-annotate -o .github/requirements-ci.txt
 ```
 
 - `--universal` es obligatorio: se compila en Windows pero se despliega en Linux. Sin él, el resultado se ata a la plataforma que lo genera y se pierden paquetes con marcador (`uvloop` solo existe fuera de Windows, `colorama` solo en Windows).

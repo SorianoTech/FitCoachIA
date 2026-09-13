@@ -60,6 +60,8 @@ class TestIASettings:
     def test_get_ia_settings_returns_a_cached_singleton(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # get_ia_settings() construye IASettings() sin argumentos: sin esto leeria los .env locales.
+        monkeypatch.setitem(IASettings.model_config, "env_file", None)
         monkeypatch.setenv("ia_base_url", "http://test-llm:9999")
         monkeypatch.setenv("ia_token", "test-token")
         monkeypatch.setenv("ia_model", "test-model")

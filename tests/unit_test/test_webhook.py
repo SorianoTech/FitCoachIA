@@ -1,7 +1,6 @@
 import logging
 from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 import regex
 from fastapi import FastAPI
@@ -10,10 +9,12 @@ from telegram import Bot
 
 from fitcoach.api.webhook import get_conversation_service, webhook
 from fitcoach.domain.constants import Constants
+from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.main import app as fitcoach_app
+from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.service.agent.interviewer_chain import InterviewerChain
 from fitcoach.service.conversation_service import ConversationService
-from fitcoach.service.llm.llm_caller import LLM, get_llm
 
 
 @pytest.fixture
@@ -22,16 +23,27 @@ def mock_bot() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_llm() -> AsyncMock:
-    return AsyncMock(spec=LLM)
+def mock_interviewer() -> AsyncMock:
+    return AsyncMock(spec=InterviewerChain)
 
 
 @pytest.fixture
-def client(mock_bot: AsyncMock, mock_llm: AsyncMock) -> TestClient:
+def mock_conversation_repository() -> AsyncMock:
+    return AsyncMock(spec=ConversationRepository)
+
+
+@pytest.fixture
+def client(
+    mock_bot: AsyncMock,
+    mock_interviewer: AsyncMock,
+    mock_conversation_repository: AsyncMock,
+) -> TestClient:
     app = FastAPI()
     app.include_router(webhook)
     app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
-        bot=mock_bot, llm=mock_llm
+        bot=mock_bot,
+        interviewer=mock_interviewer,
+        conversation_repository=mock_conversation_repository,
     )
     return TestClient(app)
 
@@ -73,59 +85,58 @@ class TestTelegramWebhook:
         )
 
     def test_free_text_message_replies_with_the_agent_llm_output(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_llm.chat.return_value = "agent reply"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="agent reply"
+        )
 
         response = client.post("/webhook/response", json=_text_update(456, "hola"))
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}
-        mock_llm.chat.assert_awaited_once()
-        sent_messages = mock_llm.chat.await_args.kwargs["messages"].get_input()
-        assert sent_messages[-1] == {"role": "user", "content": "hola"}
+        mock_interviewer.respond.assert_awaited_once()
+        assert mock_interviewer.respond.await_args.args[0] == "hola"
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=456, message_thread_id=None, text="agent reply"
         )
 
     def test_free_text_emojis_are_removed_before_reaching_the_agent(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_llm.chat.return_value = "agent reply"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="agent reply"
+        )
 
         response = client.post("/webhook/response", json=_text_update(456, "hola 👋 mundo 🔥"))
 
         assert response.status_code == 200
-        sent_messages = mock_llm.chat.await_args.kwargs["messages"].get_input()
-        assert sent_messages[-1] == {"role": "user", "content": "hola mundo"}
+        assert mock_interviewer.respond.await_args.args[0] == "hola mundo"
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=456, message_thread_id=None, text="agent reply"
         )
 
     def test_interview_command_starts_the_agent_conversation(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_llm.chat.return_value = "¡Bienvenido a la entrevista!"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="¡Bienvenido a la entrevista!"
+        )
 
         response = client.post("/webhook/response", json=_text_update(456, "/interview"))
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}
-        mock_llm.chat.assert_awaited_once()
-        sent_messages = mock_llm.chat.await_args.kwargs["messages"].get_input()
-        assert sent_messages[0]["role"] == "system"
-        assert sent_messages[-1] == {"role": "user", "content": Constants.INTERVIEW_SEED_MESSAGE}
+        mock_interviewer.respond.assert_awaited_once()
+        assert mock_interviewer.respond.await_args.args[0] == Constants.INTERVIEW_SEED_MESSAGE
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=456, message_thread_id=None, text="¡Bienvenido a la entrevista!"
         )
 
     def test_interview_command_replies_with_llm_error_message_when_the_model_fails(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        request = httpx.Request("POST", "http://test-llm:9999/v1/chat/completions")
-        mock_llm.chat.side_effect = httpx.HTTPStatusError(
-            "server error", request=request, response=httpx.Response(500, request=request)
-        )
+        mock_interviewer.respond.side_effect = RuntimeError("server error")
 
         response = client.post("/webhook/response", json=_text_update(456, "/interview"))
 
@@ -159,12 +170,9 @@ class TestTelegramWebhook:
         )
 
     def test_free_text_message_replies_with_llm_error_message_when_the_model_fails(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        request = httpx.Request("POST", "http://test-llm:9999/v1/chat/completions")
-        mock_llm.chat.side_effect = httpx.HTTPStatusError(
-            "server error", request=request, response=httpx.Response(500, request=request)
-        )
+        mock_interviewer.respond.side_effect = RuntimeError("server error")
 
         response = client.post("/webhook/response", json=_text_update(456, "hola"))
 
@@ -175,10 +183,12 @@ class TestTelegramWebhook:
         )
 
     def test_free_text_message_replies_with_llm_error_message_when_the_model_returns_empty(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
         # Telegram rechaza un sendMessage con texto vacio, asi que nunca debe intentarse.
-        mock_llm.chat.return_value = "   \n  "
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="   \n  "
+        )
 
         response = client.post("/webhook/response", json=_text_update(456, "hola"))
 
@@ -188,9 +198,11 @@ class TestTelegramWebhook:
         )
 
     def test_replies_with_server_error_message_when_something_else_fails(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_llm.chat.return_value = "agent reply"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="agent reply"
+        )
         # Primer envio (la respuesta del modelo) revienta; el segundo es el aviso de error.
         mock_bot.send_message.side_effect = [RuntimeError("telegram caido"), None]
 
@@ -278,29 +290,30 @@ class TestTelegramWebhook:
 
 class TestEditedMessage:
     def test_edited_message_is_processed_like_a_new_message(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_llm.chat.return_value = "agent reply"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="agent reply"
+        )
 
         response = client.post("/webhook/response", json=_edited_text_update(456, "hola editada"))
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}
-        mock_llm.chat.assert_awaited_once()
-        sent_messages = mock_llm.chat.await_args.kwargs["messages"].get_input()
-        assert sent_messages[-1] == {"role": "user", "content": "hola editada"}
+        mock_interviewer.respond.assert_awaited_once()
+        assert mock_interviewer.respond.await_args.args[0] == "hola editada"
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=456, message_thread_id=None, text="agent reply"
         )
 
     def test_edited_message_without_text_replies_with_fallback_text(
-        self, client: TestClient, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
         response = client.post("/webhook/response", json=_edited_text_update(789))
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}
-        mock_llm.chat.assert_not_awaited()
+        mock_interviewer.respond.assert_not_awaited()
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=789, text="I didn't receive any information. Please, send it again .... "
         )
@@ -317,9 +330,11 @@ def _webhook_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord
 
 class TestLogTraceability:
     def test_info_logs_correlate_chat_thread_message_update_and_user(
-        self, client: TestClient, mock_llm: AsyncMock, caplog: pytest.LogCaptureFixture
+        self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_llm.chat.return_value = "respuesta del agente"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="respuesta del agente"
+        )
         caplog.set_level(logging.INFO, logger="fitcoach.service.conversation_service")
 
         client.post("/webhook/response", json=_text_update(456, "hola"))
@@ -331,9 +346,11 @@ class TestLogTraceability:
         assert any("entrada='hola'" in record.message for record in records)
 
     def test_info_logs_the_model_output_and_its_latency(
-        self, client: TestClient, mock_llm: AsyncMock, caplog: pytest.LogCaptureFixture
+        self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_llm.chat.return_value = "respuesta del agente"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="respuesta del agente"
+        )
         caplog.set_level(logging.INFO, logger="fitcoach.service.conversation_service")
 
         client.post("/webhook/response", json=_text_update(456, "hola"))
@@ -344,9 +361,11 @@ class TestLogTraceability:
         assert regex.search(r"en \d+ms", reply_logs[0].message)
 
     def test_debug_logs_the_composed_interviewer_prompt(
-        self, client: TestClient, mock_llm: AsyncMock, caplog: pytest.LogCaptureFixture
+        self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_llm.chat.return_value = "respuesta del agente"
+        mock_interviewer.respond.return_value = InterviewerTurn(
+            status="in_progress", reply="respuesta del agente"
+        )
         caplog.set_level(logging.DEBUG, logger="fitcoach.service.conversation_service")
 
         client.post("/webhook/response", json=_text_update(456, "hola"))
@@ -386,9 +405,9 @@ class TestLogTraceability:
         assert "update=-1" not in warnings[0].message
 
     def test_llm_failure_is_logged_as_error(
-        self, client: TestClient, mock_llm: AsyncMock, caplog: pytest.LogCaptureFixture
+        self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_llm.chat.side_effect = RuntimeError("boom")
+        mock_interviewer.respond.side_effect = RuntimeError("boom")
         caplog.set_level(logging.INFO, logger="fitcoach.service.conversation_service")
 
         client.post("/webhook/response", json=_text_update(456, "hola"))
@@ -400,12 +419,16 @@ class TestLogTraceability:
 
 class TestWebhookRouteRegistration:
     def test_webhook_response_route_is_registered_on_the_app(
-        self, mock_bot: AsyncMock, mock_llm: AsyncMock
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
     ) -> None:
         fitcoach_app.dependency_overrides[get_bot] = lambda: mock_bot
-        fitcoach_app.dependency_overrides[get_llm] = lambda: mock_llm
         fitcoach_app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
-            bot=mock_bot, llm=mock_llm
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
         )
         try:
             response = TestClient(fitcoach_app).post(
@@ -413,7 +436,6 @@ class TestWebhookRouteRegistration:
             )
         finally:
             fitcoach_app.dependency_overrides.pop(get_bot, None)
-            fitcoach_app.dependency_overrides.pop(get_llm, None)
             fitcoach_app.dependency_overrides.pop(get_conversation_service, None)
 
         assert response.status_code == 200

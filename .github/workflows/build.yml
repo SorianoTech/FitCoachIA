@@ -11,14 +11,12 @@ on:
     paths-ignore:
       - '**.md'
       - '.gitignore'
-      - 'Makefile'
       - '.env.example'
       - 'docs/**'
   pull_request:
     paths-ignore:
       - '**.md'
       - '.gitignore'
-      - 'Makefile'
       - '.env.example'
       - 'docs/**'
     branches:

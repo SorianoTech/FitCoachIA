@@ -10,7 +10,6 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-develop
 VENV=venv
 PYTEST=$(VENV)/Scripts/pytest.exe
 

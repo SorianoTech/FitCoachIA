@@ -78,7 +78,7 @@ prod-logs:
 	$(DOCKER) compose --env-file .env.prod logs -f
 
 tests:
-	@$(COMPOSE_UP)
+	@$(COMPOSE_UP) \
 	@$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \

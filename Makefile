@@ -10,6 +10,7 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
+develop
 VENV=venv
 PYTEST=$(VENV)/Scripts/pytest.exe
 
@@ -45,6 +46,7 @@ help:
 	@echo "  make prod-up [version=x.y.z]        - Levanta el entorno de produccion"
 	@echo "  make prod-down                      - Detiene el entorno de produccion"
 	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
+
 container:
 	@$(DOCKER) ps -a
 

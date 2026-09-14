@@ -1,10 +1,83 @@
 # ============================================================================
+# BUILD-SYSTEM — ver docs/toml.md
+# ============================================================================
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ============================================================================
+# PROJECT — ver docs/toml.md
+# ============================================================================
+[project]
+name = "fitcoach"
+version = "0.1.0"
+description = "FitCoachIA — coaching assistant con backend FastAPI e interfaz de bot de Telegram"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.18.4",
+    "asyncpg>=0.31.0",
+    "fastapi[standard]>=0.135.3",
+    "httpx>=0.28.1",              # se importa directo en service/llm/llm_caller.py
+    "httpx2>=2.12.0",             # pin de seguridad para evitar versión vulnerable transitiva
+    "httpcore2>=2.10.0",          # pin de seguridad asociado a httpx2
+    "langchain-core>=1.2.17",
+    "langchain-openai>=1.1.11",
+    "pydantic>=2.13.0",
+    "pydantic-settings>=2.13.1",
+    "pydantic-extra-types>=2.11.1",
+    "python-dotenv>=1.2.2",
+    "sentry-sdk>=2.58.0",
+    "sqlalchemy>=2.0.48",
+    "python-telegram-bot>=21.0",
+    "regex>=2024.11.6"
+]
+
+# ============================================================================
+# DEPENDENCY-GROUPS — ver docs/toml.md
+# ============================================================================
+[dependency-groups]
+# Ejecucion de tests: lo que necesita `make tests`, en local y en CI.
+test = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "coverage>=7.13.5",
+]
+
+# Analisis estatico: linter y tipos.
+lint = [
+    "ruff>=0.15.12",
+    "mypy>=1.10",
+    "types-regex>=2026.7.19",  # stubs de `regex`: solo para mypy, no se instala en runtime
+]
+
+# Seguridad: lo invoca el pipeline, reproducible en local.
+ci = [
+    "bandit>=1.9.4",
+    "pip-audit>=2.9.0",
+    "setuptools>=83.0.0",  # lo aporta el entorno; se fija por PYSEC-2026-3447
+]
+
+# Agregado de desarrollo local: todo lo anterior mas lo que CI no usa.
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "ci"},
+    "pre-commit>=4.6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fitcoach"]
+
+# ============================================================================
 # RUFF — linter y formateador
 # ============================================================================
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 output-format = "concise"
+preview = true
 
 # Modo informativo: rutas excluidas del análisis (solo analiza ficheros .py/.pyi)
 extend-exclude = [
@@ -32,7 +105,7 @@ select = [
     "T20",    # detecta print()/pprint() residuales
     "PT",     # buenas prácticas en tests pytest
 ]
-ignore = ["B008"]
+ignore = ["B008", "E501"]
 
 [tool.ruff.lint.per-file-ignores]
 # Permitir asserts (S101) y no exigir docstrings (D) en tests.
@@ -43,7 +116,7 @@ ignore = ["B008"]
 # MYPY — análisis estático de tipos
 # ============================================================================
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 
 # Imprescindibles para proyectos de IA generativa
@@ -99,3 +172,8 @@ source = ["src"]
 
 [tool.coverage.report]
 fail_under = 80
+
+[tool.uv.workspace]
+members = [
+    "telegram-bot",
+]

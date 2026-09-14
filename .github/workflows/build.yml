@@ -1,6 +1,7 @@
 name: Test and build project
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'feature/**'
@@ -10,14 +11,12 @@ on:
     paths-ignore:
       - '**.md'
       - '.gitignore'
-      - 'Makefile'
       - '.env.example'
       - 'docs/**'
   pull_request:
     paths-ignore:
       - '**.md'
       - '.gitignore'
-      - 'Makefile'
       - '.env.example'
       - 'docs/**'
     branches:

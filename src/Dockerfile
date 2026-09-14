@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   && rm -rf /var/lib/apt/lists/*
 
-COPY ./requirements.txt .
+COPY ./src/requirements.txt .
 RUN pip install --prefix=/install -q --no-cache-dir -r requirements.txt
 RUN python -m venv /opt/fitcoach
 
@@ -30,10 +30,13 @@ EXPOSE 8000
 
 WORKDIR /app
 
-COPY --from=builder /install $APP_LIB_DIR
+RUN groupadd --system fitcoach \
+  && useradd --system --gid fitcoach --home-dir /app --no-create-home fitcoach
 
-COPY ./fitcoach ./fitcoach
+COPY --from=builder --chown=fitcoach:fitcoach /install $APP_LIB_DIR
+COPY --chown=fitcoach:fitcoach ./src/fitcoach ./fitcoach
+COPY --chown=fitcoach:fitcoach ./alembic ./alembic
+COPY --chown=fitcoach:fitcoach ./alembic.ini .
 
-ENTRYPOINT ["fastapi", "run","fitcoach/main.py"]
-
-CMD ["--port", "8000"]
+USER fitcoach
+ENTRYPOINT ["sh", "-c", "alembic upgrade head && exec fastapi run fitcoach/main.py --port 8000"]

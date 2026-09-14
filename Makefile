@@ -10,9 +10,6 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-# Usa siempre el pytest del venv del proyecto, evitando depender de cuál
-# pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
-# --system) se sobreescribe con `make tests PYTEST=pytest`.
 VENV=venv
 PYTEST=$(VENV)/Scripts/pytest.exe
 
@@ -25,7 +22,10 @@ export IT_BASE_URL
 COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
 COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
 
-.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs
+# Usa siempre el pytest del venv del proyecto, evitando depender de cuál
+# pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
+# --system) se sobreescribe con `make tests PYTEST=pytest`.
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -36,18 +36,21 @@ help:
 	@echo "  make logs                           - Muestra los logs del contenedor"
 	@echo "  make clean                          - Detiene el contenedor y elimina todas las imagenes $(IMAGE_BASE)"
 	@echo "  make all                            - Construye y ejecuta todo (limpiando primero)"
-	@echo "  make images                         - Consulta las imagenes en local"
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
-	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
-	@echo "  make tests                          - execute all tests (unit test and it tests). Levanta el contenedor de integracion, analiza cobertura y falla si cobertura < 80%"
-	@echo "  make unit_tests                     - execute unit tests (sin cobertura, sin Docker)"
-	@echo "  make it_tests                       - levanta el contenedor de integracion, ejecuta los tests de integracion (sin cobertura) y lo detiene"
+	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
+	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
+	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado"
+	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
+	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
+	@echo "  make prod-up [version=x.y.z]        - Levanta el entorno de produccion"
+	@echo "  make prod-down                      - Detiene el entorno de produccion"
+	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
 
 container:
 	@$(DOCKER) ps -a
 
 build:
-	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile ./src
+	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile .
 	@if [ "$(version)" != "latest" ]; then \
 		$(DOCKER) tag $(IMAGE_BASE):$(version) $(IMAGE_LATEST); \
 		echo "Imagen construida: $(IMAGE_BASE):$(version) (también etiquetada como latest)"; \
@@ -55,26 +58,35 @@ build:
 		echo "Imagen construida: $(IMAGE_LATEST)"; \
 	fi
 
-unit_tests:
-	$(PYTEST) --no-cov -o testpaths=$(UNIT_TEST_PACKAGE)
+dev-up:
+	$(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml up -d --build
 
-it_tests:
-	@$(COMPOSE_UP)
-	@$(PYTEST) --no-cov -o testpaths=$(IT_TEST_PACKAGE); \
-	STATUS=$$?; \
-	$(COMPOSE_DOWN); \
-	exit $$STATUS
+dev-down:
+	$(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml down
+
+dev-logs:
+	$(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml logs -f
+
+prod-up:
+	$(DOCKER) compose --env-file .env.prod up -d
+
+prod-down:
+	$(DOCKER) compose --env-file .env.prod down
+
+prod-logs:
+	$(DOCKER) compose --env-file .env.prod logs -f
 
 tests:
-	@$(COMPOSE_UP)
-	@$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
+	@$(COMPOSE_UP); \
+	$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \
 	exit $$STATUS
 
 run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
-	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
+	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) --env-file .env \
+		$(if $(log_level),-e log_level=$(log_level),) $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"
 
 stop:
@@ -88,8 +100,15 @@ clean: stop clean-images
 
 all: clean build run
 
-images:
-	@$(DOCKER) images
+# Borra unicamente la imagen de la version indicada, respetando el resto de tags
+clean-image:
+	@IMAGE=$$($(DOCKER) images --filter "reference=$(IMAGE_BASE):$(version)" -q); \
+	if [ -z "$$IMAGE" ]; then \
+		echo "No se encontro la imagen $(IMAGE_BASE):$(version). Nada que eliminar."; \
+		exit 0; \
+	fi; \
+	echo "Eliminando $(IMAGE_BASE):$(version)..."; \
+	$(DOCKER) rmi $(IMAGE_BASE):$(version)
 
 # Borra todas las imagenes que contengan el nombre fitcoachia/fitcoach-app. Busca los IDs, elimina duplicados y borra las imagenes
 clean-images:
@@ -101,18 +120,3 @@ clean-images:
 		$(DOCKER) rmi -f $$IMAGES; \
 		echo "Imágenes eliminadas correctamente."; \
 	fi
-
-tag:
-	@if [ -z "$(version)" ]; then \
-		echo "Error: debes indicar la versión. Uso: make tag version=1.0.0"; \
-		exit 1; \
-	fi; \
-	echo "Buscando imagen local $(IMAGE_LATEST)..."; \
-	if ! $(DOCKER) image inspect $(IMAGE_LATEST) > /dev/null 2>&1; then \
-		echo "Error: no se encontró la imagen $(IMAGE_LATEST) en local. Ejecuta 'make build' primero."; \
-		exit 1; \
-	fi; \
-	echo "Imagen encontrada. Aplicando tag $(IMAGE_BASE):$(version)..."; \
-	$(DOCKER) tag $(IMAGE_LATEST) $(IMAGE_BASE):$(version); \
-	echo "Tag aplicado. Imágenes disponibles para $(IMAGE_BASE):"; \
-	$(DOCKER) images $(IMAGE_BASE)

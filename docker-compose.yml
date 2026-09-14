@@ -1,11 +1,40 @@
+name: fitcoach-prod
+
 services:
   fitcoach-ia:
     container_name: fitcoach-ia
     restart: unless-stopped
     image: fitcoachia/fitcoach-app:${VERSION:-latest}
+    env_file:
+      - ${FITCOACH_ENV_FILE:-.env.prod}
+    environment:
+      APP_ENV: prod
+      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - proxy-network
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fitcoach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ${POSTGRES_USER:-fitcoach}
+    volumes:
+      - fitcoach-prod-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - proxy-network
 
 networks:
   proxy-network:
     external: true
+
+volumes:
+  fitcoach-prod-postgres:

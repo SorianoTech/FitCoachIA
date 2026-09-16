@@ -11,11 +11,14 @@ services:
     environment:
       GF_SERVER_ROOT_URL: https://grafana.fitcoach.sergiosoriano.es
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD is required}
-      # Mismas credenciales que el Postgres de la app (docker-compose.yml), para
-      # el datasource SQL de token_usage; Grafana llega a el por proxy-network.
-      FITCOACH_POSTGRES_DB: ${FITCOACH_POSTGRES_DB:-fitcoach}
-      FITCOACH_POSTGRES_USER: ${FITCOACH_POSTGRES_USER:-fitcoach}
-      FITCOACH_POSTGRES_PASSWORD: ${FITCOACH_POSTGRES_PASSWORD:?FITCOACH_POSTGRES_PASSWORD is required}
+      # Credenciales de cada Postgres (docker-compose.dev.yml / docker-compose.yml);
+      # Grafana llega a ambos por proxy-network usando los alias postgres-dev/postgres-prod.
+      FITCOACH_POSTGRES_DEV_DB: ${FITCOACH_POSTGRES_DEV_DB:-fitcoach}
+      FITCOACH_POSTGRES_DEV_USER: ${FITCOACH_POSTGRES_DEV_USER:-fitcoach}
+      FITCOACH_POSTGRES_DEV_PASSWORD: ${FITCOACH_POSTGRES_DEV_PASSWORD:?FITCOACH_POSTGRES_DEV_PASSWORD is required}
+      FITCOACH_POSTGRES_PROD_DB: ${FITCOACH_POSTGRES_PROD_DB:-fitcoach}
+      FITCOACH_POSTGRES_PROD_USER: ${FITCOACH_POSTGRES_PROD_USER:-fitcoach}
+      FITCOACH_POSTGRES_PROD_PASSWORD: ${FITCOACH_POSTGRES_PROD_PASSWORD:-changeme}
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - fitcoach-observability-grafana:/var/lib/grafana

@@ -10,9 +10,16 @@
   "templating": {
     "list": [
       {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "postgres",
+        "current": { "text": "PostgreSQL Dev", "value": "fitcoach-postgres-dev" },
+        "refresh": 1
+      },
+      {
         "name": "agent",
         "type": "query",
-        "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+        "datasource": { "type": "postgres", "uid": "${datasource}" },
         "query": "SELECT DISTINCT agent FROM token_usage ORDER BY agent",
         "refresh": 2,
         "includeAll": true,
@@ -22,7 +29,7 @@
       {
         "name": "telegram_user_id",
         "type": "query",
-        "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+        "datasource": { "type": "postgres", "uid": "${datasource}" },
         "query": "SELECT DISTINCT chat_id::text FROM token_usage ORDER BY chat_id::text",
         "refresh": 2,
         "includeAll": true,
@@ -37,7 +44,7 @@
       "title": "Tokens consumidos por agente",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
       "targets": [
         {
           "refId": "A",
@@ -52,7 +59,7 @@
       "title": "Top usuarios por tokens consumidos",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
       "targets": [
         {
           "refId": "A",
@@ -67,7 +74,7 @@
       "title": "Latencia media del LLM por agente (ms)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
       "targets": [
         {
           "refId": "A",
@@ -82,7 +89,7 @@
       "title": "Llamadas al LLM por estado",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
       "targets": [
         {
           "refId": "A",

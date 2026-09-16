@@ -134,26 +134,33 @@ tiempo» del dashboard.
 
 Dashboard provisionado: **FitCoachIA - Conversaciones**
 (`infra/observability/config/grafana/provisioning/dashboards/json/fitcoach-conversations.json`),
-con las variables de plantilla `$agent` y `$telegram_user_id` (alimentadas por
-consultas SQL a `token_usage`) filtrando todos los paneles:
+con las variables de plantilla `$datasource` (elige entre `PostgreSQL Dev` y
+`PostgreSQL Prod`), `$agent` y `$telegram_user_id` (alimentadas por consultas
+SQL a `token_usage` del datasource seleccionado) filtrando todos los paneles:
 
 1. **Tokens consumidos por agente** — serie temporal, `sum(total_tokens)` agrupado por hora y `agent`.
 2. **Top usuarios por tokens consumidos** — tabla: `chat_id` (= telegram_user_id), `agent`, tokens totales, nº de llamadas, latencia media.
 3. **Latencia media del LLM por agente** — serie temporal de `avg(latency_ms)`.
 4. **Llamadas al LLM por estado** — serie temporal de recuento por `status`.
-5. **Logs de conversación filtrados por usuario** — panel de logs de Loki (`{service_name="fitcoach-ia"} | regexp \`telegram_user_id=(?P<telegram_user_id>-?\d+)\` | telegram_user_id=~"$telegram_user_id"`).
+5. **Logs de conversación filtrados por usuario** — panel de logs de Loki (`{service_name="fitcoach-ia"} | regexp \`telegram_user_id=(?P<telegram_user_id>-?\d+)\` | telegram_user_id=~"$telegram_user_id"`); incluye logs de dev y prod a la vez, distinguibles por la label `environment`.
 
 Datasources disponibles para explorar libremente además del dashboard:
-**Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`)
-y **PostgreSQL** (para consultas SQL ad-hoc sobre `token_usage` u otras tablas).
+**Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`),
+**PostgreSQL Dev** y **PostgreSQL Prod** (consultas SQL ad-hoc sobre
+`token_usage` u otras tablas de cada base, ver sección 10).
 
 ### Alertas provisionadas
 
 En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
-(carpeta «FitCoachIA» en Grafana):
+(carpeta «FitCoachIA» en Grafana), duplicadas por entorno para poder
+distinguir un incidente en dev de uno en prod:
 
-- **Latencia del LLM por encima del umbral**: `avg(latency_ms)` de los últimos 15 min > 30000 ms, sostenido 10 min.
-- **Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
+- **`[dev]`/`[prod]` Latencia del LLM por encima del umbral**: `avg(latency_ms)` de los últimos 15 min > 30000 ms, sostenido 10 min.
+- **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
+
+Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada
+grupo consulta su propio datasource (`fitcoach-postgres-dev` /
+`fitcoach-postgres-prod`).
 
 ## 5. Cómo levantar el stack
 
@@ -170,8 +177,8 @@ Configurar las variables de entorno (una sola vez):
 cd infra/observability
 cp .env.example .env
 # Editar .env: GF_ADMIN_PASSWORD, DEPLOYMENT_ENVIRONMENT,
-# FITCOACH_POSTGRES_DB/USER/PASSWORD (deben coincidir con las credenciales
-# reales del Postgres de la app).
+# FITCOACH_POSTGRES_DEV_*/FITCOACH_POSTGRES_PROD_* (deben coincidir con las
+# credenciales reales de cada Postgres; ver seccion 8 sobre convivencia dev/prod).
 ```
 
 Levantar el stack:
@@ -223,8 +230,43 @@ APP_VERSION=<git-sha o version>   # opcional, aparece como service.version en lo
 - El host `fitcoach-otel-collector` solo es resoluble si el contenedor de la
   app está en la misma red que el Collector (`proxy-network`); en
   `docker-compose.yml`/`docker-compose.dev.yml` ya lo está.
+- Ya está activada en `.env.dev`. Para producción, añadir la misma línea a
+  `.env.prod` en el servidor (no está versionado, hay que editarlo a mano).
 
-## 8. Cómo configurar cada componente
+## 8. Cómo conviven dev y producción sin pisarse
+
+El stack de observabilidad es único y compartido, pero cada canal de
+telemetría separa dev de prod de una forma distinta:
+
+- **Trazas**: se distinguen por la etiqueta `deployment.environment.name`,
+  que sale de `APP_ENV` (`dev` en `docker-compose.dev.yml`, `prod` en
+  `docker-compose.yml`). Basta con activar `otel_exporter_otlp_endpoint` en
+  ambos `.env.<entorno>` para que las dos lleguen a la vez al mismo Collector.
+- **Logs**: Alloy ingiere `fitcoach-ia` y `dev-fitcoach-ia` simultáneamente
+  (ver `config/alloy/config.alloy`) y las distingue con la label
+  `environment` (`dev`/`prod`), calculada a partir del nombre del contenedor.
+- **Tokens/SQL (`token_usage`)**: cada entorno tiene su propio servicio
+  Postgres, **nombrado de forma distinta a propósito**
+  (`postgres-dev` en `docker-compose.dev.yml`, `postgres-prod` en
+  `docker-compose.yml`). Esto es importante: si ambos se llamaran `postgres`
+  y los dos estuvieran conectados a `proxy-network` a la vez, Docker
+  registraría el mismo alias DNS para los dos contenedores y la resolución
+  sería ambigua (potencialmente, `fitcoach-ia` de producción podría acabar
+  hablando con la base de datos de desarrollo). Al tener nombres de servicio
+  distintos, cada app resuelve siempre su propia base de datos sin ambigüedad,
+  y Grafana puede tener **dos datasources separados**
+  (`PostgreSQL Dev` → `postgres-dev:5432`, `PostgreSQL Prod` →
+  `postgres-prod:5432`), seleccionables en el dashboard con la variable
+  `$datasource`.
+- **Alertas**: duplicadas por entorno (`[dev]`/`[prod]` en el título), cada
+  una apuntando a su propio datasource Postgres.
+
+Si vas a desplegar producción por primera vez en este host, solo hace falta:
+1. Añadir `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317` a `.env.prod`.
+2. Rellenar `FITCOACH_POSTGRES_PROD_DB/USER/PASSWORD` en `infra/observability/.env` con las credenciales reales de `docker-compose.yml`.
+3. `docker compose -f infra/observability/compose.yml up -d --force-recreate grafana` para que recargue las credenciales.
+
+## 9. Cómo configurar cada componente
 
 | Quiero cambiar... | Archivo |
 |---|---|
@@ -251,7 +293,7 @@ Los cambios en dashboards/alertas/datasources se recargan solos (Grafana
 revisa el directorio de provisioning cada 30s); no hace falta reiniciar
 Grafana salvo que cambie el propio `compose.yml`.
 
-## 9. Limitaciones conocidas / próximos pasos
+## 10. Limitaciones conocidas / próximos pasos
 
 - **`cost_usd` sin calcular**: la columna existe en `token_usage` pero
   necesita una tabla de precios por modelo que todavía no existe.

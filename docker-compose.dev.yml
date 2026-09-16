@@ -33,6 +33,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - default
+      - proxy-network
 
   adminer:
     container_name: dev-fitcoach-adminer

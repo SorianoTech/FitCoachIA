@@ -101,7 +101,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"fitcoach-ia\"} | json | telegram_user_id =~ \"$telegram_user_id\""
+          "expr": "{service_name=\"fitcoach-ia\"} | regexp `telegram_user_id=(?P<telegram_user_id>-?\\d+)` | telegram_user_id=~\"$telegram_user_id\""
         }
       ]
     }

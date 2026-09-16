@@ -50,6 +50,7 @@ flowchart LR
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
 | **Tempo** | `grafana/tempo:2.6.1` | 3200 (+ OTLP 4317/4318) | Almacena trazas. Retención 7 días. Su `metrics_generator` produce métricas RED (`traces_spanmetrics_*`) a partir de las trazas y las envía a Prometheus por remote-write. |
 | **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `batch`, `resource` (tag de entorno) y redacta cabeceras sensibles (`Authorization`, `Cookie`) antes de reenviar a Loki/Tempo/Prometheus. |
+| **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
 Todos los servicios están en la red interna `observability`, excepto Grafana y
 el Collector, que además se unen a `proxy-network` (la misma red que usa
@@ -74,10 +75,13 @@ estructurado en el prefijo de cada línea: `update`, `chat`, `thread`, `msg`,
 `user` y **`telegram_user_id`** (el id numérico de Telegram, no solo el
 username).
 
-> Nota: hoy estos logs solo llegan a `stdout`/`docker logs`. Para que
-> aparezcan en Loki falta un recolector de logs de contenedor (p. ej. Grafana
-> Alloy) apuntando al Collector o a Loki directamente; no forma parte todavía
-> de este stack (ver «Pendiente» más abajo).
+Grafana Alloy (`infra/observability/config/alloy/config.alloy`) lee estos logs
+del contenedor de la app vía el socket de Docker y los reenvía a Loki,
+etiquetados con `service_name=fitcoach-ia`, `environment` (`dev`/`prod`, según
+el nombre del contenedor) y `container`. Como `telegram_user_id` va embebido en
+el texto del mensaje (no es un campo JSON de nivel superior), las consultas que
+necesiten filtrar por él usan una etapa `| regexp` de LogQL en lugar de `| json`
+(ver el panel de logs del dashboard, más abajo).
 
 ### 3.2 Trazas (app → OTel Collector → Tempo)
 
@@ -137,7 +141,7 @@ consultas SQL a `token_usage`) filtrando todos los paneles:
 2. **Top usuarios por tokens consumidos** — tabla: `chat_id` (= telegram_user_id), `agent`, tokens totales, nº de llamadas, latencia media.
 3. **Latencia media del LLM por agente** — serie temporal de `avg(latency_ms)`.
 4. **Llamadas al LLM por estado** — serie temporal de recuento por `status`.
-5. **Logs de conversación filtrados por usuario** — panel de logs de Loki (`{service_name="fitcoach-ia"} | json | telegram_user_id=~"$telegram_user_id"`); vacío hasta que se conecte un recolector de logs (ver más abajo).
+5. **Logs de conversación filtrados por usuario** — panel de logs de Loki (`{service_name="fitcoach-ia"} | regexp \`telegram_user_id=(?P<telegram_user_id>-?\d+)\` | telegram_user_id=~"$telegram_user_id"`).
 
 Datasources disponibles para explorar libremente además del dashboard:
 **Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`)
@@ -228,6 +232,7 @@ APP_VERSION=<git-sha o version>   # opcional, aparece como service.version en lo
 | Retención de trazas / generación de métricas RED | `infra/observability/config/tempo/tempo.yml` |
 | Scrape jobs / retención de métricas | `infra/observability/config/prometheus/prometheus.yml` |
 | Receivers/processors/exporters de telemetría, redacción de datos sensibles | `infra/observability/config/otel-collector/otel-collector.yml` |
+| Qué contenedores se leen y qué labels se les asignan en Loki | `infra/observability/config/alloy/config.alloy` |
 | Datasources de Grafana (Prometheus/Loki/Tempo/Postgres) | `infra/observability/config/grafana/provisioning/datasources/datasources.yml` |
 | Dashboards | `infra/observability/config/grafana/provisioning/dashboards/json/*.json` |
 | Alertas | `infra/observability/config/grafana/provisioning/alerting/rules.yml` |
@@ -250,12 +255,13 @@ Grafana salvo que cambie el propio `compose.yml`.
 
 - **`cost_usd` sin calcular**: la columna existe en `token_usage` pero
   necesita una tabla de precios por modelo que todavía no existe.
-- **Logs de la app no llegan a Loki todavía**: la app emite JSON a `stdout`,
-  pero falta desplegar un recolector (Grafana Alloy u otro) que lea los logs
-  del contenedor y los reenvíe a Loki/el Collector. El panel de logs del
-  dashboard y las `structured metadata` de Loki ya están preparados para
-  cuando esto se conecte.
 - **Sin agentes adicionales todavía**: `AgentType` ya contempla
   `trainer`/`nutritionist`/`coach` como valores del enum, pero solo
   `interviewer` está implementado; los paneles y alertas por `agent` ya
   funcionan sin cambios en cuanto se añadan.
+- **Alloy necesita el socket de Docker montado en solo lectura**: es un
+  privilegio amplio (puede enumerar todos los contenedores del host), acotado
+  únicamente por la configuración (`discovery.relabel` descarta todo lo que no
+  sea `fitcoach-ia`/`dev-fitcoach-ia` antes de leer sus logs). Revisar si el
+  entorno de despliegue requiere una alternativa (p. ej. el driver de log
+  `loki` de Docker a nivel de daemon).

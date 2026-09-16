@@ -80,6 +80,25 @@ services:
       - observability
       - proxy-network # la app (proxy-network) envía OTLP aquí
 
+  alloy:
+    image: grafana/alloy:v1.5.1
+    container_name: fitcoach-alloy
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Solo lectura; el propio config.alloy filtra para leer unicamente
+      # fitcoach-ia/dev-fitcoach-ia, aunque el socket expone todo el host.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - observability
+
 networks:
   observability: {}
   proxy-network:

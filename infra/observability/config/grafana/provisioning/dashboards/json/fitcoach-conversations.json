@@ -35,6 +35,15 @@
         "includeAll": true,
         "multi": true,
         "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "log_level",
+        "type": "custom",
+        "options": ["ERROR", "WARNING", "INFO", "DEBUG"],
+        "current": { "text": "All", "value": "$__all" },
+        "allValue": ".*",
+        "includeAll": true,
+        "multi": true
       }
     ]
   },
@@ -100,60 +109,192 @@
       ]
     },
     {
-      "id": 5,
-      "title": "Logs de conversacion (filtrado por usuario)",
-      "type": "table",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "id": 6,
+      "title": "Contadores de logs por nivel",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
+        "colorMode": "background",
+        "textMode": "auto",
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"fitcoach-ia\"} | regexp `telegram_user_id=(?P<telegram_user_id>-?\\d+)` | telegram_user_id=~\"$telegram_user_id\"",
-          "queryType": "range",
-          "instant": false,
-          "range": true
+          "expr": "sum(count_over_time({service_name=\"fitcoach-ia\"} | json | level=\"ERROR\" [$__range]))",
+          "legendFormat": "Errores",
+          "queryType": "instant"
         }
       ],
-      "transformations": [
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }] },
+          "mappings": []
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Warnings",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "colorMode": "background",
+        "textMode": "auto",
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
         {
-          "id": "extractFields",
-          "options": {
-            "format": "json",
-            "replace": false,
-            "source": "Line"
-          }
-        },
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"fitcoach-ia\"} | json | level=\"WARNING\" [$__range]))",
+          "legendFormat": "Warnings",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": 0 }] },
+          "mappings": []
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Infos",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "colorMode": "background",
+        "textMode": "auto",
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
         {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "id": true,
-              "tsNs": true,
-              "Time": true,
-              "Line": true,
-              "labels": true,
-              "detected_level": true,
-              "service.name": true,
-              "service.version": true,
-              "deployment.environment.name": true,
-              "span_id": true
-            },
-            "indexByName": {},
-            "renameByName": {
-              "Time": "Hora",
-              "timestamp": "Hora",
-              "level": "Nivel",
-              "logger": "Logger",
-              "message": "Mensaje",
-              "trace_id": "TraceID",
-              "telegram_user_id": "telegram_user_id",
-              "environment": "entorno"
-            }
-          }
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"fitcoach-ia\"} | json | level=\"INFO\" [$__range]))",
+          "legendFormat": "Infos",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": 0 }] },
+          "mappings": []
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Throughput de logs (líneas/seg)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (level) (rate({service_name=\"fitcoach-ia\"} | json | __error__=\"\" | level=~\"$log_level\" [$__interval]))",
+          "legendFormat": "{{ level }}",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Actividad por logger",
+      "type": "barchart",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "orientation": "auto",
+        "showTooltip": true,
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (logger) (count_over_time({service_name=\"fitcoach-ia\"} | json | __error__=\"\" | level=~\"$log_level\" [$__range]))",
+          "legendFormat": "{{ logger }}",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Últimos 5 errores",
+      "type": "logs",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showLabels": "auto",
+        "showTime": true,
+        "wrapLogMessage": false,
+        "sortOrder": 2,
+        "maxLines": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"fitcoach-ia\"} | json | level=\"ERROR\" | regexp `telegram_user_id=(?P<telegram_user_id>-?\\d+)` | telegram_user_id=~\"$telegram_user_id\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Últimos 5 warnings",
+      "type": "logs",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showLabels": "auto",
+        "showTime": true,
+        "wrapLogMessage": false,
+        "sortOrder": 2,
+        "maxLines": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"fitcoach-ia\"} | json | level=\"WARNING\" | regexp `telegram_user_id=(?P<telegram_user_id>-?\\d+)` | telegram_user_id=~\"$telegram_user_id\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Stream de logs en vivo",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 36 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showLabels": "auto",
+        "showTime": true,
+        "wrapLogMessage": false,
+        "sortOrder": 2,
+        "maxLines": 100
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"fitcoach-ia\"}",
+          "queryType": "range"
         }
       ]
     }

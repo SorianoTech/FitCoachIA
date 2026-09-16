@@ -134,15 +134,40 @@ tiempo» del dashboard.
 
 Dashboard provisionado: **FitCoachIA - Conversaciones**
 (`infra/observability/config/grafana/provisioning/dashboards/json/fitcoach-conversations.json`),
-con las variables de plantilla `$datasource` (elige entre `PostgreSQL Dev` y
-`PostgreSQL Prod`), `$agent` y `$telegram_user_id` (alimentadas por consultas
-SQL a `token_usage` del datasource seleccionado) filtrando todos los paneles:
+con variables de filtro dinámicas y paneles organizados en capas de complejidad creciente.
 
+### 4.1 Variables de filtro
+
+- **`$datasource`** — elige entre `PostgreSQL Dev` y `PostgreSQL Prod`.
+- **`$agent`** — filtra por `interviewer`, `trainer`, `nutritionist`, `coach` (multiselecta).
+- **`$telegram_user_id`** — filtra por usuario de Telegram (multiselecta).
+- **`$log_level`** — filtra por nivel de log: `ERROR`, `WARNING`, `INFO`, `DEBUG` (multiselecta).
+
+### 4.2 Paneles
+
+#### Fila 1: Métricas de tokens LLM (desacopladas de logs)
 1. **Tokens consumidos por agente** — serie temporal, `sum(total_tokens)` agrupado por hora y `agent`.
 2. **Top usuarios por tokens consumidos** — tabla: `chat_id` (= telegram_user_id), `agent`, tokens totales, nº de llamadas, latencia media.
 3. **Latencia media del LLM por agente** — serie temporal de `avg(latency_ms)`.
 4. **Llamadas al LLM por estado** — serie temporal de recuento por `status`.
-5. **Logs de conversación filtrados por usuario** — panel de logs de Loki (`{service_name="fitcoach-ia"} | regexp \`telegram_user_id=(?P<telegram_user_id>-?\d+)\` | telegram_user_id=~"$telegram_user_id"`); incluye logs de dev y prod a la vez, distinguibles por la label `environment`.
+
+#### Fila 2: Estado de los logs en tiempo real (paneles Stat)
+5. **Contadores de logs por nivel** — tres paneles Stat con colores code:
+   - 🔴 **Errores** — fondo rojo; visible instantáneamente si hay problemas.
+   - 🟠 **Warnings** — fondo naranja.
+   - 🔵 **Infos** — fondo azul.
+
+#### Fila 3: Actividad y throughput
+6. **Throughput de logs (líneas/seg)** — serie temporal de `rate()` por nivel, permite ver picos de actividad y volumen relativo. Ignora las líneas no JSON de Uvicorn mediante `__error__=""`.
+7. **Actividad por logger** — gráfico de barras agregado por módulo (`conversation_service.py`, `webhook.py`, etc.), útil para identificar fuentes ruidosas. También ignora las líneas no JSON de Uvicorn.
+
+#### Fila 4: Debugging rápido (Últimos N eventos)
+8. **Últimos 5 errores** — panel Logs nativo, maxLines=5, ordenado descendente (más nuevos primero).
+9. **Últimos 5 warnings** — igual, para detectar problemas inminentes sin scrollear.
+
+#### Fila 5: Stream de logs completo
+10. **Stream de logs en vivo** — panel Logs nativo con 100 líneas máximo. Consulta el stream bruto para mostrar tanto logs JSON de la aplicación como access logs de Uvicorn; el parseo JSON se reserva para los paneles agregados.
+
 
 Datasources disponibles para explorar libremente además del dashboard:
 **Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`),

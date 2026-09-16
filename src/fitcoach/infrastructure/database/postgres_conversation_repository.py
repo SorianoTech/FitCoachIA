@@ -7,6 +7,7 @@ from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
     InterviewSessionRecord,
+    TokenUsageRecord,
 )
 
 
@@ -37,16 +38,18 @@ class PostgresConversationRepository:
         chat_id: int,
         user_content: str,
         assistant_content: str,
-    ) -> None:
+    ) -> int:
+        assistant_message = ConversationMessageRecord(
+            chat_id=chat_id,
+            role="assistant",
+            content=assistant_content,
+        )
         self._session.add_all([
             ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
-            ConversationMessageRecord(
-                chat_id=chat_id,
-                role="assistant",
-                content=assistant_content,
-            ),
+            assistant_message,
         ])
         await self._session.commit()
+        return assistant_message.id
 
     async def get_interview_status(self, chat_id: int) -> str | None:
         status = await self._session.scalar(
@@ -74,10 +77,13 @@ class PostgresConversationRepository:
         assistant_content: str,
         profile: InterviewerProfile,
         report: str,
-    ) -> None:
+    ) -> int:
+        assistant_message = ConversationMessageRecord(
+            chat_id=chat_id, role="assistant", content=assistant_content
+        )
         self._session.add_all([
             ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
-            ConversationMessageRecord(chat_id=chat_id, role="assistant", content=assistant_content),
+            assistant_message,
             InterviewerProfileRecord(
                 chat_id=chat_id,
                 profile=profile.model_dump(mode="json"),
@@ -91,4 +97,32 @@ class PostgresConversationRepository:
         else:
             session.status = "completed"
         session.completed_at = func.now()
+        await self._session.commit()
+        return assistant_message.id
+
+    async def record_token_usage(
+        self,
+        chat_id: int,
+        agent: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        latency_ms: int,
+        status: str,
+        conversation_message_id: int | None,
+    ) -> None:
+        self._session.add(
+            TokenUsageRecord(
+                chat_id=chat_id,
+                agent=agent,
+                model=model,
+                conversation_message_id=conversation_message_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=latency_ms,
+                status=status,
+            )
+        )
         await self._session.commit()

@@ -7,18 +7,19 @@ ha pedido, que se manda al modelo y que se le contesta al usuario) vive aqui.
 import logging
 import time
 
+from opentelemetry import trace
 from telegram import Bot, Message, Update
 
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
-from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.domain.telegram import Commands
+from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent import agent_factory
-from fitcoach.service.agent.interviewer_chain import InterviewerChain
+from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
@@ -160,7 +161,7 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            result = await self._reply_with_interviewer(chat_id, llm_input)
+            reply = await self._reply_with_interviewer(chat_id, llm_input)
         except InterviewerError as exc:
             logger.warning(
                 "%s fallo controlado del modelo code=%s retryable=%s",
@@ -179,13 +180,14 @@ class ConversationService:
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
             return
         elapsed_ms = (time.perf_counter() - started) * 1000
+        turn = reply.turn
 
-        if result.status == "completed":
-            if result.report is None:
+        if turn.status == "completed":
+            if turn.report is None:
                 raise RuntimeError("Completed interviewer result is missing report")
-            llm_output = result.report
+            llm_output = turn.report
         else:
-            llm_output = result.reply
+            llm_output = turn.reply
 
         if not llm_output.strip():
             logger.error(f"{ctx} el modelo devolvio una respuesta vacia tras {elapsed_ms:.0f}ms")
@@ -197,24 +199,58 @@ class ConversationService:
 
         logger.info(f"{ctx} respuesta del LLM en {elapsed_ms:.0f}ms: {llm_output!r}")
         await self._send(chat_id, message_thread_id, llm_output)
-        if result.status == "completed":
-            if result.profile is None or result.report is None:
+        if turn.status == "completed":
+            if turn.profile is None or turn.report is None:
                 raise RuntimeError("Completed interviewer result is missing profile or report")
-            await self._conversation_repository.complete_interview(
+            conversation_message_id = await self._conversation_repository.complete_interview(
                 chat_id,
                 user_message,
-                result.reply,
-                result.profile,
-                result.report,
+                turn.reply,
+                turn.profile,
+                turn.report,
             )
         else:
-            await self._conversation_repository.add_turn(chat_id, user_message, llm_output)
+            conversation_message_id = await self._conversation_repository.add_turn(
+                chat_id, user_message, llm_output
+            )
+        await self._record_token_usage(
+            ctx, chat_id, conversation_message_id, reply.token_usages, elapsed_ms
+        )
+
+    async def _record_token_usage(
+        self,
+        ctx: str,
+        chat_id: int,
+        conversation_message_id: int,
+        token_usages: list[TokenUsage],
+        elapsed_ms: float,
+    ) -> None:
+        """Log + persist tokens per LLM call; skipped when the model reported no usage."""
+        if not token_usages:
+            return
+        total_tokens = sum(usage.total_tokens for usage in token_usages)
+        logger.info(f"{ctx} tokens consumidos: total={total_tokens} llamadas={len(token_usages)}")
+        span = trace.get_current_span()
+        span.set_attribute("llm.total_tokens", total_tokens)
+        span.set_attribute("llm.calls", len(token_usages))
+        for usage in token_usages:
+            await self._conversation_repository.record_token_usage(
+                chat_id=chat_id,
+                agent=AgentType.INTERVIEWER.value,
+                model=usage.model,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                latency_ms=int(elapsed_ms),
+                status="success",
+                conversation_message_id=conversation_message_id,
+            )
 
     async def _reply_with_interviewer(
         self,
         chat_id: int,
         llm_input: IAInput,
-    ) -> InterviewerTurn:
+    ) -> InterviewerReply:
         history = await self._conversation_repository.get_recent(
             chat_id,
             self._history_window_messages,

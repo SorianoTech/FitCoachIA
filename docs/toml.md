@@ -36,7 +36,7 @@ Este fichero cumple dos roles distintos que conviven en el mismo archivo:
 > **¿Por qué no aparecen `starlette`, `anyio`, etc.?**
 > Son dependencias **transitivas** (las arrastran `fastapi` y otras). `uv` las resuelve automáticamente al compilar los `requirements`; listarlas a mano en `dependencies` sería redundante y se desincronizaría con el tiempo.
 >
-> `httpx` sí aparece, y no es una excepción arbitraria: `service/llm/llm_caller.py` lo **importa directamente**. Llegaba transitivo por `fastapi[standard]`, pero depender de un transitivo que tu código importa es frágil — el día que `fastapi` deje de arrastrarlo, la app rompe sin que ningún fichero de dependencias haya cambiado. La regla es: si el código lo importa, se declara.
+> `httpx` sí aparece, y no es una excepción arbitraria: `service/agent/interviewer_chain.py` lo **importa directamente**. Llegaba transitivo por `fastapi[standard]`, pero depender de un transitivo que tu código importa es frágil — el día que `fastapi` deje de arrastrarlo, la app rompe sin que ningún fichero de dependencias haya cambiado. La regla es: si el código lo importa, se declara.
 
 > **¿Por qué `fastapi[standard]` y no `fastapi` a secas?**
 > El extra `standard` incluye `uvicorn`, `fastapi-cli`, `python-multipart`, `email-validator`, etc. — todo lo que `src/Dockerfile` necesita para poder ejecutar `ENTRYPOINT ["fastapi", "run", "fitcoach/main.py"]`. Sin el extra, ese comando no existiría en el entorno.

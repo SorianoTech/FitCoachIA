@@ -12,7 +12,7 @@ class ConversationRepository(Protocol):
         chat_id: int,
         user_content: str,
         assistant_content: str,
-    ) -> None: ...
+    ) -> int: ...
 
     async def get_interview_status(self, chat_id: int) -> str | None: ...
 
@@ -25,4 +25,17 @@ class ConversationRepository(Protocol):
         assistant_content: str,
         profile: InterviewerProfile,
         report: str,
+    ) -> int: ...
+
+    async def record_token_usage(
+        self,
+        chat_id: int,
+        agent: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        latency_ms: int,
+        status: str,
+        conversation_message_id: int | None,
     ) -> None: ...

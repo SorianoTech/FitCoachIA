@@ -45,8 +45,9 @@ database_url=postgresql+asyncpg://fitcoach:elige-una-contrasena@localhost:5432/f
 ```
 
 `database_url` se utiliza cuando la API se ejecuta con Python local. Los Compose crean su propia URL
-interna contra el servicio `postgres`, por lo que cada entorno conserva el historial del agente
-`interviewer` en una base de datos independiente.
+interna contra el servicio `postgres-dev`/`postgres-prod` (nombre distinto por entorno para evitar que
+ambos reclamen el mismo alias de red en `proxy-network`), por lo que cada entorno conserva el
+historial del agente `interviewer` en una base de datos independiente.
 
 ## Ejecutar la API con Python local
 
@@ -113,7 +114,7 @@ Protege ese Proxy Host antes de publicarlo mediante una *Access List* de Nginx P
 es posible, una restricción por IP. No añadas Adminer a `docker-compose.yml` de producción.
 
 En la pantalla de inicio de sesión de Adminer selecciona PostgreSQL. El campo del servidor ya estará
-rellenado con `postgres`; usa los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` de
+rellenado con `postgres-dev`; usa los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` de
 `.env.dev`. Tras iniciar sesión, las tablas relevantes son:
 
 - `conversation_messages`: preguntas y respuestas por chat.

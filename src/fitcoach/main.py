@@ -12,10 +12,11 @@ from fitcoach.infrastructure.config.settings import (
     get_settings,
 )
 from fitcoach.infrastructure.database.session import close_database
+from fitcoach.infrastructure.observability.telemetry import configure_telemetry, shutdown_telemetry
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Fail fast: abort startup on missing/malformed Telegram or IA configuration."""
     configure_logging()
     settings = get_settings()  # ValidationError if token/url/commands are missing
@@ -23,9 +24,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     for raw in settings.bot_telegram_commands:
         to_bot_command(raw)  # ValueError if a pair is malformed
     get_database_settings()  # ValidationError if the PostgreSQL URL is missing
+    configure_telemetry(app)  # no-op unless otel_exporter_otlp_endpoint is set
     try:
         yield
     finally:
+        shutdown_telemetry()
         await close_database()
 
 

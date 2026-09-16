@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,8 @@ from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
     InterviewSessionRecord,
+    ModelPriceRecord,
+    TokenUsageRecord,
 )
 
 
@@ -37,16 +41,18 @@ class PostgresConversationRepository:
         chat_id: int,
         user_content: str,
         assistant_content: str,
-    ) -> None:
+    ) -> int:
+        assistant_message = ConversationMessageRecord(
+            chat_id=chat_id,
+            role="assistant",
+            content=assistant_content,
+        )
         self._session.add_all([
             ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
-            ConversationMessageRecord(
-                chat_id=chat_id,
-                role="assistant",
-                content=assistant_content,
-            ),
+            assistant_message,
         ])
         await self._session.commit()
+        return assistant_message.id
 
     async def get_interview_status(self, chat_id: int) -> str | None:
         status = await self._session.scalar(
@@ -74,10 +80,13 @@ class PostgresConversationRepository:
         assistant_content: str,
         profile: InterviewerProfile,
         report: str,
-    ) -> None:
+    ) -> int:
+        assistant_message = ConversationMessageRecord(
+            chat_id=chat_id, role="assistant", content=assistant_content
+        )
         self._session.add_all([
             ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
-            ConversationMessageRecord(chat_id=chat_id, role="assistant", content=assistant_content),
+            assistant_message,
             InterviewerProfileRecord(
                 chat_id=chat_id,
                 profile=profile.model_dump(mode="json"),
@@ -91,4 +100,43 @@ class PostgresConversationRepository:
         else:
             session.status = "completed"
         session.completed_at = func.now()
+        await self._session.commit()
+        return assistant_message.id
+
+    async def record_token_usage(
+        self,
+        chat_id: int,
+        agent: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        latency_ms: int,
+        status: str,
+        conversation_message_id: int | None,
+    ) -> None:
+        price = await self._session.get(ModelPriceRecord, model)
+        cost_usd = None
+        if price is not None:
+            cost_usd = (
+                (
+                    Decimal(prompt_tokens) * Decimal(str(price.input_usd_per_million))
+                    + Decimal(completion_tokens) * Decimal(str(price.output_usd_per_million))
+                )
+                / Decimal(1_000_000)
+            ).quantize(Decimal("0.000001"))
+        self._session.add(
+            TokenUsageRecord(
+                chat_id=chat_id,
+                agent=agent,
+                model=model,
+                conversation_message_id=conversation_message_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=latency_ms,
+                status=status,
+                cost_usd=cost_usd,
+            )
+        )
         await self._session.commit()

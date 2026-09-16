@@ -13,7 +13,7 @@ from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.main import app as fitcoach_app
 from fitcoach.repository.conversation_repository import ConversationRepository
-from fitcoach.service.agent.interviewer_chain import InterviewerChain
+from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.conversation_service import ConversationService
 
 
@@ -87,8 +87,9 @@ class TestTelegramWebhook:
     def test_free_text_message_replies_with_the_agent_llm_output(
         self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="agent reply"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="agent reply"),
+            token_usages=[],
         )
 
         response = client.post("/webhook/response", json=_text_update(456, "hola"))
@@ -104,8 +105,9 @@ class TestTelegramWebhook:
     def test_free_text_emojis_are_removed_before_reaching_the_agent(
         self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="agent reply"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="agent reply"),
+            token_usages=[],
         )
 
         response = client.post("/webhook/response", json=_text_update(456, "hola 👋 mundo 🔥"))
@@ -119,8 +121,9 @@ class TestTelegramWebhook:
     def test_interview_command_starts_the_agent_conversation(
         self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="¡Bienvenido a la entrevista!"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="¡Bienvenido a la entrevista!"),
+            token_usages=[],
         )
 
         response = client.post("/webhook/response", json=_text_update(456, "/interview"))
@@ -186,8 +189,9 @@ class TestTelegramWebhook:
         self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
         # Telegram rechaza un sendMessage con texto vacio, asi que nunca debe intentarse.
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="   \n  "
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="   \n  "),
+            token_usages=[],
         )
 
         response = client.post("/webhook/response", json=_text_update(456, "hola"))
@@ -200,8 +204,9 @@ class TestTelegramWebhook:
     def test_replies_with_server_error_message_when_something_else_fails(
         self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="agent reply"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="agent reply"),
+            token_usages=[],
         )
         # Primer envio (la respuesta del modelo) revienta; el segundo es el aviso de error.
         mock_bot.send_message.side_effect = [RuntimeError("telegram caido"), None]
@@ -292,8 +297,9 @@ class TestEditedMessage:
     def test_edited_message_is_processed_like_a_new_message(
         self, client: TestClient, mock_bot: AsyncMock, mock_interviewer: AsyncMock
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="agent reply"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="agent reply"),
+            token_usages=[],
         )
 
         response = client.post("/webhook/response", json=_edited_text_update(456, "hola editada"))
@@ -332,14 +338,15 @@ class TestLogTraceability:
     def test_info_logs_correlate_chat_thread_message_update_and_user(
         self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="respuesta del agente"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="respuesta del agente"),
+            token_usages=[],
         )
         caplog.set_level(logging.INFO, logger="fitcoach.service.conversation_service")
 
         client.post("/webhook/response", json=_text_update(456, "hola"))
 
-        ctx = "[update=1 chat=456 thread=None msg=10 user=desconocido]"
+        ctx = "[update=1 chat=456 thread=None msg=10 user=desconocido telegram_user_id=-1]"
         records = _webhook_records(caplog)
         assert records
         assert all(record.message.startswith(ctx) for record in records)
@@ -348,8 +355,9 @@ class TestLogTraceability:
     def test_info_logs_the_model_output_and_its_latency(
         self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="respuesta del agente"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="respuesta del agente"),
+            token_usages=[],
         )
         caplog.set_level(logging.INFO, logger="fitcoach.service.conversation_service")
 
@@ -363,8 +371,9 @@ class TestLogTraceability:
     def test_debug_logs_the_composed_interviewer_prompt(
         self, client: TestClient, mock_interviewer: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="respuesta del agente"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="respuesta del agente"),
+            token_usages=[],
         )
         caplog.set_level(logging.DEBUG, logger="fitcoach.service.conversation_service")
 

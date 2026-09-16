@@ -1,4 +1,4 @@
-from fitcoach.domain.agents import Agent, InterviewerAgent
+from fitcoach.domain.agents import Agent, AgentType, InterviewerAgent
 
 
 class TestInterviewerAgent:
@@ -11,3 +11,8 @@ class TestInterviewerAgent:
         agent = InterviewerAgent("prompt")
 
         assert isinstance(agent, Agent)
+
+    def test_is_tagged_as_the_interviewer_agent_type(self) -> None:
+        agent = InterviewerAgent("prompt")
+
+        assert agent.agent_type is AgentType.INTERVIEWER

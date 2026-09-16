@@ -9,16 +9,19 @@ import time
 
 from telegram import Bot, Message, Update
 
+from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.domain.telegram import Commands
+from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent import agent_factory
 from fitcoach.service.agent.interviewer_chain import InterviewerChain
 
 logger = logging.getLogger(__name__)
+_tracer = get_tracer(__name__)
 
 
 def remove_emojis(text: str) -> str:
@@ -44,6 +47,12 @@ def user_label(message: Message | None) -> str:
     if user is None:
         return Constants.UNKNOWN_USER
     return user.username or user.full_name or str(user.id)
+
+
+def telegram_user_id(message: Message | None) -> int:
+    """Id numerico de Telegram del remitente; distinto de ``chat_id`` en grupos/foros."""
+    user = message.from_user if message is not None else None
+    return user.id if user is not None else Constants.UNKNOWN_ID
 
 
 def format_llm_input(llm_input: IAInput) -> str:
@@ -110,30 +119,37 @@ class ConversationService:
         command = Commands.from_value(input_text.split(maxsplit=1)[0])
         logger.info(f"{ctx} comando={command} entrada={input_text!r}")
 
-        match command:
-            case Commands.START:
-                await self._send(chat_id, message_thread_id, Constants.WELCOME_MESSAGE)
-            case Commands.INTERVIEW:
-                await self._conversation_repository.restart_interview(chat_id)
-                await self._call_interviewer(
-                    ctx, chat_id, message_thread_id, Constants.INTERVIEW_SEED_MESSAGE
-                )
-            case Commands.DOUBTS | Commands.PROGRESS:
-                # TODO: route to the doubts/Q&A and progress-tracking flows
-                logger.info(f"{ctx} opcion todavia no implementada")
-                await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
-            case None:
-                status = await self._conversation_repository.get_interview_status(chat_id)
-                if status == "completed":
-                    await self._send(
-                        chat_id,
-                        message_thread_id,
-                        Constants.INTERVIEW_COMPLETED_MESSAGE,
-                    )
-                    return
-                if status is None:
+        with _tracer.start_as_current_span("conversation.turn") as span:
+            span.set_attribute("telegram_user_id", telegram_user_id(message))
+            span.set_attribute("chat_id", chat_id)
+            span.set_attribute("command", command.name if command is not None else "none")
+
+            match command:
+                case Commands.START:
+                    await self._send(chat_id, message_thread_id, Constants.WELCOME_MESSAGE)
+                case Commands.INTERVIEW:
+                    span.set_attribute("agent", AgentType.INTERVIEWER.value)
                     await self._conversation_repository.restart_interview(chat_id)
-                await self._call_interviewer(ctx, chat_id, message_thread_id, input_text)
+                    await self._call_interviewer(
+                        ctx, chat_id, message_thread_id, Constants.INTERVIEW_SEED_MESSAGE
+                    )
+                case Commands.DOUBTS | Commands.PROGRESS:
+                    # TODO: route to the doubts/Q&A and progress-tracking flows
+                    logger.info(f"{ctx} opcion todavia no implementada")
+                    await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
+                case None:
+                    status = await self._conversation_repository.get_interview_status(chat_id)
+                    if status == "completed":
+                        await self._send(
+                            chat_id,
+                            message_thread_id,
+                            Constants.INTERVIEW_COMPLETED_MESSAGE,
+                        )
+                        return
+                    if status is None:
+                        await self._conversation_repository.restart_interview(chat_id)
+                    span.set_attribute("agent", AgentType.INTERVIEWER.value)
+                    await self._call_interviewer(ctx, chat_id, message_thread_id, input_text)
 
     async def _call_interviewer(
         self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
@@ -252,5 +268,6 @@ class ConversationService:
         thread_id = message.message_thread_id if message is not None else None
         return (
             f"[update={update.update_id} chat={chat_id} thread={thread_id} "
-            f"msg={message_id} user={user_label(message)}]"
+            f"msg={message_id} user={user_label(message)} "
+            f"telegram_user_id={telegram_user_id(message)}]"
         )

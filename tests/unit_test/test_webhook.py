@@ -339,7 +339,7 @@ class TestLogTraceability:
 
         client.post("/webhook/response", json=_text_update(456, "hola"))
 
-        ctx = "[update=1 chat=456 thread=None msg=10 user=desconocido]"
+        ctx = "[update=1 chat=456 thread=None msg=10 user=desconocido telegram_user_id=-1]"
         records = _webhook_records(caplog)
         assert records
         assert all(record.message.startswith(ctx) for record in records)

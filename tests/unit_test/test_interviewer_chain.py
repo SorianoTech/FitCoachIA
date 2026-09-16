@@ -82,9 +82,13 @@ class TestTokenUsageCapture:
 
         reply = await chain.respond("Hola", [])
 
-        assert reply.token_usages == [
-            TokenUsage(model="gpt-test", prompt_tokens=10, completion_tokens=5, total_tokens=15)
-        ]
+        assert len(reply.token_usages) == 1
+        assert reply.token_usages[0].model == "gpt-test"
+        assert reply.token_usages[0].prompt_tokens == 10
+        assert reply.token_usages[0].completion_tokens == 5
+        assert reply.token_usages[0].total_tokens == 15
+        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[0].latency_ms >= 0
 
     @pytest.mark.asyncio
     async def test_falls_back_to_raw_openai_token_usage(self, model: MagicMock) -> None:
@@ -98,9 +102,13 @@ class TestTokenUsageCapture:
 
         reply = await chain.respond("Hola", [])
 
-        assert reply.token_usages == [
-            TokenUsage(model="gpt-test", prompt_tokens=8, completion_tokens=4, total_tokens=12)
-        ]
+        assert len(reply.token_usages) == 1
+        assert reply.token_usages[0].model == "gpt-test"
+        assert reply.token_usages[0].prompt_tokens == 8
+        assert reply.token_usages[0].completion_tokens == 4
+        assert reply.token_usages[0].total_tokens == 12
+        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[0].latency_ms >= 0
 
     @pytest.mark.asyncio
     async def test_records_a_usage_entry_for_the_repair_call_too(self, model: MagicMock) -> None:
@@ -121,6 +129,10 @@ class TestTokenUsageCapture:
         assert len(reply.token_usages) == 2
         assert reply.token_usages[0].total_tokens == 23
         assert reply.token_usages[1].total_tokens == 36
+        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[1].status == "success"
+        assert reply.token_usages[0].latency_ms >= 0
+        assert reply.token_usages[1].latency_ms >= 0
 
     @pytest.mark.asyncio
     async def test_is_empty_when_the_model_reports_no_usage(self, model: MagicMock) -> None:

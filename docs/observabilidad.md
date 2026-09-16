@@ -121,7 +121,7 @@ se persiste como una fila en `token_usage`:
 | `model` | Modelo LLM usado en esa llamada concreta. |
 | `conversation_message_id` | FK opcional al mensaje del asistente persistido; `NULL` en llamadas de reparación que no generan turno propio. |
 | `prompt_tokens` / `completion_tokens` / `total_tokens` | Tokens consumidos. |
-| `cost_usd` | Reservado para coste estimado; **sin calcular todavía** (falta una tabla de precios por modelo). |
+| `cost_usd` | Coste estimado calculado con `model_prices`; `NULL` si el modelo no tiene precio configurado. |
 | `latency_ms` | Duración de la llamada al LLM. |
 | `status` | `"success"` (solo se persiste en el camino feliz por ahora). |
 | `created_at` | Marca de tiempo. |
@@ -295,8 +295,9 @@ Grafana salvo que cambie el propio `compose.yml`.
 
 ## 10. Limitaciones conocidas / próximos pasos
 
-- **`cost_usd` sin calcular**: la columna existe en `token_usage` pero
-  necesita una tabla de precios por modelo que todavía no existe.
+- **Precios del modelo**: `model_prices` contiene el precio por millón de tokens
+  de entrada y salida. Los modelos sin precio configurado mantienen
+  `token_usage.cost_usd` en `NULL`.
 - **Sin agentes adicionales todavía**: `AgentType` ya contempla
   `trainer`/`nutritionist`/`coach` como valores del enum, pero solo
   `interviewer` está implementado; los paneles y alertas por `agent` ya

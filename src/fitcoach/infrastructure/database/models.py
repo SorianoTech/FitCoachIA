@@ -45,6 +45,15 @@ class InterviewerProfileRecord(Base):
     )
 
 
+class ModelPriceRecord(Base):
+    __tablename__ = "model_prices"
+
+    model: Mapped[str] = mapped_column(String(64), primary_key=True)
+    input_usd_per_million: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False)
+    output_usd_per_million: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False)
+    source: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class TokenUsageRecord(Base):
     """One row per LLM call (see docs/plan/observabilidad.md for the schema rationale).
 
@@ -66,12 +75,11 @@ class TokenUsageRecord(Base):
     # Nullable: the JSON-repair retry call consumes tokens but never becomes a
     # persisted turn on its own.
     conversation_message_id: Mapped[int | None] = mapped_column(
-        ForeignKey("conversation_messages.id"), nullable=True
+        ForeignKey("conversation_messages.id", ondelete="SET NULL"), nullable=True
     )
     prompt_tokens: Mapped[int] = mapped_column(nullable=False)
     completion_tokens: Mapped[int] = mapped_column(nullable=False)
     total_tokens: Mapped[int] = mapped_column(nullable=False)
-    # Requires a per-model price table we don't have yet; left unset until then.
     cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
     latency_ms: Mapped[int] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)

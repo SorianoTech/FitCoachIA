@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,7 @@ from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
     InterviewSessionRecord,
+    ModelPriceRecord,
     TokenUsageRecord,
 )
 
@@ -112,6 +115,16 @@ class PostgresConversationRepository:
         status: str,
         conversation_message_id: int | None,
     ) -> None:
+        price = await self._session.get(ModelPriceRecord, model)
+        cost_usd = None
+        if price is not None:
+            cost_usd = (
+                (
+                    Decimal(prompt_tokens) * Decimal(str(price.input_usd_per_million))
+                    + Decimal(completion_tokens) * Decimal(str(price.output_usd_per_million))
+                )
+                / Decimal(1_000_000)
+            ).quantize(Decimal("0.000001"))
         self._session.add(
             TokenUsageRecord(
                 chat_id=chat_id,
@@ -123,6 +136,7 @@ class PostgresConversationRepository:
                 total_tokens=total_tokens,
                 latency_ms=latency_ms,
                 status=status,
+                cost_usd=cost_usd,
             )
         )
         await self._session.commit()

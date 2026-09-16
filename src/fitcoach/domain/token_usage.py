@@ -9,3 +9,5 @@ class TokenUsage:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    status: str = "success"
+    latency_ms: int = 0

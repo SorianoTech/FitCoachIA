@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -86,6 +87,7 @@ class InterviewerChain:
         return InterviewerReply(turn=turn, token_usages=token_usages)
 
     async def _invoke(self, messages: list[BaseMessage]) -> tuple[str, TokenUsage | None]:
+        started = time.perf_counter()
         try:
             response = await self._model.ainvoke(messages)
         except openai.LengthFinishReasonError as exc:
@@ -106,9 +108,10 @@ class InterviewerChain:
             raise self._status_error(exc) from exc
         if not isinstance(response.content, str):
             raise InterviewerResultError()
-        return response.content.strip(), self._extract_usage(response)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return response.content.strip(), self._extract_usage(response, latency_ms)
 
-    def _extract_usage(self, response: BaseMessage) -> TokenUsage | None:
+    def _extract_usage(self, response: BaseMessage, latency_ms: int) -> TokenUsage | None:
         """Normalize token counts, preferring langchain's ``usage_metadata`` over the raw payload.
 
         ``usage_metadata`` (langchain-core ``UsageMetadata``) uses input_tokens/
@@ -122,6 +125,8 @@ class InterviewerChain:
                 prompt_tokens=usage_metadata.get("input_tokens", 0),
                 completion_tokens=usage_metadata.get("output_tokens", 0),
                 total_tokens=usage_metadata.get("total_tokens", 0),
+                status="success",
+                latency_ms=latency_ms,
             )
         response_metadata = getattr(response, "response_metadata", None) or {}
         token_usage = response_metadata.get("token_usage")
@@ -131,6 +136,8 @@ class InterviewerChain:
                 prompt_tokens=token_usage.get("prompt_tokens", 0),
                 completion_tokens=token_usage.get("completion_tokens", 0),
                 total_tokens=token_usage.get("total_tokens", 0),
+                status="success",
+                latency_ms=latency_ms,
             )
         return None
 

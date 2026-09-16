@@ -241,8 +241,8 @@ class ConversationService:
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
                 total_tokens=usage.total_tokens,
-                latency_ms=int(elapsed_ms),
-                status="success",
+                latency_ms=usage.latency_ms,
+                status=usage.status,
                 conversation_message_id=conversation_message_id,
             )
 

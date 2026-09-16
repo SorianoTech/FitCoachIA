@@ -120,16 +120,36 @@
       ],
       "transformations": [
         {
+          "id": "extractFields",
+          "options": {
+            "format": "json",
+            "replace": false,
+            "source": "Line"
+          }
+        },
+        {
           "id": "organize",
           "options": {
             "excludeByName": {
               "id": true,
-              "tsNs": true
+              "tsNs": true,
+              "Time": true,
+              "Line": true,
+              "labels": true,
+              "detected_level": true,
+              "service.name": true,
+              "service.version": true,
+              "deployment.environment.name": true,
+              "span_id": true
             },
             "indexByName": {},
             "renameByName": {
               "Time": "Hora",
-              "Line": "Mensaje",
+              "timestamp": "Hora",
+              "level": "Nivel",
+              "logger": "Logger",
+              "message": "Mensaje",
+              "trace_id": "TraceID",
               "telegram_user_id": "telegram_user_id",
               "environment": "entorno"
             }

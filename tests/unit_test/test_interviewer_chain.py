@@ -8,7 +8,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
-from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerResultError
 
 

@@ -1,0 +1,109 @@
+{
+  "title": "FitCoachIA - Conversaciones",
+  "uid": "fitcoach-conversations",
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["fitcoach"],
+  "templating": {
+    "list": [
+      {
+        "name": "agent",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+        "query": "SELECT DISTINCT agent FROM token_usage ORDER BY agent",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "telegram_user_id",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+        "query": "SELECT DISTINCT chat_id::text FROM token_usage ORDER BY chat_id::text",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Tokens consumidos por agente",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, agent, sum(total_tokens) AS tokens FROM token_usage WHERE $__timeFilter(created_at) AND agent IN ($agent) AND chat_id::text IN ($telegram_user_id) GROUP BY 1, agent ORDER BY 1",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Top usuarios por tokens consumidos",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT chat_id AS telegram_user_id, agent, sum(total_tokens) AS total_tokens, count(*) AS llamadas, round(avg(latency_ms)) AS latencia_media_ms FROM token_usage WHERE $__timeFilter(created_at) AND agent IN ($agent) AND chat_id::text IN ($telegram_user_id) GROUP BY chat_id, agent ORDER BY total_tokens DESC LIMIT 20",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Latencia media del LLM por agente (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, agent, avg(latency_ms) AS latencia_ms FROM token_usage WHERE $__timeFilter(created_at) AND agent IN ($agent) AND chat_id::text IN ($telegram_user_id) GROUP BY 1, agent ORDER BY 1",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Llamadas al LLM por estado",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "fitcoach-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, status, count(*) AS llamadas FROM token_usage WHERE $__timeFilter(created_at) AND agent IN ($agent) AND chat_id::text IN ($telegram_user_id) GROUP BY 1, status ORDER BY 1",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Logs de conversacion (filtrado por usuario)",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"fitcoach-ia\"} | json | telegram_user_id =~ \"$telegram_user_id\""
+        }
+      ]
+    }
+  ]
+}

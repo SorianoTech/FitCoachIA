@@ -1,0 +1,59 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: fitcoach-llm
+    folder: FitCoachIA
+    interval: 5m
+    rules:
+      - uid: fitcoach-llm-latency-p95
+        title: Latencia del LLM por encima del umbral
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "Latencia media del LLM > 30s en los ultimos 15 minutos"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: fitcoach-postgres
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              rawSql: "SELECT avg(latency_ms) AS latencia_media_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
+              format: table
+              rawQuery: true
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [30000] }
+
+      - uid: fitcoach-llm-failure-rate
+        title: Tasa de fallos del LLM elevada
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "Mas del 20% de las llamadas al LLM fallaron en los ultimos 15 minutos"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: fitcoach-postgres
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              rawSql: "SELECT 100.0 * count(*) FILTER (WHERE status <> 'success') / greatest(count(*), 1) AS failure_rate_pct FROM token_usage WHERE created_at > now() - interval '15 minutes'"
+              format: table
+              rawQuery: true
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [20] }

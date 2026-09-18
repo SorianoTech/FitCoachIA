@@ -9,7 +9,7 @@ El objetivo de este proyecto es desarrollar un sistema automatizado e inteligent
 * Flujos Cíclicos (Bucles de Corrección): Necesitamos que los agentes vuelvan atrás si se detectan incongruencias (ej. un plan nutricional que no cubre el gasto calórico del mesociclo). LangChain es estrictamente lineal; LangGraph nos da la capacidad de crear ciclos basados en estados.
 * Estado Global Compartido (Stateful): Todos los agentes escribirán y leerán de una memoria central estructurada (TypedDict), evitando la pérdida de contexto entre traspasos de tareas.
 * Control de Calidad Autónomo: El último agente actúa como supervisor antes de cerrar el flujo. Si el plan no es perfecto, se redirige de forma dinámica.
- 
+
 
 ------------------------------
 ## 3. Arquitectura del Grafo
@@ -70,14 +70,14 @@ Es la estructura de datos unificada que viaja por el grafo. Todo desarrollador d
    * Input: Todos los campos anteriores del estado.
       * Output: recursos_coaching, revision_valida, errores_detectados
       * Responsabilidad: Generar el material motivacional y de apoyo técnico. Adicionalmente, actúa como evaluador. Si detecta un desbalance (ej. dieta de 1500 kcal para un entrenamiento enfocado a hipertrofia pesada), marca revision_valida = False y detalla el motivo en errores_detectados.
-   
+
 ## C. El Borde Condicional (Router)
 Una función de enrutamiento evalúa revision_valida:
 
-* 
+*
 * Si es True -> Envía el flujo a END.
 * Si es False -> Envía el flujo de vuelta a agente_entrenador aportando el contexto de los errores encontrados para su reajuste.
-* 
+*
 
 ------------------------------
 ## 5. Próximos Pasos para el Equipo de Desarrollo
@@ -91,6 +91,3 @@ Si lo consideras oportuno, dime:
 
 * ¿Quieres que agregue una sección técnica sobre cómo persistir el estado en una base de datos (PostgreSQL/Redis) usando Checkpointers de LangGraph?
 * ¿Te gustaría que redactemos la especificación exacta del formato JSON que debe escupir cada uno de los 4 agentes?
- 
-
-

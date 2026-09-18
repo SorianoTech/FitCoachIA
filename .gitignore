@@ -24,3 +24,5 @@ __pycache__/
 *.lock
 
 .mypy*elop
+
+infra/vector-db/loader/resources/**

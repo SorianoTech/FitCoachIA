@@ -5,15 +5,15 @@
 **Tipo**: Timeseries | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  date_trunc('hour', created_at) AS time, 
-  agent, 
-  sum(total_tokens) AS tokens 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY 1, agent 
+SELECT
+  date_trunc('hour', created_at) AS time,
+  agent,
+  sum(total_tokens) AS tokens
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY 1, agent
 ORDER BY 1
 ```
 
@@ -24,18 +24,18 @@ ORDER BY 1
 **Tipo**: Table | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  chat_id AS telegram_user_id, 
-  agent, 
-  sum(total_tokens) AS total_tokens, 
-  count(*) AS llamadas, 
-  round(avg(latency_ms)) AS latencia_media_ms 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY chat_id, agent 
-ORDER BY total_tokens DESC 
+SELECT
+  chat_id AS telegram_user_id,
+  agent,
+  sum(total_tokens) AS total_tokens,
+  count(*) AS llamadas,
+  round(avg(latency_ms)) AS latencia_media_ms
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY chat_id, agent
+ORDER BY total_tokens DESC
 LIMIT 20
 ```
 
@@ -46,15 +46,15 @@ LIMIT 20
 **Tipo**: Timeseries | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  date_trunc('hour', created_at) AS time, 
-  agent, 
-  avg(latency_ms) AS latencia_ms 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY 1, agent 
+SELECT
+  date_trunc('hour', created_at) AS time,
+  agent,
+  avg(latency_ms) AS latencia_ms
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY 1, agent
 ORDER BY 1
 ```
 
@@ -65,15 +65,15 @@ ORDER BY 1
 **Tipo**: Timeseries | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  date_trunc('hour', created_at) AS time, 
-  status, 
-  count(*) AS llamadas 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY 1, status 
+SELECT
+  date_trunc('hour', created_at) AS time,
+  status,
+  count(*) AS llamadas
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY 1, status
 ORDER BY 1
 ```
 

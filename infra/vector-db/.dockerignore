@@ -1,0 +1,9 @@
+# Contexto de build de Dockerfile-pgVector y Dockerfile-db-loader.
+# El dump monolitico de 283 MB no se versiona ni se copia a la imagen: se aplican
+# las partes ddl/*_part-NN.sql. Si se cuela aqui, el entrypoint lo ejecutaria
+# despues de las partes y abortaria con "role fitcoach already exists".
+ddl/001_2026-09-18_Initial-exercises-load.sql
+
+.env
+.env.*
+!.env.example

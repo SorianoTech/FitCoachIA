@@ -1,7 +1,7 @@
 extensions:
   file_storage/queue:
     directory: /var/lib/otelcol/queue
-    create_directory: true
+    create_directory: false
     timeout: 10s
 
 receivers:

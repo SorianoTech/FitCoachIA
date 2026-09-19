@@ -11,9 +11,6 @@ processors:
     check_interval: 1s
     limit_mib: 256
     spike_limit_mib: 64
-  batch:
-    timeout: 5s
-    send_batch_size: 1024
   resource:
     attributes:
       - key: deployment.environment.name
@@ -31,6 +28,9 @@ processors:
     traces:
       span:
         - 'attributes["http.route"] == "/health"'
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
 
 exporters:
   otlphttp/loki:
@@ -46,15 +46,15 @@ service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource, attributes/redact]
+      processors: [memory_limiter, resource, attributes/redact, batch]
       exporters: [otlphttp/loki]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource, attributes/redact, filter/health]
+      processors: [memory_limiter, resource, attributes/redact, filter/health, batch]
       exporters: [otlp/tempo]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
+      processors: [memory_limiter, resource, batch]
       exporters: [prometheus]
   telemetry:
     metrics:

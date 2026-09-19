@@ -1,7 +1,7 @@
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Protocol
 
@@ -26,8 +26,10 @@ class AsyncChatModel(Protocol):
 
 
 class InterviewerResultError(InterviewerError):
-    def __init__(self) -> None:
-        super().__init__(InterviewerErrorCode.INVALID_OUTPUT, retryable=True)
+    def __init__(self, token_usages: list[TokenUsage] | None = None) -> None:
+        super().__init__(
+            InterviewerErrorCode.INVALID_OUTPUT, retryable=True, token_usages=token_usages
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,49 +69,85 @@ class InterviewerChain:
         try:
             turn = InterviewerTurn.model_validate_json(raw_result)
         except ValidationError:
+            if usage is not None:
+                token_usages[0] = replace(usage, status=InterviewerErrorCode.INVALID_OUTPUT.value)
             logger.warning("Interviewer result was invalid; requesting a repair")
-            repaired_result, repair_usage = await self._invoke([
-                SystemMessage(
-                    content=(
-                        "Return only a valid JSON object matching this JSON schema. Do not return "
-                        f"Markdown or prose. Schema: {InterviewerTurn.model_json_schema()}. "
-                        "Correct all missing, invalid, and inconsistent fields."
-                    )
-                ),
-                HumanMessage(content=raw_result),
-            ])
+            try:
+                repaired_result, repair_usage = await self._invoke([
+                    SystemMessage(
+                        content=(
+                            "Return only a valid JSON object matching this JSON schema. Do not return "
+                            f"Markdown or prose. Schema: {InterviewerTurn.model_json_schema()}. "
+                            "Correct all missing, invalid, and inconsistent fields."
+                        )
+                    ),
+                    HumanMessage(content=raw_result),
+                ])
+            except InterviewerError as error:
+                error.token_usages = [*token_usages, *error.token_usages]
+                raise
             if repair_usage is not None:
                 token_usages.append(repair_usage)
             try:
                 turn = InterviewerTurn.model_validate_json(repaired_result)
             except ValidationError as repair_error:
-                raise InterviewerResultError() from repair_error
+                if repair_usage is not None:
+                    token_usages[-1] = replace(
+                        repair_usage, status=InterviewerErrorCode.INVALID_OUTPUT.value
+                    )
+                raise InterviewerResultError(token_usages) from repair_error
         return InterviewerReply(turn=turn, token_usages=token_usages)
 
     async def _invoke(self, messages: list[BaseMessage]) -> tuple[str, TokenUsage | None]:
         started = time.perf_counter()
         try:
             response = await self._model.ainvoke(messages)
-        except openai.LengthFinishReasonError as exc:
-            raise InterviewerError(InterviewerErrorCode.OUTPUT_LIMIT, retryable=True) from exc
-        except (openai.AuthenticationError, openai.PermissionDeniedError) as exc:
-            raise InterviewerError(InterviewerErrorCode.AUTHENTICATION, retryable=False) from exc
-        except openai.RateLimitError as exc:
-            raise InterviewerError(InterviewerErrorCode.RATE_LIMITED, retryable=True) from exc
-        except openai.BadRequestError as exc:
-            raise InterviewerError(InterviewerErrorCode.INVALID_REQUEST, retryable=False) from exc
-        except (openai.APITimeoutError, httpx.TimeoutException) as exc:
-            raise InterviewerError(InterviewerErrorCode.TIMEOUT, retryable=True) from exc
-        except openai.APIConnectionError as exc:
-            raise InterviewerError(InterviewerErrorCode.UNAVAILABLE, retryable=True) from exc
-        except TimeoutError as exc:
-            raise InterviewerError(InterviewerErrorCode.TIMEOUT, retryable=True) from exc
-        except openai.APIStatusError as exc:
-            raise self._status_error(exc) from exc
+        except Exception as exc:
+            error = self._error_for_exception(exc)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            error.token_usages = [
+                TokenUsage(
+                    model=self._model_name,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    status=error.code.value,
+                    latency_ms=latency_ms,
+                )
+            ]
+            raise error from exc
         if not isinstance(response.content, str):
-            raise InterviewerResultError()
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            raise InterviewerResultError([
+                TokenUsage(
+                    model=self._model_name,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    status=InterviewerErrorCode.INVALID_OUTPUT.value,
+                    latency_ms=latency_ms,
+                )
+            ])
         latency_ms = int((time.perf_counter() - started) * 1000)
         return response.content.strip(), self._extract_usage(response, latency_ms)
+
+    @staticmethod
+    def _error_for_exception(error: Exception) -> InterviewerError:
+        if isinstance(error, openai.LengthFinishReasonError):
+            return InterviewerError(InterviewerErrorCode.OUTPUT_LIMIT, retryable=True)
+        if isinstance(error, (openai.AuthenticationError, openai.PermissionDeniedError)):
+            return InterviewerError(InterviewerErrorCode.AUTHENTICATION, retryable=False)
+        if isinstance(error, openai.RateLimitError):
+            return InterviewerError(InterviewerErrorCode.RATE_LIMITED, retryable=True)
+        if isinstance(error, openai.BadRequestError):
+            return InterviewerError(InterviewerErrorCode.INVALID_REQUEST, retryable=False)
+        if isinstance(error, (openai.APITimeoutError, httpx.TimeoutException, TimeoutError)):
+            return InterviewerError(InterviewerErrorCode.TIMEOUT, retryable=True)
+        if isinstance(error, openai.APIConnectionError):
+            return InterviewerError(InterviewerErrorCode.UNAVAILABLE, retryable=True)
+        if isinstance(error, openai.APIStatusError):
+            return InterviewerChain._status_error(error)
+        return InterviewerError(InterviewerErrorCode.UNAVAILABLE, retryable=True)
 
     def _extract_usage(self, response: BaseMessage, latency_ms: int) -> TokenUsage | None:
         """Normalize token counts, preferring langchain's ``usage_metadata`` over the raw payload.

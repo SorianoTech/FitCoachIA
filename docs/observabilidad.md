@@ -16,12 +16,12 @@ funcionando (sin telemetría) si el stack no está levantado.
 flowchart LR
     subgraph App["FitCoachIA (docker-compose.yml)"]
         API["FastAPI / webhook"]
-        LLM["InterviewerChain (LLM)"]
         DB[("Postgres\nconversation_messages\ntoken_usage")]
     end
 
     subgraph Obs["infra/observability (stack independiente)"]
         OTEL["OTel Collector"]
+        ALLOY["Grafana Alloy\n(Docker logs)"]
         LOKI["Loki (logs)"]
         TEMPO["Tempo (trazas)"]
         PROM["Prometheus (metricas)"]
@@ -29,11 +29,12 @@ flowchart LR
     end
 
     API -- "JSON a stdout" --> LOGS[/docker logs/]
+    LOGS --> ALLOY
+    ALLOY -- "push de logs" --> LOKI
     API -- "trazas OTLP" --> OTEL
-    OTEL --> LOKI
-    OTEL --> TEMPO
-    OTEL --> PROM
-    TEMPO -- "span-metrics" --> PROM
+    OTEL -- "trazas OTLP" --> TEMPO
+    PROM -. "scrape :8888/:8889" .-> OTEL
+    TEMPO -- "remote-write\nspan-metrics/service-graphs" --> PROM
     GRAF --> LOKI
     GRAF --> TEMPO
     GRAF --> PROM
@@ -123,7 +124,7 @@ se persiste como una fila en `token_usage`:
 | `prompt_tokens` / `completion_tokens` / `total_tokens` | Tokens consumidos. |
 | `cost_usd` | Coste estimado calculado con `model_prices`; `NULL` si el modelo no tiene precio configurado. |
 | `latency_ms` | Duración de la llamada al LLM. |
-| `status` | `"success"` (solo se persiste en el camino feliz por ahora). |
+| `status` | `"success"` o el código estable del fallo (`llm_timeout`, `llm_rate_limited`, etc.). |
 | `created_at` | Marca de tiempo. |
 
 Índices: `(chat_id, created_at)` y `(agent, created_at)`, pensados para las
@@ -180,7 +181,7 @@ En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
 (carpeta «FitCoachIA» en Grafana), duplicadas por entorno para poder
 distinguir un incidente en dev de uno en prod:
 
-- **`[dev]`/`[prod]` Latencia del LLM por encima del umbral**: `avg(latency_ms)` de los últimos 15 min > 30000 ms, sostenido 10 min.
+- **`[dev]`/`[prod]` Latencia p95 del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
 - **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
 
 Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada

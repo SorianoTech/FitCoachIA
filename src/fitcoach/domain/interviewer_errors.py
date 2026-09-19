@@ -1,5 +1,7 @@
 from enum import StrEnum
 
+from fitcoach.domain.token_usage import TokenUsage
+
 
 class InterviewerErrorCode(StrEnum):
     AUTHENTICATION = "llm_authentication"
@@ -13,7 +15,13 @@ class InterviewerErrorCode(StrEnum):
 
 
 class InterviewerError(RuntimeError):
-    def __init__(self, code: InterviewerErrorCode, retryable: bool) -> None:
+    def __init__(
+        self,
+        code: InterviewerErrorCode,
+        retryable: bool,
+        token_usages: list[TokenUsage] | None = None,
+    ) -> None:
         self.code = code
         self.retryable = retryable
+        self.token_usages = token_usages or []
         super().__init__(code)

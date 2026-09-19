@@ -49,7 +49,7 @@ flowchart LR
 | **Prometheus** | `prom/prometheus:v3.0.1` | 9090 | Almacena métricas (scrape del propio stack + métricas de trazas generadas por Tempo). Retención 30 días. |
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
 | **Tempo** | `grafana/tempo:2.6.1` | 3200 (+ OTLP 4317/4318) | Almacena trazas. Retención 7 días. Su `metrics_generator` produce métricas RED (`traces_spanmetrics_*`) a partir de las trazas y las envía a Prometheus por remote-write. |
-| **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `batch`, `resource` (tag de entorno) y redacta cabeceras sensibles (`Authorization`, `Cookie`) antes de reenviar a Loki/Tempo/Prometheus. |
+| **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`, y persiste las colas de exportación antes de reenviar a Loki/Tempo/Prometheus. |
 | **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
 Todos los servicios están en la red interna `observability`, excepto Grafana y
@@ -305,6 +305,12 @@ Si vas a desplegar producción por primera vez en este host, solo hace falta:
 | Alertas | `infra/observability/config/grafana/provisioning/alerting/rules.yml` |
 | Contraseñas / entorno del stack | `infra/observability/.env` (no versionado; plantilla en `.env.example`) |
 | Qué exporta la app (endpoint OTLP, nivel de log) | variables de entorno de la app: `otel_exporter_otlp_endpoint`, `log_level`, `APP_VERSION` |
+
+El Collector persiste las colas de Loki y Tempo en
+`/var/lib/otelcol/queue`, respaldado por el volumen
+`fitcoach-observability-otel-collector`. Los exportadores reintentan durante
+un máximo de 5 minutos; si el backend sigue caído o la cola se llena, el
+Collector descarta datos para proteger la disponibilidad del proceso.
 
 Tras cambiar cualquier archivo de configuración de un servicio, basta con
 recrearlo:

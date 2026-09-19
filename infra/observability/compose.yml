@@ -75,6 +75,7 @@ services:
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-dev}
     volumes:
       - ./config/otel-collector/otel-collector.yml:/etc/otel-collector/otel-collector.yml:ro
+      - fitcoach-observability-otel-collector:/var/lib/otelcol
     depends_on:
       - loki
       - tempo
@@ -112,3 +113,4 @@ volumes:
   fitcoach-observability-prometheus:
   fitcoach-observability-loki:
   fitcoach-observability-tempo:
+  fitcoach-observability-otel-collector:

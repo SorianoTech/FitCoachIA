@@ -1,3 +1,9 @@
+extensions:
+  file_storage/queue:
+    directory: /var/lib/otelcol/queue
+    create_directory: true
+    timeout: 10s
+
 receivers:
   otlp:
     protocols:
@@ -35,14 +41,33 @@ processors:
 exporters:
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      queue_size: 1024
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
   otlp/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      queue_size: 1024
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
   prometheus:
     endpoint: 0.0.0.0:8889
 
 service:
+  extensions: [file_storage/queue]
   pipelines:
     logs:
       receivers: [otlp]

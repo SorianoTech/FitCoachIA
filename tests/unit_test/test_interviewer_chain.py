@@ -28,9 +28,9 @@ async def test_responds_with_composed_prompt_history_and_user_message(model: Mag
         ConversationMessage(1, "assistant", "Encantado, Ana", datetime.now(UTC)),
     ]
 
-    result = await chain.respond("Quiero perder grasa", history)
+    reply = await chain.respond("Quiero perder grasa", history)
 
-    assert result.reply == "Hola"
+    assert reply.turn.reply == "Hola"
     model.ainvoke.assert_awaited_once()
     messages = model.ainvoke.await_args.args[0]
     assert isinstance(messages[0], SystemMessage)
@@ -62,12 +62,84 @@ async def test_repairs_an_invalid_result_once(model: MagicMock) -> None:
     ]
     chain = InterviewerChain(model)
 
-    result = await chain.respond("Hola", [])
+    reply = await chain.respond("Hola", [])
 
-    assert result.reply == "¿Cuál es tu objetivo?"
+    assert reply.turn.reply == "¿Cuál es tu objetivo?"
     assert model.ainvoke.await_count == 2
     repair_prompt = model.ainvoke.await_args_list[1].args[0][0].content
     assert "JSON schema" in repair_prompt
+
+
+class TestTokenUsageCapture:
+    @pytest.mark.asyncio
+    async def test_extracts_usage_from_langchain_usage_metadata(self, model: MagicMock) -> None:
+        model.ainvoke.return_value = AIMessage(
+            content='{"status":"in_progress","reply":"Hola"}',
+            usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        )
+        chain = InterviewerChain(model, model_name="gpt-test")
+
+        reply = await chain.respond("Hola", [])
+
+        assert len(reply.token_usages) == 1
+        assert reply.token_usages[0].model == "gpt-test"
+        assert reply.token_usages[0].prompt_tokens == 10
+        assert reply.token_usages[0].completion_tokens == 5
+        assert reply.token_usages[0].total_tokens == 15
+        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[0].latency_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_raw_openai_token_usage(self, model: MagicMock) -> None:
+        model.ainvoke.return_value = AIMessage(
+            content='{"status":"in_progress","reply":"Hola"}',
+            response_metadata={
+                "token_usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12}
+            },
+        )
+        chain = InterviewerChain(model, model_name="gpt-test")
+
+        reply = await chain.respond("Hola", [])
+
+        assert len(reply.token_usages) == 1
+        assert reply.token_usages[0].model == "gpt-test"
+        assert reply.token_usages[0].prompt_tokens == 8
+        assert reply.token_usages[0].completion_tokens == 4
+        assert reply.token_usages[0].total_tokens == 12
+        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[0].latency_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_records_a_usage_entry_for_the_repair_call_too(self, model: MagicMock) -> None:
+        model.ainvoke.side_effect = [
+            AIMessage(
+                content="not json",
+                usage_metadata={"input_tokens": 20, "output_tokens": 3, "total_tokens": 23},
+            ),
+            AIMessage(
+                content='{"status":"in_progress","reply":"reparado"}',
+                usage_metadata={"input_tokens": 30, "output_tokens": 6, "total_tokens": 36},
+            ),
+        ]
+        chain = InterviewerChain(model, model_name="gpt-test")
+
+        reply = await chain.respond("Hola", [])
+
+        assert len(reply.token_usages) == 2
+        assert reply.token_usages[0].total_tokens == 23
+        assert reply.token_usages[1].total_tokens == 36
+        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[1].status == "success"
+        assert reply.token_usages[0].latency_ms >= 0
+        assert reply.token_usages[1].latency_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_is_empty_when_the_model_reports_no_usage(self, model: MagicMock) -> None:
+        chain = InterviewerChain(model)
+
+        reply = await chain.respond("Hola", [])
+
+        assert reply.token_usages == []
 
 
 def _api_status_error(

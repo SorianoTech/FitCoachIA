@@ -13,14 +13,21 @@ name = "fitcoach"
 version = "0.1.0"
 description = "FitCoachIA — coaching assistant con backend FastAPI e interfaz de bot de Telegram"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.135.3",
-    "httpx>=0.28.1",              # se importa directo en service/llm/llm_caller.py
+    "httpx>=0.28.1",              # se importa directo en service/agent/interviewer_chain.py
+    "httpx2>=2.12.0",             # pin de seguridad para evitar versión vulnerable transitiva
+    "httpcore2>=2.10.0",          # pin de seguridad asociado a httpx2
     "langchain-core>=1.2.17",
     "langchain-openai>=1.1.11",
+    "opentelemetry-sdk>=1.29.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
+    "opentelemetry-instrumentation-fastapi>=0.50b0",
+    "opentelemetry-instrumentation-httpx>=0.50b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
     "pydantic>=2.13.0",
     "pydantic-settings>=2.13.1",
     "pydantic-extra-types>=2.11.1",
@@ -72,7 +79,7 @@ packages = ["src/fitcoach"]
 # RUFF — linter y formateador
 # ============================================================================
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 output-format = "concise"
 preview = true
@@ -114,7 +121,7 @@ ignore = ["B008", "E501"]
 # MYPY — análisis estático de tipos
 # ============================================================================
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 
 # Imprescindibles para proyectos de IA generativa

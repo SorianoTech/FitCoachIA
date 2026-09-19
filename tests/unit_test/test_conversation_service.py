@@ -11,7 +11,7 @@ from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.repository.conversation_repository import ConversationRepository
-from fitcoach.service.agent.interviewer_chain import InterviewerChain
+from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.conversation_service import (
     ConversationService,
     format_llm_input,
@@ -179,8 +179,9 @@ class TestSlowModelWarning:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         monkeypatch.setattr(Constants, "SLOW_LLM_MS", -1)  # cualquier latencia lo supera
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="respuesta"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="respuesta"),
+            token_usages=[],
         )
         caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
 
@@ -195,8 +196,9 @@ class TestSlowModelWarning:
         mock_interviewer: AsyncMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="respuesta"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="respuesta"),
+            token_usages=[],
         )
         caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
 
@@ -222,8 +224,9 @@ class TestPersistentConversation:
             )
         ]
         mock_conversation_repository.get_recent.return_value = history
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="Hola Ana"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="Hola Ana"),
+            token_usages=[],
         )
         service = ConversationService(
             bot=mock_bot,
@@ -248,11 +251,14 @@ class TestPersistentConversation:
         mock_conversation_repository: AsyncMock,
     ) -> None:
         profile = MagicMock()
-        mock_interviewer.respond.return_value = InterviewerTurn.model_construct(
-            status="completed",
-            reply="He completado tu perfil.",
-            report="Resumen de tu entrevista",
-            profile=profile,
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn.model_construct(
+                status="completed",
+                reply="He completado tu perfil.",
+                report="Resumen de tu entrevista",
+                profile=profile,
+            ),
+            token_usages=[],
         )
         service = ConversationService(
             bot=mock_bot,
@@ -361,8 +367,9 @@ class TestUnexpectedErrorHandling:
         mock_interviewer: AsyncMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        mock_interviewer.respond.return_value = InterviewerTurn(
-            status="in_progress", reply="respuesta"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="respuesta"),
+            token_usages=[],
         )
         mock_bot.send_message.side_effect = RuntimeError("telegram caido")
         caplog.set_level(logging.ERROR, logger="fitcoach.service.conversation_service")

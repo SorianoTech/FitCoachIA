@@ -19,7 +19,7 @@ services:
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
     ports:
       - "${IT_PORT:-8001}:8000"
-    # python -c en lugar de curl: la imagen final es python:3.11-slim y no trae curl.
+    # python -c en lugar de curl: la imagen final es python:3.12-slim y no trae curl.
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]

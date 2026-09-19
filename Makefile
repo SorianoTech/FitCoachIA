@@ -10,7 +10,8 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-VENV=venv
+# Prefiere .venv (layout por defecto de uv) y cae a venv si no existe.
+VENV:=$(if $(wildcard .venv),.venv,venv)
 PYTEST=$(VENV)/Scripts/pytest.exe
 
 COMPOSE_IT=tests/docker-compose-test.yml
@@ -74,8 +75,8 @@ prod-logs:
 	$(DOCKER) compose --env-file .env.prod logs -f
 
 tests:
-	@$(COMPOSE_UP)
-	@$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
+	@$(COMPOSE_UP); \
+	$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \
 	exit $$STATUS

@@ -11,15 +11,15 @@ services:
     environment:
       APP_ENV: dev
       ia_skill: ${ia_skill:-interviewer-dev}
-      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}
+      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres-dev:5432/${POSTGRES_DB:-fitcoach}
     depends_on:
-      postgres:
+      postgres-dev:
         condition: service_healthy
     networks:
       - default
       - proxy-network
 
-  postgres:
+  postgres-dev:
     container_name: dev-fitcoach-postgres
     image: postgres:16-alpine
     environment:
@@ -33,15 +33,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - default
+      - proxy-network
 
   adminer:
     container_name: dev-fitcoach-adminer
     image: adminer:4.8.1-standalone
     restart: unless-stopped
     environment:
-      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DEFAULT_SERVER: postgres-dev
     depends_on:
-      postgres:
+      postgres-dev:
         condition: service_healthy
     networks:
       - default

@@ -30,13 +30,13 @@ Este fichero cumple dos roles distintos que conviven en el mismo archivo:
 | `version = "0.1.0"` | Versión estática del paquete. Si más adelante se quiere derivar automáticamente de un tag de git, se sustituye por `hatch-vcs` |
 | `description` | Resumen corto, aparece en metadatos del paquete (`pip show`, PyPI si se publicara) |
 | `readme = "README.md"` | Fichero que se usa como descripción larga del paquete |
-| `requires-python = ">=3.11"` | Versión mínima de Python soportada. Alineada con `python:3.11-slim` en `src/Dockerfile` — si un día se sube la imagen base, este valor (y `target-version`/`python_version` de ruff/mypy) debe subir también |
+| `requires-python = ">=3.12"` | Versión mínima de Python soportada. Alineada con `python:3.12-slim` en `src/Dockerfile` — si un día se sube la imagen base, este valor (y `target-version`/`python_version` de ruff/mypy) debe subir también |
 | `dependencies` | Dependencias **directas** de runtime: solo lo que el código de `src/fitcoach` importa explícitamente |
 
 > **¿Por qué no aparecen `starlette`, `anyio`, etc.?**
 > Son dependencias **transitivas** (las arrastran `fastapi` y otras). `uv` las resuelve automáticamente al compilar los `requirements`; listarlas a mano en `dependencies` sería redundante y se desincronizaría con el tiempo.
 >
-> `httpx` sí aparece, y no es una excepción arbitraria: `service/llm/llm_caller.py` lo **importa directamente**. Llegaba transitivo por `fastapi[standard]`, pero depender de un transitivo que tu código importa es frágil — el día que `fastapi` deje de arrastrarlo, la app rompe sin que ningún fichero de dependencias haya cambiado. La regla es: si el código lo importa, se declara.
+> `httpx` sí aparece, y no es una excepción arbitraria: `service/agent/interviewer_chain.py` lo **importa directamente**. Llegaba transitivo por `fastapi[standard]`, pero depender de un transitivo que tu código importa es frágil — el día que `fastapi` deje de arrastrarlo, la app rompe sin que ningún fichero de dependencias haya cambiado. La regla es: si el código lo importa, se declara.
 
 > **¿Por qué `fastapi[standard]` y no `fastapi` a secas?**
 > El extra `standard` incluye `uvicorn`, `fastapi-cli`, `python-multipart`, `email-validator`, etc. — todo lo que `src/Dockerfile` necesita para poder ejecutar `ENTRYPOINT ["fastapi", "run", "fitcoach/main.py"]`. Sin el extra, ese comando no existiría en el entorno.
@@ -74,12 +74,12 @@ Los dos ficheros son **artefactos compilados**: no se editan a mano. `pyproject.
 Para regenerarlos tras tocar dependencias en `pyproject.toml`, hay que lanzar **los dos comandos**: si solo se actualiza uno, los pines comunes se desincronizan y CI deja de validar lo que realmente se despliega.
 
 ```bash
-uv pip compile pyproject.toml --universal --python-version 3.11 --no-annotate -o src/requirements.txt
-uv pip compile pyproject.toml --group test --group lint --group ci --universal --python-version 3.11 --no-annotate -o .github/requirements-ci.txt
+uv pip compile pyproject.toml --universal --python-version 3.12 --no-annotate -o src/requirements.txt
+uv pip compile pyproject.toml --group test --group lint --group ci --universal --python-version 3.12 --no-annotate -o .github/requirements-ci.txt
 ```
 
 - `--universal` es obligatorio: se compila en Windows pero se despliega en Linux. Sin él, el resultado se ata a la plataforma que lo genera y se pierden paquetes con marcador (`uvloop` solo existe fuera de Windows, `colorama` solo en Windows).
-- `--python-version 3.11` alinea la resolución con `python:3.11-slim` del `Dockerfile`.
+- `--python-version 3.12` alinea la resolución con `python:3.12-slim` del `Dockerfile` y con `PYTHON_VERSION` de `build.yml`. Las tres deben moverse juntas.
 - `--no-annotate` deja solo la lista de pines, sin los comentarios `# via` que indican qué paquete arrastra a cuál. Esa trazabilidad se consulta cuando hace falta con `uv pip tree`.
 - Al escribir sobre un fichero existente, `uv` respeta los pines actuales como preferencia: solo mueve lo que la nueva restricción obliga a mover. Para forzar la subida de todo, se añade `--upgrade`.
 
@@ -99,7 +99,7 @@ Redundante con la autodetección por convención de nombres, pero explícito: si
 
 | Clave | Qué hace |
 |-------|----------|
-| `target-version = "py311"` | Versión de Python contra la que ruff decide qué sintaxis moderna sugerir (regla `UP`). Debe ir alineada con `requires-python` |
+| `target-version = "py312"` | Versión de Python contra la que ruff decide qué sintaxis moderna sugerir (regla `UP`). Debe ir alineada con `requires-python` |
 | `line-length = 100` | Longitud máxima de línea antes de marcar/formatear |
 | `output-format = "concise"` | Formato de salida de los errores en terminal |
 | `extend-exclude` | Rutas y patrones que ruff no analiza (ficheros generados, Docker, requirements, scripts) |
@@ -113,7 +113,7 @@ Redundante con la autodetección por convención de nombres, pero explícito: si
 
 | Clave | Qué hace |
 |-------|----------|
-| `python_version = "3.11"` | Versión de Python que mypy asume al comprobar tipos. Alineada con `requires-python` / Dockerfile |
+| `python_version = "3.12"` | Versión de Python que mypy asume al comprobar tipos. Alineada con `requires-python` / Dockerfile |
 | `strict = true` | Activa el conjunto más exigente de comprobaciones de una vez |
 | `disallow_untyped_defs` / `disallow_incomplete_defs` | Obliga a anotar tipos en todas las funciones |
 | `check_untyped_defs` | Comprueba también el cuerpo de funciones sin anotar (por si se cuelan) |

@@ -38,6 +38,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=30d
       - --web.enable-remote-write-receiver # requerido por metrics_generator de Tempo
+      - --enable-feature=exemplar-storage
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - fitcoach-observability-prometheus:/prometheus

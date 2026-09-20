@@ -39,8 +39,15 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
-  prometheus:
-    endpoint: 0.0.0.0:8889
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    add_metric_suffixes: true
+    resource_to_telemetry_conversion:
+      enabled: false        # service.version=SHA crearia series nuevas cada deploy
+    remote_write_queue:
+      enabled: true
+      queue_size: 5000
+    timeout: 5s
 
 service:
   pipelines:
@@ -55,7 +62,7 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource]
-      exporters: [prometheus]
+      exporters: [prometheusremotewrite]
   telemetry:
     metrics:
       readers:

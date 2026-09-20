@@ -68,10 +68,12 @@ class InterviewerChain:
         token_usages = [usage] if usage is not None else []
         try:
             turn = InterviewerTurn.model_validate_json(raw_result)
-        except ValidationError:
+        except ValidationError as validation_error:
+            logger.debug("Interviewer result invalid; raw model output: %s", raw_result)
+            logger.debug("Interviewer validation error: %s", validation_error)
             if usage is not None:
                 token_usages[0] = replace(usage, status=InterviewerErrorCode.INVALID_OUTPUT.value)
-            logger.warning("Interviewer result was invalid; requesting a repair")
+            logger.debug("Interviewer result was invalid; requesting a repair")
             try:
                 repaired_result, repair_usage = await self._invoke([
                     SystemMessage(
@@ -88,6 +90,7 @@ class InterviewerChain:
                 raise
             if repair_usage is not None:
                 token_usages.append(repair_usage)
+            logger.debug("Interviewer repair result: %s", repaired_result)
             try:
                 turn = InterviewerTurn.model_validate_json(repaired_result)
             except ValidationError as repair_error:
@@ -95,6 +98,7 @@ class InterviewerChain:
                     token_usages[-1] = replace(
                         repair_usage, status=InterviewerErrorCode.INVALID_OUTPUT.value
                     )
+                logger.debug("Interviewer repaired result still invalid: %s", repair_error)
                 raise InterviewerResultError(token_usages) from repair_error
         return InterviewerReply(turn=turn, token_usages=token_usages)
 

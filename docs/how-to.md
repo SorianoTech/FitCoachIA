@@ -151,11 +151,27 @@ make dev-down
 Producción utiliza `docker-compose.yml`, el proyecto `fitcoach-prod`, la red externa
 `proxy-network`. Nginx Proxy Manager publica la API; antes del primer despliegue, crea esa red y
 el fichero `/etc/fitcoachia/prod/.env.prod` exclusivo del servidor de producción (ver
-[Entornos y variables](#entornos-y-variables)). `make prod-up` falla si ese fichero no existe.
+[Entornos y variables](#entornos-y-variables)). `make prod-up` falla si ese fichero no existe o no
+tiene permisos de acceso.
+
+`/etc/fitcoachia/prod` mantiene permisos restringidos: el usuario de despliegue (SSH) no puede
+leerlo directamente. El workflow `deploy.yml` accede solo durante el comando de despliegue
+mediante `sudo -n`, así que ese usuario necesita una regla `sudoers` sin contraseña:
+
+```
+# /etc/sudoers.d/fitcoach-deploy   (chmod 0440, validar con visudo -c)
+<SERVER_USER> ALL=(root) NOPASSWD: /usr/bin/make, /usr/bin/test, /bin/ls
+```
 
 ```bash
 docker network inspect proxy-network >/dev/null 2>&1 || docker network create proxy-network
 make prod-up VERSION=0.3.0
+```
+
+Para desplegar manualmente en el servidor con ese usuario restringido, antepón `sudo`:
+
+```bash
+sudo make prod-up VERSION=0.3.0
 ```
 
 Desarrollo y producción pueden convivir en el mismo servidor. Usa `make dev-up` para el entorno

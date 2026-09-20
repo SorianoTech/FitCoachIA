@@ -1,11 +1,20 @@
 name: fitcoach-dev
 
+# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
 services:
-  fitcoach-ia:
+  fitcoach-ia-dev:
     container_name: dev-fitcoach-ia
     build:
       context: .
       dockerfile: src/Dockerfile
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      # Sondeo rapido solo durante el arranque; en regimen estable basta cada 5 min.
+      start_interval: 5s
     env_file:
       # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
       - path: .env.dev
@@ -15,15 +24,15 @@ services:
     environment:
       APP_ENV: dev
       ia_skill: ${ia_skill:-interviewer-dev}
-      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}
+      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres-dev:5432/${POSTGRES_DB:-fitcoach}
     depends_on:
-      postgres:
+      postgres-dev:
         condition: service_healthy
     networks:
       - default
       - proxy-network
 
-  postgres:
+  postgres-dev:
     container_name: dev-fitcoach-postgres
     image: postgres:16-alpine
     environment:
@@ -38,14 +47,14 @@ services:
       timeout: 5s
       retries: 10
 
-  adminer:
+  adminer-dev:
     container_name: dev-fitcoach-adminer
     image: adminer:4.8.1-standalone
     restart: unless-stopped
     environment:
-      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DEFAULT_SERVER: postgres-dev
     depends_on:
-      postgres:
+      postgres-dev:
         condition: service_healthy
     networks:
       - default

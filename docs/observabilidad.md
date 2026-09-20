@@ -16,12 +16,12 @@ funcionando (sin telemetría) si el stack no está levantado.
 flowchart LR
     subgraph App["FitCoachIA (docker-compose.yml)"]
         API["FastAPI / webhook"]
-        LLM["InterviewerChain (LLM)"]
         DB[("Postgres\nconversation_messages\ntoken_usage")]
     end
 
     subgraph Obs["infra/observability (stack independiente)"]
         OTEL["OTel Collector"]
+        ALLOY["Grafana Alloy\n(Docker logs)"]
         LOKI["Loki (logs)"]
         TEMPO["Tempo (trazas)"]
         PROM["Prometheus (metricas)"]
@@ -29,11 +29,12 @@ flowchart LR
     end
 
     API -- "JSON a stdout" --> LOGS[/docker logs/]
+    LOGS --> ALLOY
+    ALLOY -- "push de logs" --> LOKI
     API -- "trazas OTLP" --> OTEL
-    OTEL --> LOKI
-    OTEL --> TEMPO
-    OTEL --> PROM
-    TEMPO -- "span-metrics" --> PROM
+    OTEL -- "trazas OTLP" --> TEMPO
+    PROM -. "scrape :8888/:8889" .-> OTEL
+    TEMPO -- "remote-write\nspan-metrics/service-graphs" --> PROM
     GRAF --> LOKI
     GRAF --> TEMPO
     GRAF --> PROM
@@ -49,7 +50,7 @@ flowchart LR
 | **Prometheus** | `prom/prometheus:v3.0.1` | 9090 | Almacena métricas (scrape del propio stack + métricas de trazas generadas por Tempo). Retención 30 días. |
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
 | **Tempo** | `grafana/tempo:2.6.1` | 3200 (+ OTLP 4317/4318) | Almacena trazas. Retención 7 días. Su `metrics_generator` produce métricas RED (`traces_spanmetrics_*`) a partir de las trazas y las envía a Prometheus por remote-write. |
-| **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `batch`, `resource` (tag de entorno) y redacta cabeceras sensibles (`Authorization`, `Cookie`) antes de reenviar a Loki/Tempo/Prometheus. |
+| **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`, y persiste las colas de exportación antes de reenviar a Loki/Tempo/Prometheus. |
 | **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
 Todos los servicios están en la red interna `observability`, excepto Grafana y
@@ -123,7 +124,7 @@ se persiste como una fila en `token_usage`:
 | `prompt_tokens` / `completion_tokens` / `total_tokens` | Tokens consumidos. |
 | `cost_usd` | Coste estimado calculado con `model_prices`; `NULL` si el modelo no tiene precio configurado. |
 | `latency_ms` | Duración de la llamada al LLM. |
-| `status` | `"success"` (solo se persiste en el camino feliz por ahora). |
+| `status` | `"success"` o el código estable del fallo (`llm_timeout`, `llm_rate_limited`, etc.). |
 | `created_at` | Marca de tiempo. |
 
 Índices: `(chat_id, created_at)` y `(agent, created_at)`, pensados para las
@@ -180,7 +181,7 @@ En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
 (carpeta «FitCoachIA» en Grafana), duplicadas por entorno para poder
 distinguir un incidente en dev de uno en prod:
 
-- **`[dev]`/`[prod]` Latencia del LLM por encima del umbral**: `avg(latency_ms)` de los últimos 15 min > 30000 ms, sostenido 10 min.
+- **`[dev]`/`[prod]` Latencia p95 del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
 - **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
 
 Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada
@@ -305,6 +306,12 @@ Si vas a desplegar producción por primera vez en este host, solo hace falta:
 | Alertas | `infra/observability/config/grafana/provisioning/alerting/rules.yml` |
 | Contraseñas / entorno del stack | `infra/observability/.env` (no versionado; plantilla en `.env.example`) |
 | Qué exporta la app (endpoint OTLP, nivel de log) | variables de entorno de la app: `otel_exporter_otlp_endpoint`, `log_level`, `APP_VERSION` |
+
+El Collector persiste las colas de Loki y Tempo en
+`/var/lib/otelcol/queue`, respaldado por el volumen
+`fitcoach-observability-otel-collector`. Los exportadores reintentan durante
+un máximo de 5 minutos; si el backend sigue caído o la cola se llena, el
+Collector descarta datos para proteger la disponibilidad del proceso.
 
 Tras cambiar cualquier archivo de configuración de un servicio, basta con
 recrearlo:

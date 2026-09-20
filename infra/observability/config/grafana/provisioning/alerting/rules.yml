@@ -29,7 +29,7 @@ groups:
             datasourceUid: fitcoach-postgres-dev
             relativeTimeRange: { from: 900, to: 0 }
             model:
-              rawSql: "SELECT avg(latency_ms) AS latencia_media_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
+              rawSql: "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS latencia_p95_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
               format: table
               rawQuery: true
           - refId: C
@@ -88,7 +88,7 @@ groups:
             datasourceUid: fitcoach-postgres-prod
             relativeTimeRange: { from: 900, to: 0 }
             model:
-              rawSql: "SELECT avg(latency_ms) AS latencia_media_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
+              rawSql: "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS latencia_p95_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
               format: table
               rawQuery: true
           - refId: C

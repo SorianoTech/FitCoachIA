@@ -1,13 +1,26 @@
 name: fitcoach-dev
 
+# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
 services:
-  fitcoach-ia:
+  fitcoach-ia-dev:
     container_name: dev-fitcoach-ia
     build:
       context: .
       dockerfile: src/Dockerfile
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      # Sondeo rapido solo durante el arranque; en regimen estable basta cada 5 min.
+      start_interval: 5s
     env_file:
-      - ${FITCOACH_ENV_FILE:-.env.dev}
+      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
+      - path: .env.dev
+        required: false
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
+        required: false
     environment:
       APP_ENV: dev
       ia_skill: ${ia_skill:-interviewer-dev}
@@ -37,7 +50,7 @@ services:
       - default
       - proxy-network
 
-  adminer:
+  adminer-dev:
     container_name: dev-fitcoach-adminer
     image: adminer:4.8.1-standalone
     restart: unless-stopped

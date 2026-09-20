@@ -105,10 +105,13 @@ publicarla, y solo se publica después de crear el tag/release**:
 `workflow_dispatch` para redesplegar una versión ya publicada. Los datos de conexión SSH viajan
 como `secrets` (no `inputs`) para que GitHub los enmascare en los logs.
 
-Patrón: **cutover verificado con abandono ante fallo**. La versión anterior nunca se destruye hasta
-que la nueva demuestra estar sana (health check `/health`, 5 intentos); si falla, se descarta la
-imagen nueva y el contenedor previo queda intacto — no hay "rollback" activo, simplemente no se
-toca lo que ya funcionaba. Si la imagen solicitada ya es la que corre, se fuerza su recreación.
+Patrón: **recreate verificado con rollback**. Se retira el contenedor en servicio conservando su
+imagen (el artefacto de rollback), se levanta la nueva versión y se espera a que Docker la marque
+`healthy` (`healthcheck` de `docker-compose.yml`, sondeado hasta 10 intentos); si no lo consigue, se
+descartan contenedor e imagen nuevos y se restaura la versión anterior desde la imagen retenida. La
+imagen previa solo se conserva hasta que la nueva demuestra estar sana. Esto implica una ventana
+breve sin servicio en cada despliegue (~10-40 s, más si hay que revertir): el proxy devuelve 502 y
+Telegram reintenta los updates, así que no se pierden mensajes.
 
 **Prerrequisitos que CI nunca provee**, deben existir ya en el servidor: el fichero
 `/etc/fitcoachia/prod/.env.prod` con permisos restringidos (no legible por el usuario de

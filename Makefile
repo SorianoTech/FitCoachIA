@@ -10,7 +10,8 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-VENV=venv
+# Prefiere .venv (layout por defecto de uv) y cae a venv si no existe.
+VENV:=$(if $(wildcard .venv),.venv,venv)
 PYTEST=$(VENV)/Scripts/pytest.exe
 
 COMPOSE_IT=tests/docker-compose-test.yml
@@ -104,10 +105,12 @@ prod-up:
 	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d
 
 prod-down:
-	$(COMPOSE_PROD) down
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down
 
 prod-logs:
-	$(COMPOSE_PROD) logs -f
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
 
 tests:
 	@$(COMPOSE_UP); \

@@ -10,7 +10,8 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-VENV=venv
+# Prefiere .venv (layout por defecto de uv) y cae a venv si no existe.
+VENV:=$(if $(wildcard .venv),.venv,venv)
 PYTEST=$(VENV)/Scripts/pytest.exe
 
 COMPOSE_IT=tests/docker-compose-test.yml
@@ -21,6 +22,37 @@ export IT_BASE_URL
 
 COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
 COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
+
+# Ficheros de entorno fuera del repositorio; dev cae al fichero local si no existen, prod no
+ENV_ROOT ?= /etc/fitcoachia
+DEV_ENV_FILE ?= $(ENV_ROOT)/dev/.env.dev
+PROD_ENV_FILE ?= $(ENV_ROOT)/prod/.env.prod
+DEV_ENV_FALLBACK=.env.dev
+
+COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
+COMPOSE_PROD=$(DOCKER) compose
+
+define resolve_dev_env
+if [ -f "$(DEV_ENV_FILE)" ]; then \
+	ENV_FILE="$(DEV_ENV_FILE)"; \
+else \
+	ENV_FILE="$(DEV_ENV_FALLBACK)"; \
+	echo ">> $(DEV_ENV_FILE) no encontrado -> usando $(DEV_ENV_FALLBACK)"; \
+fi; \
+[ -f "$$ENV_FILE" ] || { echo "ERROR: no existe ningun fichero de entorno de desarrollo"; exit 1; }; \
+echo ">> entorno dev: $$ENV_FILE"; \
+export FITCOACH_ENV_FILE="$$ENV_FILE"
+endef
+
+define resolve_prod_env
+if [ ! -r "$(PROD_ENV_FILE)" ]; then \
+	echo "ERROR: $(PROD_ENV_FILE) no existe o no tiene permisos de acceso"; \
+	echo "       crea el fichero, o ejecuta el target con sudo"; \
+	exit 1; \
+fi; \
+echo ">> entorno prod: $(PROD_ENV_FILE)"; \
+export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
+endef
 
 .PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
@@ -39,10 +71,10 @@ help:
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
 	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
-	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado"
+	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado. Usa $(DEV_ENV_FILE) si existe, si no $(DEV_ENV_FALLBACK)"
 	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
 	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
-	@echo "  make prod-up [version=x.y.z]        - Levanta el entorno de produccion"
+	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
 	@echo "  make prod-down                      - Detiene el entorno de produccion"
 	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
 
@@ -59,22 +91,26 @@ build:
 	fi
 
 dev-up:
-	$(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml up -d --build
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build
 
 dev-down:
-	$(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml down
+	$(COMPOSE_DEV) down
 
 dev-logs:
-	$(DOCKER) compose --env-file .env.dev -f docker-compose.dev.yml logs -f
+	$(COMPOSE_DEV) logs -f
 
 prod-up:
-	$(DOCKER) compose --env-file .env.prod up -d
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d
 
 prod-down:
-	$(DOCKER) compose --env-file .env.prod down
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down
 
 prod-logs:
-	$(DOCKER) compose --env-file .env.prod logs -f
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
 
 tests:
 	@$(COMPOSE_UP); \

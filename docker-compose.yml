@@ -1,12 +1,21 @@
 name: fitcoach-prod
 
+# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
 services:
-  fitcoach-ia:
+  fitcoach-ia-prod:
     container_name: fitcoach-ia
     restart: unless-stopped
     image: fitcoachia/fitcoach-app:${VERSION:-latest}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      # Sondeo rapido solo durante el arranque: el despliegue no espera 5 min a ver healthy.
+      start_interval: 5s
     env_file:
-      - ${FITCOACH_ENV_FILE:-.env.prod}
+      - ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
     environment:
       APP_ENV: prod
       database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres-prod:5432/${POSTGRES_DB:-fitcoach}

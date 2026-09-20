@@ -131,3 +131,4 @@ jobs:
       SERVER_PKEY: ${{ secrets.SERVER_PKEY }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
       DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
+      ENV_FILE_PATH: ${{ secrets.ENV_FILE_PATH }}

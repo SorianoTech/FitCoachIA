@@ -79,7 +79,7 @@ packages = ["src/fitcoach"]
 # RUFF — linter y formateador
 # ============================================================================
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 output-format = "concise"
 preview = true
@@ -121,7 +121,7 @@ ignore = ["B008", "E501"]
 # MYPY — análisis estático de tipos
 # ============================================================================
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 
 # Imprescindibles para proyectos de IA generativa

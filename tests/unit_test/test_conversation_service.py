@@ -307,6 +307,27 @@ class TestPersistentConversation:
 
 class TestInterviewerErrorHandling:
     @pytest.mark.asyncio
+    async def test_persists_failed_llm_call_without_conversation_message(
+        self,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        mock_interviewer.respond.side_effect = InterviewerError(
+            InterviewerErrorCode.TIMEOUT, retryable=True
+        )
+        service = ConversationService(
+            bot=AsyncMock(spec=Bot),
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+        )
+
+        await service.handle_update(_text_update(456, "Hola"))
+
+        usage = mock_conversation_repository.record_token_usage.await_args.kwargs
+        assert usage["status"] == InterviewerErrorCode.TIMEOUT.value
+        assert usage["conversation_message_id"] is None
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("code", "expected_message"),
         [

@@ -76,13 +76,28 @@ services:
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-dev}
     volumes:
       - ./config/otel-collector/otel-collector.yml:/etc/otel-collector/otel-collector.yml:ro
+      - fitcoach-observability-otel-collector:/var/lib/otelcol
     depends_on:
-      - loki
-      - tempo
-      - prometheus
+      otel-collector-init:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
     networks:
       - observability
       - proxy-network # la app (proxy-network) envía OTLP aquí
+
+  otel-collector-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "mkdir -p /var/lib/otelcol/queue && chown -R 10001:10001 /var/lib/otelcol"]
+    volumes:
+      - fitcoach-observability-otel-collector:/var/lib/otelcol
+    restart: "no"
+    networks:
+      - observability
 
   alloy:
     image: grafana/alloy:v1.5.1
@@ -113,3 +128,4 @@ volumes:
   fitcoach-observability-prometheus:
   fitcoach-observability-loki:
   fitcoach-observability-tempo:
+  fitcoach-observability-otel-collector:

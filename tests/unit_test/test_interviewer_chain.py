@@ -128,7 +128,7 @@ class TestTokenUsageCapture:
         assert len(reply.token_usages) == 2
         assert reply.token_usages[0].total_tokens == 23
         assert reply.token_usages[1].total_tokens == 36
-        assert reply.token_usages[0].status == "success"
+        assert reply.token_usages[0].status == InterviewerErrorCode.INVALID_OUTPUT.value
         assert reply.token_usages[1].status == "success"
         assert reply.token_usages[0].latency_ms >= 0
         assert reply.token_usages[1].latency_ms >= 0

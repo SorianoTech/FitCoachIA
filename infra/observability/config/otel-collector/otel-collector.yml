@@ -1,3 +1,9 @@
+extensions:
+  file_storage/queue:
+    directory: /var/lib/otelcol/queue
+    create_directory: false
+    timeout: 10s
+
 receivers:
   otlp:
     protocols:
@@ -11,9 +17,6 @@ processors:
     check_interval: 1s
     limit_mib: 256
     spike_limit_mib: 64
-  batch:
-    timeout: 5s
-    send_batch_size: 1024
   resource:
     attributes:
       - key: deployment.environment.name
@@ -31,38 +34,53 @@ processors:
     traces:
       span:
         - 'attributes["http.route"] == "/health"'
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
 
 exporters:
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      queue_size: 1024
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
   otlp/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
-  prometheusremotewrite:
-    endpoint: http://prometheus:9090/api/v1/write
-    add_metric_suffixes: true
-    resource_to_telemetry_conversion:
-      enabled: false        # service.version=SHA crearia series nuevas cada deploy
-    remote_write_queue:
+    sending_queue:
       enabled: true
-      queue_size: 5000
-    timeout: 5s
+      storage: file_storage/queue
+      queue_size: 1024
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
+  prometheus:
+    endpoint: 0.0.0.0:8889
 
 service:
+  extensions: [file_storage/queue]
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource, attributes/redact]
+      processors: [memory_limiter, resource, attributes/redact, batch]
       exporters: [otlphttp/loki]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource, attributes/redact, filter/health]
+      processors: [memory_limiter, resource, attributes/redact, filter/health, batch]
       exporters: [otlp/tempo]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
-      exporters: [prometheusremotewrite]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
   telemetry:
     metrics:
       readers:

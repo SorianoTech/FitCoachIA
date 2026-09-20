@@ -163,6 +163,23 @@ class ConversationService:
         try:
             reply = await self._reply_with_interviewer(chat_id, llm_input)
         except InterviewerError as exc:
+            await self._record_token_usage(
+                ctx,
+                chat_id,
+                None,
+                exc.token_usages
+                or [
+                    TokenUsage(
+                        model="unknown",
+                        prompt_tokens=0,
+                        completion_tokens=0,
+                        total_tokens=0,
+                        status=exc.code.value,
+                        latency_ms=int((time.perf_counter() - started) * 1000),
+                    )
+                ],
+                (time.perf_counter() - started) * 1000,
+            )
             logger.warning(
                 "%s fallo controlado del modelo code=%s retryable=%s",
                 ctx,
@@ -221,7 +238,7 @@ class ConversationService:
         self,
         ctx: str,
         chat_id: int,
-        conversation_message_id: int,
+        conversation_message_id: int | None,
         token_usages: list[TokenUsage],
         elapsed_ms: float,
     ) -> None:

@@ -10,7 +10,6 @@ El objetivo de este proyecto es desarrollar un sistema automatizado e inteligent
 * Estado Global Compartido (Stateful): Todos los agentes escribirán y leerán de una memoria central estructurada (TypedDict), evitando la pérdida de contexto entre traspasos de tareas.
 * Control de Calidad Autónomo: El último agente actúa como supervisor antes de cerrar el flujo. Si el plan no es perfecto, se redirige de forma dinámica.
 
-
 ------------------------------
 ## 3. Arquitectura del Grafo
 El sistema se compone de 4 Nodos (Agentes) y un Borde Condicional (Router) que controla el flujo lógico:

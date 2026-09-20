@@ -95,10 +95,12 @@ dev-up:
 	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build
 
 dev-down:
-	$(COMPOSE_DEV) down
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
 
 dev-logs:
-	$(COMPOSE_DEV) logs -f
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" logs -f
 
 prod-up:
 	@$(resolve_prod_env); \
@@ -106,7 +108,7 @@ prod-up:
 
 prod-down:
 	@$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
 
 prod-logs:
 	@$(resolve_prod_env); \

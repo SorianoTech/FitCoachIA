@@ -63,8 +63,17 @@ exporters:
       initial_interval: 1s
       max_interval: 30s
       max_elapsed_time: 300s
-  prometheus:
-    endpoint: 0.0.0.0:8889
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    add_metric_suffixes: true
+    # Con service.version al SHA del commit, convertir recursos en etiquetas
+    # crearia series nuevas en cada despliegue. Sigue disponible en target_info.
+    resource_to_telemetry_conversion:
+      enabled: false
+    remote_write_queue:
+      enabled: true
+      queue_size: 5000
+    timeout: 5s
 
 service:
   extensions: [file_storage/queue]
@@ -80,7 +89,7 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, resource, batch]
-      exporters: [prometheus]
+      exporters: [prometheusremotewrite]
   telemetry:
     metrics:
       readers:

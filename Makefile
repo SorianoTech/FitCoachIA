@@ -45,9 +45,9 @@ export FITCOACH_ENV_FILE="$$ENV_FILE"
 endef
 
 define resolve_prod_env
-if [ ! -f "$(PROD_ENV_FILE)" ]; then \
-	echo "ERROR: no existe $(PROD_ENV_FILE)"; \
-	echo "       crea el fichero de entorno de produccion antes de continuar"; \
+if [ ! -r "$(PROD_ENV_FILE)" ]; then \
+	echo "ERROR: $(PROD_ENV_FILE) no existe o no tiene permisos de acceso"; \
+	echo "       crea el fichero, o ejecuta el target con sudo"; \
 	exit 1; \
 fi; \
 echo ">> entorno prod: $(PROD_ENV_FILE)"; \

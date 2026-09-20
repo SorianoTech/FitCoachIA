@@ -111,8 +111,9 @@ imagen nueva y el contenedor previo queda intacto — no hay "rollback" activo, 
 toca lo que ya funcionaba. Si la imagen solicitada ya es la que corre, se fuerza su recreación.
 
 **Prerrequisitos que CI nunca provee**, deben existir ya en el servidor: el fichero
-`/etc/fitcoachia/prod/.env.prod` (legible por el usuario de despliegue) y la red Docker externa
-`proxy-network` (ver [`docs/how-to.md`](how-to.md)).
+`/etc/fitcoachia/prod/.env.prod` con permisos restringidos (no legible por el usuario de
+despliegue), una regla `sudoers` NOPASSWD para ese usuario (ver [`docs/how-to.md`](how-to.md)) y la
+red Docker externa `proxy-network`.
 
 ### 2.6 Continuous Monitoring
 

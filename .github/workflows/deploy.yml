@@ -86,20 +86,18 @@ jobs:
             log "Fichero de entorno: $ENV_FILE"
             log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
 
-            step "1/5 Verificar fichero de entorno"
-            if [ ! -d "$ENV_DIR" ]; then
-              log "ERROR: no existe el directorio $ENV_DIR"
-              log "El fichero de entorno de produccion debe estar en: $ENV_FILE"
+            step "1/5 Verificar acceso al fichero de entorno"
+            if ! sudo -n true 2>/dev/null; then
+              log "ERROR: el usuario de despliegue no puede usar 'sudo -n' (falta regla NOPASSWD)"
               exit 1
             fi
-            if [ ! -f "$ENV_FILE" ]; then
-              log "ERROR: no existe el fichero de entorno"
-              log "Debe estar en: $ENV_FILE"
-              log "Contenido actual de $ENV_DIR:"
-              ls -la "$ENV_DIR" | sed 's/^/      /'
+            if ! sudo -n test -r "$ENV_FILE"; then
+              log "ERROR: $ENV_FILE no existe o no es legible ni con sudo"
+              log "Contenido de $ENV_DIR:"
+              sudo -n ls -la "$ENV_DIR" 2>/dev/null | sed 's/^/      /' || log "      (no accesible)"
               exit 1
             fi
-            log "Fichero de entorno encontrado: $ENV_FILE"
+            log "Fichero de entorno accesible con sudo: $ENV_FILE"
 
             step "2/5 Estado actual del contenedor"
             CURRENT_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
@@ -150,8 +148,9 @@ jobs:
             cd "$DEPLOY_DIR"
 
             log "Imagen:  $NEW_IMAGE"
-            log "Comando: VERSION=$VERSION PROD_ENV_FILE=$ENV_FILE make prod-up"
-            if VERSION="$VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-up; then
+            log "Comando: sudo -n env VERSION=$VERSION PROD_ENV_FILE=$ENV_FILE make prod-up"
+            # sudo solo aquí: es el único comando de la cadena que lee el fichero de secretos.
+            if sudo -n env VERSION="$VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-up; then
 
               log "compose up completado"
               log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
@@ -179,7 +178,7 @@ jobs:
               log "Últimas 50 líneas del contenedor:"
               docker logs "$CONTAINER_NAME" --tail 50 || true
               log "Se va a eliminar el contenedor $CONTAINER_NAME (make prod-down) y la imagen $NEW_IMAGE"
-              VERSION="$VERSION" make prod-down || true
+              sudo -n env VERSION="$VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-down || true
               docker rmi "$NEW_IMAGE" || true
               log "Eliminación completada correctamente"
               exit 1

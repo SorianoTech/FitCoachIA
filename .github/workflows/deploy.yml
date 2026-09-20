@@ -31,6 +31,7 @@ env:
   CONTAINER_NAME: "fitcoach-ia"
   APP_PORT: "8000"
   DEPLOY_TARGET_DIR: "/home/${{ secrets.SERVER_USER }}"
+  ENV_FILE: "/etc/fitcoachia/prod/.env.prod"
   SSH_PORT: 22
 
 jobs:
@@ -62,7 +63,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_PKEY }}
           REMOTE_USER: ${{ secrets.SERVER_USER }}
           REMOTE_PORT: ${{ env.SSH_PORT }}
-          SOURCE: docker-compose.yml
+          SOURCE: docker-compose.yml Makefile
           TARGET: ${{ env.DEPLOY_TARGET_DIR }}/
           SCRIPT_BEFORE_REQUIRED: true
           SCRIPT_BEFORE: |
@@ -70,6 +71,8 @@ jobs:
             CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
             NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
+            ENV_FILE="${{ env.ENV_FILE }}"
+            ENV_DIR="$(dirname "$ENV_FILE")"
 
             step() { echo ""; echo "=== $* ==="; }
             log()  { echo "    $*"; }
@@ -78,9 +81,25 @@ jobs:
             log "Servidor:           $(hostname)"
             log "Imagen a desplegar: $NEW_IMAGE"
             log "Contenedor:         $CONTAINER_NAME"
+            log "Fichero de entorno: $ENV_FILE"
             log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
 
-            step "1/4 Estado actual del contenedor"
+            step "1/5 Verificar fichero de entorno"
+            if [ ! -d "$ENV_DIR" ]; then
+              log "ERROR: no existe el directorio $ENV_DIR"
+              log "El fichero de entorno de produccion debe estar en: $ENV_FILE"
+              exit 1
+            fi
+            if [ ! -f "$ENV_FILE" ]; then
+              log "ERROR: no existe el fichero de entorno"
+              log "Debe estar en: $ENV_FILE"
+              log "Contenido actual de $ENV_DIR:"
+              ls -la "$ENV_DIR" | sed 's/^/      /'
+              exit 1
+            fi
+            log "Fichero de entorno encontrado: $ENV_FILE"
+
+            step "2/5 Estado actual del contenedor"
             CURRENT_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
             if [ -z "$CURRENT_IMAGE" ]; then
               log "No existe ningún contenedor '$CONTAINER_NAME'"
@@ -90,7 +109,7 @@ jobs:
               log "  estado:        $(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")"
             fi
 
-            step "2/4 Decisión sobre el contenedor actual"
+            step "3/5 Decisión sobre el contenedor actual"
             if [ "$CURRENT_IMAGE" = "$NEW_IMAGE" ]; then
               log "La imagen actual coincide con la solicitada -> recreación forzada"
               docker rm -f "$CONTAINER_NAME"
@@ -102,11 +121,11 @@ jobs:
               log "Nada que conservar ni eliminar"
             fi
 
-            step "3/4 Imágenes locales de la aplicación (antes del pull)"
+            step "4/5 Imágenes locales de la aplicación (antes del pull)"
             docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}  creada {{.CreatedSince}}' \
               | grep "$IMAGE_BASE" || log "Ninguna imagen local de la aplicación"
 
-            step "4/4 Descargar nueva imagen"
+            step "5/5 Descargar nueva imagen"
             log "docker pull $NEW_IMAGE (con el contenedor anterior aún vivo)"
             docker pull "$NEW_IMAGE"
             log "Descargada: $(docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "$NEW_IMAGE" || true)"
@@ -118,16 +137,20 @@ jobs:
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
             NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
             VERSION="${{ steps.image_version.outputs.VERSION }}"
-            COMPOSE_FILE="${{ env.DEPLOY_TARGET_DIR }}/docker-compose.yml"
+            DEPLOY_DIR="${{ env.DEPLOY_TARGET_DIR }}"
+            ENV_FILE="${{ env.PROD_ENV_FILE }}"
             DEPLOY_OK=false
 
             step() { echo ""; echo "=== $* ==="; }
             log()  { echo "    $*"; }
 
             step "1/4 Levantar la nueva versión"
+            cd "$DEPLOY_DIR"
+
             log "Imagen:  $NEW_IMAGE"
-            log "Comando: VERSION=$VERSION docker compose -f $COMPOSE_FILE up -d"
-            if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" up -d; then
+            log "Comando: VERSION=$VERSION make prod-up"
+            if VERSION="$VERSION" make prod-up; then
+
               log "compose up completado"
               log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
 
@@ -146,15 +169,15 @@ jobs:
                 sleep 5
               done
             else
-              log "ERROR: 'docker compose up -d' ha fallado"
+              log "ERROR: 'make prod-up' ha fallado"
             fi
 
             if [ "$DEPLOY_OK" != true ]; then
               step "FALLO: $NEW_IMAGE no ha arrancado"
               log "Últimas 50 líneas del contenedor:"
               docker logs "$CONTAINER_NAME" --tail 50 || true
-              log "Se va a eliminar el contenedor $CONTAINER_NAME y la imagen $NEW_IMAGE"
-              docker rm -f "$CONTAINER_NAME" || true
+              log "Se va a eliminar el contenedor $CONTAINER_NAME (make prod-down) y la imagen $NEW_IMAGE"
+              VERSION="$VERSION" make prod-down || true
               docker rmi "$NEW_IMAGE" || true
               log "Eliminación completada correctamente"
               exit 1

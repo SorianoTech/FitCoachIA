@@ -25,6 +25,9 @@ services:
     networks:
       - proxy-network
   postgres-prod:
+    # Nombre fijo: sin el, un rename de servicio crearia un segundo Postgres
+    # sobre el mismo volumen en vez de fallar por conflicto de nombre.
+    container_name: fitcoach-postgres
     image: postgres:16-alpine
     restart: unless-stopped
     environment:

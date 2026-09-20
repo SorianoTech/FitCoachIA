@@ -1,5 +1,7 @@
 import logging
+import time
 from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Protocol
 
@@ -12,6 +14,7 @@ from pydantic import ValidationError
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.domain.interviewer_profile import InterviewerTurn
+from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
 from fitcoach.service.agent.agent_factory import build_interviewer_agent
 
@@ -23,65 +26,162 @@ class AsyncChatModel(Protocol):
 
 
 class InterviewerResultError(InterviewerError):
-    def __init__(self) -> None:
-        super().__init__(InterviewerErrorCode.INVALID_OUTPUT, retryable=True)
+    def __init__(self, token_usages: list[TokenUsage] | None = None) -> None:
+        super().__init__(
+            InterviewerErrorCode.INVALID_OUTPUT, retryable=True, token_usages=token_usages
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class InterviewerReply:
+    """``respond()``'s result: the validated turn plus one ``TokenUsage`` per LLM call.
+
+    ``token_usages`` has two entries when the JSON-repair retry fires (the
+    original malformed call still consumed tokens and must not be discarded),
+    and is empty when the model/test double reports no usage metadata.
+    """
+
+    turn: InterviewerTurn
+    token_usages: list[TokenUsage]
 
 
 class InterviewerChain:
-    def __init__(self, model: AsyncChatModel, skill_name: str = "interviewer") -> None:
+    def __init__(
+        self,
+        model: AsyncChatModel,
+        model_name: str = "unknown",
+        skill_name: str = "interviewer",
+    ) -> None:
         self._model = model
+        self._model_name = model_name
         self._agent = build_interviewer_agent(skill_name=skill_name)
 
     async def respond(
         self, user_message: str, history: Sequence[ConversationMessage]
-    ) -> InterviewerTurn:
+    ) -> InterviewerReply:
         messages = [
             SystemMessage(content=self._agent.insert_context()),
             *self._to_langchain_messages(history),
             HumanMessage(content=user_message),
         ]
-        raw_result = await self._invoke(messages)
+        raw_result, usage = await self._invoke(messages)
+        token_usages = [usage] if usage is not None else []
         try:
-            return InterviewerTurn.model_validate_json(raw_result)
-        except ValidationError:
-            logger.warning("Interviewer result was invalid; requesting a repair")
-            repaired_result = await self._invoke([
-                SystemMessage(
-                    content=(
-                        "Return only a valid JSON object matching this JSON schema. Do not return "
-                        f"Markdown or prose. Schema: {InterviewerTurn.model_json_schema()}. "
-                        "Correct all missing, invalid, and inconsistent fields."
-                    )
-                ),
-                HumanMessage(content=raw_result),
-            ])
+            turn = InterviewerTurn.model_validate_json(raw_result)
+        except ValidationError as validation_error:
+            logger.debug("Interviewer result invalid; raw model output: %s", raw_result)
+            logger.debug("Interviewer validation error: %s", validation_error)
+            if usage is not None:
+                token_usages[0] = replace(usage, status=InterviewerErrorCode.INVALID_OUTPUT.value)
+            logger.debug("Interviewer result was invalid; requesting a repair")
             try:
-                return InterviewerTurn.model_validate_json(repaired_result)
+                repaired_result, repair_usage = await self._invoke([
+                    SystemMessage(
+                        content=(
+                            "Return only a valid JSON object matching this JSON schema. Do not return "
+                            f"Markdown or prose. Schema: {InterviewerTurn.model_json_schema()}. "
+                            "Correct all missing, invalid, and inconsistent fields."
+                        )
+                    ),
+                    HumanMessage(content=raw_result),
+                ])
+            except InterviewerError as error:
+                error.token_usages = [*token_usages, *error.token_usages]
+                raise
+            if repair_usage is not None:
+                token_usages.append(repair_usage)
+            logger.debug("Interviewer repair result: %s", repaired_result)
+            try:
+                turn = InterviewerTurn.model_validate_json(repaired_result)
             except ValidationError as repair_error:
-                raise InterviewerResultError() from repair_error
+                if repair_usage is not None:
+                    token_usages[-1] = replace(
+                        repair_usage, status=InterviewerErrorCode.INVALID_OUTPUT.value
+                    )
+                logger.debug("Interviewer repaired result still invalid: %s", repair_error)
+                raise InterviewerResultError(token_usages) from repair_error
+        return InterviewerReply(turn=turn, token_usages=token_usages)
 
-    async def _invoke(self, messages: list[BaseMessage]) -> str:
+    async def _invoke(self, messages: list[BaseMessage]) -> tuple[str, TokenUsage | None]:
+        started = time.perf_counter()
         try:
             response = await self._model.ainvoke(messages)
-        except openai.LengthFinishReasonError as exc:
-            raise InterviewerError(InterviewerErrorCode.OUTPUT_LIMIT, retryable=True) from exc
-        except (openai.AuthenticationError, openai.PermissionDeniedError) as exc:
-            raise InterviewerError(InterviewerErrorCode.AUTHENTICATION, retryable=False) from exc
-        except openai.RateLimitError as exc:
-            raise InterviewerError(InterviewerErrorCode.RATE_LIMITED, retryable=True) from exc
-        except openai.BadRequestError as exc:
-            raise InterviewerError(InterviewerErrorCode.INVALID_REQUEST, retryable=False) from exc
-        except (openai.APITimeoutError, httpx.TimeoutException) as exc:
-            raise InterviewerError(InterviewerErrorCode.TIMEOUT, retryable=True) from exc
-        except openai.APIConnectionError as exc:
-            raise InterviewerError(InterviewerErrorCode.UNAVAILABLE, retryable=True) from exc
-        except TimeoutError as exc:
-            raise InterviewerError(InterviewerErrorCode.TIMEOUT, retryable=True) from exc
-        except openai.APIStatusError as exc:
-            raise self._status_error(exc) from exc
+        except Exception as exc:
+            error = self._error_for_exception(exc)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            error.token_usages = [
+                TokenUsage(
+                    model=self._model_name,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    status=error.code.value,
+                    latency_ms=latency_ms,
+                )
+            ]
+            raise error from exc
         if not isinstance(response.content, str):
-            raise InterviewerResultError()
-        return response.content.strip()
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            raise InterviewerResultError([
+                TokenUsage(
+                    model=self._model_name,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    status=InterviewerErrorCode.INVALID_OUTPUT.value,
+                    latency_ms=latency_ms,
+                )
+            ])
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return response.content.strip(), self._extract_usage(response, latency_ms)
+
+    @staticmethod
+    def _error_for_exception(error: Exception) -> InterviewerError:
+        if isinstance(error, openai.LengthFinishReasonError):
+            return InterviewerError(InterviewerErrorCode.OUTPUT_LIMIT, retryable=True)
+        if isinstance(error, (openai.AuthenticationError, openai.PermissionDeniedError)):
+            return InterviewerError(InterviewerErrorCode.AUTHENTICATION, retryable=False)
+        if isinstance(error, openai.RateLimitError):
+            return InterviewerError(InterviewerErrorCode.RATE_LIMITED, retryable=True)
+        if isinstance(error, openai.BadRequestError):
+            return InterviewerError(InterviewerErrorCode.INVALID_REQUEST, retryable=False)
+        if isinstance(error, (openai.APITimeoutError, httpx.TimeoutException, TimeoutError)):
+            return InterviewerError(InterviewerErrorCode.TIMEOUT, retryable=True)
+        if isinstance(error, openai.APIConnectionError):
+            return InterviewerError(InterviewerErrorCode.UNAVAILABLE, retryable=True)
+        if isinstance(error, openai.APIStatusError):
+            return InterviewerChain._status_error(error)
+        return InterviewerError(InterviewerErrorCode.UNAVAILABLE, retryable=True)
+
+    def _extract_usage(self, response: BaseMessage, latency_ms: int) -> TokenUsage | None:
+        """Normalize token counts, preferring langchain's ``usage_metadata`` over the raw payload.
+
+        ``usage_metadata`` (langchain-core ``UsageMetadata``) uses input_tokens/
+        output_tokens; the raw OpenAI ``token_usage`` dict already uses
+        prompt_tokens/completion_tokens. Both are normalized to the same shape.
+        """
+        usage_metadata = getattr(response, "usage_metadata", None)
+        if usage_metadata:
+            return TokenUsage(
+                model=self._model_name,
+                prompt_tokens=usage_metadata.get("input_tokens", 0),
+                completion_tokens=usage_metadata.get("output_tokens", 0),
+                total_tokens=usage_metadata.get("total_tokens", 0),
+                status="success",
+                latency_ms=latency_ms,
+            )
+        response_metadata = getattr(response, "response_metadata", None) or {}
+        token_usage = response_metadata.get("token_usage")
+        if token_usage:
+            return TokenUsage(
+                model=self._model_name,
+                prompt_tokens=token_usage.get("prompt_tokens", 0),
+                completion_tokens=token_usage.get("completion_tokens", 0),
+                total_tokens=token_usage.get("total_tokens", 0),
+                status="success",
+                latency_ms=latency_ms,
+            )
+        return None
 
     @staticmethod
     def _status_error(error: openai.APIStatusError) -> InterviewerError:
@@ -125,4 +225,6 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
 @lru_cache
 def get_interviewer_chain() -> InterviewerChain:
     settings = get_ia_settings()
-    return InterviewerChain(_build_model(settings), skill_name=settings.skill)
+    return InterviewerChain(
+        _build_model(settings), model_name=settings.model, skill_name=settings.skill
+    )

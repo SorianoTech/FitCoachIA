@@ -7,7 +7,11 @@ services:
       context: .
       dockerfile: src/Dockerfile
     env_file:
-      - ${FITCOACH_ENV_FILE:-.env.dev}
+      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
+      - path: .env.dev
+        required: false
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
+        required: false
     environment:
       APP_ENV: dev
       ia_skill: ${ia_skill:-interviewer-dev}

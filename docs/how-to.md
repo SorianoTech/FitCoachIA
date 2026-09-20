@@ -17,11 +17,31 @@
 `APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
 `.env.<APP_ENV>` si existe y después `.env`; las variables del sistema tienen prioridad.
 
-En el mismo servidor, crea un fichero por entorno desde la raíz del repositorio:
+Los `make dev-up` / `make prod-up` (ver más abajo) leen el fichero de entorno de fuera del
+repositorio, en `/etc/fitcoachia/<entorno>/`:
+
+| Entorno | Fichero preferido | Si no existe |
+|---|---|---|
+| Desarrollo | `/etc/fitcoachia/dev/.env.dev` | usa `.env.dev` en la raíz del repositorio |
+| Producción | `/etc/fitcoachia/prod/.env.prod` | falla: no hay fallback en producción |
+
+Crea el fichero correspondiente a cada entorno:
+
+```bash
+# Desarrollo (opcional, si no existe se usa .env.dev del repositorio)
+sudo mkdir -p /etc/fitcoachia/dev
+sudo cp .env.example /etc/fitcoachia/dev/.env.dev
+
+# Producción (obligatorio)
+sudo mkdir -p /etc/fitcoachia/prod
+sudo cp .env.example /etc/fitcoachia/prod/.env.prod
+```
+
+En local, si prefieres no usar `/etc/fitcoachia`, basta con crear `.env.dev` en la raíz del
+repositorio:
 
 ```bash
 cp .env.example .env.dev
-cp .env.example .env.prod
 ```
 
 Completa al menos estas variables en cada fichero. Usa el bot y endpoint de desarrollo en
@@ -130,15 +150,16 @@ make dev-down
 
 Producción utiliza `docker-compose.yml`, el proyecto `fitcoach-prod`, la red externa
 `proxy-network`. Nginx Proxy Manager publica la API; antes del primer despliegue, crea esa red y
-configura un `.env` exclusivo en el servidor de producción.
+el fichero `/etc/fitcoachia/prod/.env.prod` exclusivo del servidor de producción (ver
+[Entornos y variables](#entornos-y-variables)). `make prod-up` falla si ese fichero no existe.
 
 ```bash
 docker network inspect proxy-network >/dev/null 2>&1 || docker network create proxy-network
-make prod-up version=0.3.0
+make prod-up VERSION=0.3.0
 ```
 
 Desarrollo y producción pueden convivir en el mismo servidor. Usa `make dev-up` para el entorno
-de desarrollo y `make prod-up version=<version>` para producción; cada uno mantiene sus propios
+de desarrollo y `make prod-up VERSION=<version>` para producción; cada uno mantiene sus propios
 contenedores, volumen PostgreSQL y configuración `APP_ENV`.
 
 ## Pruebas y comprobaciones

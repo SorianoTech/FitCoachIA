@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     image: fitcoachia/fitcoach-app:${VERSION:-latest}
     env_file:
-      - ${FITCOACH_ENV_FILE:-.env.prod}
+      - ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
     environment:
       APP_ENV: prod
       database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fitcoach}

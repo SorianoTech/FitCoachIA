@@ -16,6 +16,8 @@ _VALID_TELEGRAM_KWARGS: dict[str, object] = {
     "bot_telegram_token": "test-token",  # noqa: S106
     "bot_telegram_url": "http://test-telegram:9999",
     "bot_telegram_commands": ["start:Inicia FitCoach"],
+    "bot_telegram_secret_token": "test-secret-token",  # noqa: S106
+    "bot_telegram_webhook_base_url": "https://example.com",
 }
 _VALID_IA_KWARGS: dict[str, object] = {
     "base_url": "http://test-llm:9999",
@@ -29,6 +31,16 @@ _VALID_DATABASE_KWARGS: dict[str, object] = {
 
 
 @pytest.fixture(autouse=True)
+def _skip_webhook_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Estos tests cubren el fail fast de configuracion, no la llamada a Telegram."""
+
+    async def _noop(app: object, settings: object) -> None:
+        return None
+
+    monkeypatch.setattr(main_module, "_register_webhook", _noop)
+
+
+@pytest.fixture(autouse=True)
 def _clear_settings_cache() -> Iterator[None]:
     main_module.get_settings.cache_clear()
     main_module.get_ia_settings.cache_clear()
@@ -39,6 +51,11 @@ def _clear_settings_cache() -> Iterator[None]:
     main_module.get_ia_settings.cache_clear()
     main_module.get_database_settings.cache_clear()
     get_logging_settings.cache_clear()
+
+
+def _telegram_kwargs_without(field: str) -> dict[str, object]:
+    """Config valida menos un campo: asi el test falla por lo que dice y no por otro."""
+    return {key: value for key, value in _VALID_TELEGRAM_KWARGS.items() if key != field}
 
 
 def _patch_settings(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> None:
@@ -76,11 +93,7 @@ class TestStartupFailFast:
     def test_fails_to_start_when_bot_telegram_token_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_settings(
-            monkeypatch,
-            bot_telegram_url="http://test-telegram:9999",
-            bot_telegram_commands=["start:Inicia FitCoach"],
-        )
+        _patch_settings(monkeypatch, **_telegram_kwargs_without("bot_telegram_token"))
 
         with pytest.raises(ValidationError, match="bot_telegram_token"), TestClient(app):
             pass
@@ -88,13 +101,25 @@ class TestStartupFailFast:
     def test_fails_to_start_when_bot_telegram_url_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_settings(
-            monkeypatch,
-            bot_telegram_token="test-token",  # noqa: S106
-            bot_telegram_commands=["start:Inicia FitCoach"],
-        )
+        _patch_settings(monkeypatch, **_telegram_kwargs_without("bot_telegram_url"))
 
         with pytest.raises(ValidationError, match="bot_telegram_url"), TestClient(app):
+            pass
+
+    def test_fails_to_start_when_the_webhook_secret_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_settings(monkeypatch, **_telegram_kwargs_without("bot_telegram_secret_token"))
+
+        with pytest.raises(ValidationError, match="bot_telegram_secret_token"), TestClient(app):
+            pass
+
+    def test_fails_to_start_when_the_webhook_base_url_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_settings(monkeypatch, **_telegram_kwargs_without("bot_telegram_webhook_base_url"))
+
+        with pytest.raises(ValidationError, match="bot_telegram_webhook_base_url"), TestClient(app):
             pass
 
     def test_fails_to_start_when_ia_token_is_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,9 +145,10 @@ class TestStartupFailFast:
     ) -> None:
         _patch_settings(
             monkeypatch,
-            bot_telegram_token="test-token",  # noqa: S106
-            bot_telegram_url="http://test-telegram:9999",
-            bot_telegram_commands=["start"],  # missing ":description"
+            **{
+                **_VALID_TELEGRAM_KWARGS,
+                "bot_telegram_commands": ["start"],
+            },  # falta ":descripcion"
         )
         _patch_ia_settings(monkeypatch, **_VALID_IA_KWARGS)
 

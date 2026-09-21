@@ -56,8 +56,10 @@ Completa al menos estas variables en cada fichero. Usa el bot y endpoint de desa
 `.env.dev`, y las credenciales de producción en `.env.prod`:
 
 ```dotenv
-bot_telegram_url=...
+bot_telegram_url=https://api.telegram.org/bot
 bot_telegram_token=...
+bot_telegram_secret_token=...
+bot_telegram_webhook_base_url=https://dev.tudominio.com
 bot_telegram_commands=start:Inicia FitCoach,interview:Entrevista,doubts:Resuelve dudas,progress:Tu progreso
 
 ia_base_url=...
@@ -72,10 +74,37 @@ POSTGRES_DB=fitcoach
 database_url=postgresql+asyncpg://fitcoach:elige-una-contrasena@localhost:5432/fitcoach
 ```
 
+Las dos variables del webhook son **obligatorias y distintas por entorno**; sin ellas la app no
+arranca. `bot_telegram_webhook_base_url` es la URL pública de **tu app**, sin path y con HTTPS
+—Telegram no acepta `http://` ni `localhost`—, mientras que `bot_telegram_url` es la base de la API
+de Telegram y vale igual en los dos entornos. Detalle en
+[telegram-environments.md](telegram-environments.md).
+
 `database_url` se utiliza cuando la API se ejecuta con Python local. Los Compose crean su propia URL
 interna contra el servicio `postgres-dev`/`postgres-prod` (nombre distinto por entorno para evitar que
 ambos reclamen el mismo alias de red en `proxy-network`), por lo que cada entorno conserva el
 historial del agente `interviewer` en una base de datos independiente.
+
+## Cuota de consumo por chat
+
+Cada chat tiene un presupuesto de tokens en una ventana móvil. Al agotarlo, la app responde con un
+mensaje genérico y registra un `WARNING`, **sin llamar al modelo**. Las tres variables son
+**opcionales**: sin definirlas la cuota funciona con los valores por defecto.
+
+```dotenv
+rate_limit_token_limit=150000   # punto de corte, NO techo
+rate_limit_soft_ratio=0.66      # (0, 1] — fracción a la que se corta /interview
+rate_limit_window_minutes=1440  # 24 h
+```
+
+Por defecto: 3 entrevistas al día por chat (~$0.015/día con `gpt-5-nano`), y un hueco de 51.000
+tokens que garantiza poder terminar una entrevista ya empezada. En desarrollo interesa lo contrario
+—ventanas de minutos y límites pequeños, para ver el corte sin esperar—; `.env.example` trae ambos
+juegos de valores listos para copiar.
+
+No elijas estos números a ojo: `rate_limit_token_limit` se rebasa por un turno, así que debe quedar
+por debajo del techo real que no quieras cruzar. Las fórmulas de calibración, un ejemplo resuelto y
+las consultas para medir tu consumo están en **[rate-limiter.md](rate-limiter.md)**.
 
 ## Ejecutar la API con Python local
 

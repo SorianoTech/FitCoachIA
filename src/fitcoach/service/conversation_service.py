@@ -4,16 +4,20 @@ La capa de API solo traduce HTTP; toda la decision de negocio (que comando se
 ha pedido, que se manda al modelo y que se le contesta al usuario) vive aqui.
 """
 
+import asyncio
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 
 from opentelemetry import trace
 from telegram import Bot, Message, Update
+from telegram.error import RetryAfter
 
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
+from fitcoach.domain.rate_limiter import UsageLimits, UsageTier
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.infrastructure.observability.telemetry import get_tracer
@@ -76,12 +80,14 @@ class ConversationService:
         bot: Bot,
         interviewer: InterviewerChain,
         conversation_repository: ConversationRepository,
+        usage_limits: UsageLimits,
         history_window_messages: int = 20,
     ) -> None:
         self._bot = bot
         self._interviewer = interviewer
         self._conversation_repository = conversation_repository
         self._history_window_messages = history_window_messages
+        self._usage_limits = usage_limits
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -124,6 +130,13 @@ class ConversationService:
             span.set_attribute("telegram_user_id", telegram_user_id(message))
             span.set_attribute("chat_id", chat_id)
             span.set_attribute("command", command.name if command is not None else "none")
+
+            # Rate Limiter analyzer
+            blocked = await self._quota_message(ctx, chat_id, command)
+            if blocked is not None:
+                span.set_attribute("quota_blocked", True)
+                await self._send(chat_id, message_thread_id, blocked)
+                return
 
             match command:
                 case Commands.START:
@@ -285,9 +298,27 @@ class ConversationService:
         ])
 
     async def _send(self, chat_id: int, message_thread_id: int | None, text: str) -> None:
-        await self._bot.send_message(
-            chat_id=chat_id, message_thread_id=message_thread_id, text=text
-        )
+        """Envia al usuario, reintentando una vez si Telegram aplica control de flujo."""
+        try:
+            await self._bot.send_message(
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text
+            )
+        except RetryAfter as exc:
+            # PTB lo declara como int | timedelta, aunque la API devuelva segundos.
+            espera = (
+                exc.retry_after.total_seconds()
+                if isinstance(exc.retry_after, timedelta)
+                else float(exc.retry_after)
+            )
+            if espera > Constants.MAX_TELEGRAM_RETRY_SECONDS:
+                # Esperar mas bloquearia la peticion y Telegram reenviaria el update.
+                logger.warning(f"Telegram pide esperar {espera}s: se descarta el envio")
+                return
+            logger.warning(f"control de flujo de Telegram: reintento en {espera}s")
+            await asyncio.sleep(espera)
+            await self._bot.send_message(
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text
+            )
 
     async def _notify_server_error(self, message: Message | None, ctx: str) -> None:
         if message is None:
@@ -323,4 +354,23 @@ class ConversationService:
             f"[update={update.update_id} chat={chat_id} thread={thread_id} "
             f"msg={message_id} user={user_label(message)} "
             f"telegram_user_id={telegram_user_id(message)}]"
+        )
+
+    async def _quota_message(self, ctx: str, chat_id: int, command: Commands | None) -> str | None:
+        """Mensaje de corte si el chat ha agotado su cuota; None si puede continuar."""
+        limit = self._usage_limits.limit_for(command)
+        if limit is None:
+            return None
+
+        since = datetime.now(UTC) - self._usage_limits.window
+        used = await self._conversation_repository.tokens_used_since(chat_id, since)
+        if used < limit:
+            return None
+
+        tier = self._usage_limits.tier_for(command)
+        logger.warning(f"{ctx} cuota superada: nivel={tier} consumido={used} limite={limit}")
+        return (
+            Constants.QUOTA_SOFT_MESSAGE
+            if tier is UsageTier.SOFT
+            else Constants.QUOTA_EXCEEDED_MESSAGE
         )

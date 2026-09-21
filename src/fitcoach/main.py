@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from telegram.error import BadRequest, InvalidToken, NetworkError, TelegramError
 
 from fitcoach.api.webhook import webhook
 from fitcoach.infrastructure.bot.telegram_bot import get_bot, to_bot_command
@@ -61,19 +62,31 @@ async def _register_webhook(app: FastAPI, settings: Settings) -> None:
     expected_url = f"{settings.bot_telegram_webhook_base_url.rstrip('/')}{path}"
 
     logger.info("[webhook 1/4] resolviendo URL de registro")
+    try:
+        bot = await get_bot()
+        logger.info("[webhook 2/4] bot autenticado en Telegram")
 
-    bot = await get_bot()
-    logger.info("[webhook 2/4] bot autenticado en Telegram")
+        await bot.set_webhook(
+            url=expected_url,
+            secret_token=settings.bot_telegram_secret_token.get_secret_value(),
+            allowed_updates=["message", "edited_message"],
+            drop_pending_updates=False,
+        )
+        logger.info("[webhook 3/4] setWebhook aceptado con secreto")
 
-    await bot.set_webhook(
-        url=expected_url,
-        secret_token=settings.bot_telegram_secret_token.get_secret_value(),
-        allowed_updates=["message", "edited_message"],
-        drop_pending_updates=False,
-    )
-    logger.info("[webhook 3/4] setWebhook aceptado con secreto")
+        info = await bot.get_webhook_info()
+    except InvalidToken as exc:
+        raise RuntimeError("Token invalido: Telegram no reconoce el bot") from exc
+    except BadRequest as exc:
+        raise RuntimeError(
+            f"Telegram rechazo la URL {expected_url!r}: {exc}. Revisar la variable url definida en el entorno"
+        ) from exc
+    except NetworkError as exc:
+        raise RuntimeError(f"no se pudo contactar con la API de Telegram: {exc}") from exc
 
-    info = await bot.get_webhook_info()
+    except TelegramError as exc:
+        raise RuntimeError(f"fallo registrando el webhook: {exc}") from exc
+
     if info.url != expected_url:
         raise RuntimeError(
             f"webhook mal registrado: Telegram apunta a {info.url!r}, esperado {expected_url!r}"

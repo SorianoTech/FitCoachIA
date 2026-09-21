@@ -7,7 +7,12 @@ from telegram import Bot, Update
 
 from fitcoach.api.security import verify_telegram_secret
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
-from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
+from fitcoach.infrastructure.config.settings import (
+    IASettings,
+    UsageSettings,
+    get_ia_settings,
+    get_usage_settings,
+)
 from fitcoach.infrastructure.database.dependencies import get_conversation_repository
 from fitcoach.infrastructure.database.postgres_conversation_repository import (
     PostgresConversationRepository,
@@ -42,16 +47,18 @@ def get_conversation_service(
     interviewer: InterviewerChain = Depends(get_interviewer_chain),
     repository: PostgresConversationRepository = Depends(get_conversation_repository),
     ia_settings: IASettings = Depends(get_ia_settings),
+    usage_settings: UsageSettings = Depends(get_usage_settings),
 ) -> ConversationService:
     return ConversationService(
         bot=bot,
         interviewer=interviewer,
         conversation_repository=repository,
+        usage_limits=usage_settings.to_limits(),
         history_window_messages=ia_settings.history_window_messages,
     )
 
 
-@webhook.post("/response", dependencies=[Depends(verify_telegram_secret)], include_in_schema=False)
+@webhook.post("/response", dependencies=[Depends(verify_telegram_secret)])
 async def telegram_webhook(
     update: Update = Depends(parse_update),
     service: ConversationService = Depends(get_conversation_service),

@@ -4,6 +4,9 @@ Este documento describe el pipeline de integración, entrega y despliegue contin
 qué dispara cada pieza, qué objetivo cumple dentro del ciclo y cómo fluye una ejecución de
 principio a fin.
 
+> Para cómo encajan el despliegue, el `Makefile` y los ficheros de entorno de cada entorno, ver
+> [entornos-y-despliegue.md](entornos-y-despliegue.md). Para los comandos, [Makefile.md](Makefile.md).
+
 ## 1. Alcance
 
 Cubre los workflows de GitHub Actions y las composite actions que forman el pipeline, más el hook

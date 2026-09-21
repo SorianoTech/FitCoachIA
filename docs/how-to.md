@@ -2,17 +2,25 @@
 
 ## Requisitos
 
-- Python 3.11
+- Python 3.12
 - [uv](https://docs.astral.sh/uv/)
 - Docker y Docker Compose, para PostgreSQL
 - Un bot de Telegram y un endpoint compatible con OpenAI para probar el flujo completo
 
 ## Entornos y variables
 
-| Entorno | Compose | Proyecto | API | Base de datos |
-|---|---|---|---|---|
-| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `dev-fitcoach-ia`, `proxy-network` | volumen `fitcoach-dev-postgres` |
-| Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia`, `proxy-network` | volumen `fitcoach-prod-postgres` |
+| Entorno | Compose | Proyecto | Servicio de la app | Contenedor | Base de datos |
+|---|---|---|---|---|---|
+| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `fitcoach-ia-dev` | `dev-fitcoach-ia` | servicio `postgres-dev`, volumen `fitcoach-dev-postgres` |
+| Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia-prod` | `fitcoach-ia` | servicio `postgres-prod`, volumen `fitcoach-prod-postgres` |
+
+Servicio y contenedor se llaman distinto a propósito, y conviene no confundirlos. El **nombre del
+servicio** es el que Compose registra como alias en `proxy-network`, así que debe ser único por
+entorno: cuando los dos Compose llamaban `fitcoach-ia` a su servicio, ese nombre resolvía a dos
+contenedores y el bot de desarrollo acabó contestando mensajes de producción. El **`container_name`**
+es fijo porque de él dependen el filtro de Alloy, el workflow de despliegue y los Proxy Hosts de
+Nginx Proxy Manager. Ambos Compose se apoyan además en ese nombre fijo para que sea imposible tener
+dos contenedores del mismo rol conviviendo: un duplicado choca de nombre y falla en alto.
 
 `APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
 `.env.<APP_ENV>` si existe y después `.env`; las variables del sistema tienen prioridad.
@@ -108,6 +116,10 @@ curl http://localhost:8000/health
 
 Para detener PostgreSQL, ejecuta `docker stop fitcoach-postgres`.
 
+> Ese contenedor desechable comparte nombre con el Postgres de producción (`container_name:
+> fitcoach-postgres`), pero no chocan nunca: producción solo se levanta en el servidor y este
+> `docker run` solo en tu máquina. En el servidor, no uses este atajo.
+
 ## Ejecutar desarrollo con Docker Compose
 
 Esta opción ejecuta PostgreSQL y la API en contenedores. El contenedor de la API aplica
@@ -178,6 +190,29 @@ sudo make prod-up VERSION=0.3.0
 Desarrollo y producción pueden convivir en el mismo servidor. Usa `make dev-up` para el entorno
 de desarrollo y `make prod-up VERSION=<version>` para producción; cada uno mantiene sus propios
 contenedores, volumen PostgreSQL y configuración `APP_ENV`.
+
+### Health check del contenedor
+
+Ambos Compose definen un `healthcheck` sobre `/health` que Docker sondea **cada 5 minutos** en
+régimen estable, para no llenar los logs con una petición cada pocos segundos durante toda la vida
+del contenedor. Para que eso no ralentice los despliegues, lleva además `start_interval: 5s`: mientras
+el contenedor arranca se sondea cada 5 segundos, así que pasa a `healthy` en cuanto responde y el
+workflow de despliegue no espera 5 minutos para darlo por bueno.
+
+```yaml
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+```
+
+Dos consecuencias: `start_interval` requiere **Docker Engine 25.0 o superior** en el servidor, y una
+app que se cuelgue *después* de arrancar tarda hasta ~15 minutos en marcarse `unhealthy` (3 fallos ×
+5 min). Los fallos de arranque, que son los que importan en un despliegue, se detectan en segundos.
+El comando usa `python` porque la imagen final no trae `curl` ni `wget`.
 
 ## Pruebas y comprobaciones
 

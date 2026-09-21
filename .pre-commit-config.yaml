@@ -2,12 +2,20 @@
 # Configuración de pre-commit
 # -----------------------------------------------------------------------------
 # Pasos para activar las validaciones en local (una sola vez por clon del repo):
-#   1. Instalar pre-commit en el entorno:    pip install pre-commit
-#                                            (o: uv pip install pre-commit)
+#   1. Instalar pre-commit donde vaya a vivir de forma estable. Dos montajes válidos:
+#        a) Fuera del proyecto (recomendado):  uv tool install pre-commit
+#        b) En el venv del proyecto:           uv sync --all-groups   (grupo `dev`)
 #   2. Registrar los git hooks del repo:     pre-commit install
 #      Esto crea .git/hooks/pre-commit y los hooks correrán en cada `git commit`.
+#      Lánzalo desde el entorno del paso 1: la ruta del intérprete que lo ejecuta
+#      queda grabada en INSTALL_PYTHON dentro del hook.
 #   3. (Opcional) Ejecutar contra todo el repo la primera vez para sanear estado:
 #                                            pre-commit run --all-files
+#
+# Con el montaje (b), al reconstruir el venv hay que repetir el paso 2: el hook
+# seguirá apuntando al intérprete antiguo y fallará con "No module named pre_commit".
+# Los hooks de este fichero corren en entornos aislados (~/.cache/pre-commit), así que
+# no necesitan ruff/bandit instalados en el venv.
 #
 # Comandos útiles:
 #   - Actualizar versiones (rev) de los hooks: pre-commit autoupdate

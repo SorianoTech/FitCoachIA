@@ -9,7 +9,7 @@ y otra para ejecutar la app. El resultado es una imagen final ligera y lista par
 
 | Instrucción | Qué hace |
 |-------------|----------|
-| `FROM python:3.11-slim AS builder` | Usa Python 3.11 como base y llama a esta etapa `builder` |
+| `FROM python:3.12-slim AS builder` | Usa Python 3.12 como base y llama a esta etapa `builder` |
 | `RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*` | Instala herramientas de compilación necesarias para algunas librerías y limpia la caché de apt para no engordar la imagen |
 | `COPY ./requirements.txt .` | Copia la lista de dependencias al contenedor |
 | `RUN pip install --prefix=/install -q --no-cache-dir -r requirements.txt` | Instala todas las librerías en `/install` sin caché de pip ni output verboso |
@@ -35,7 +35,7 @@ y otra para ejecutar la app. El resultado es una imagen final ligera y lista par
 
 | Instrucción | Qué hace |
 |-------------|----------|
-| `FROM python:3.11-slim` | Empieza desde cero con una imagen limpia, sin herramientas de compilación |
+| `FROM python:3.12-slim` | Empieza desde cero con una imagen limpia, sin herramientas de compilación |
 | `ARG APP_LIB_DIR=/opt/fitcoach` | Define la ruta de las librerías como variable reutilizable |
 | `ENV PYTHONDONTWRITEBYTECODE=1` | Evita generar archivos `.pyc` innecesarios |
 | `ENV PYTHONUNBUFFERED=1` | Los logs aparecen en tiempo real en consola |

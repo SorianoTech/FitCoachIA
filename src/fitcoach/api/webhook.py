@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from telegram import Bot, Update
 
+from fitcoach.api.security import verify_telegram_secret
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
 from fitcoach.infrastructure.database.dependencies import get_conversation_repository
@@ -50,7 +51,7 @@ def get_conversation_service(
     )
 
 
-@webhook.post("/response")
+@webhook.post("/response", dependencies=[Depends(verify_telegram_secret)], include_in_schema=False)
 async def telegram_webhook(
     update: Update = Depends(parse_update),
     service: ConversationService = Depends(get_conversation_service),

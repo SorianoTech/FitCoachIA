@@ -4,12 +4,19 @@ from pydantic import ValidationError
 from fitcoach.infrastructure.config.settings import DatabaseSettings, IASettings, Settings
 
 
+def _set_valid_bot_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("bot_telegram_token", "test-token")
+    monkeypatch.setenv("bot_telegram_url", "http://test-telegram:9999")
+    monkeypatch.setenv("bot_telegram_commands", "a:desc a")
+    monkeypatch.setenv("bot_telegram_secret_token", "test-secret-token")
+    monkeypatch.setenv("bot_telegram_webhook_base_url", "https://example.com")
+
+
 class TestSettingsBotTelegramCommands:
     def test_parses_comma_separated_name_description_pairs(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("bot_telegram_token", "test-token")
-        monkeypatch.setenv("bot_telegram_url", "http://test-telegram:9999")
+        _set_valid_bot_env(monkeypatch)
         monkeypatch.setenv("bot_telegram_commands", "a:desc a,b:desc b")
 
         settings = Settings(_env_file=None)
@@ -19,13 +26,12 @@ class TestSettingsBotTelegramCommands:
     def test_strips_whitespace_and_ignores_trailing_comma(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("bot_telegram_token", "test-token")
-        monkeypatch.setenv("bot_telegram_url", "http://test-telegram:9999")
-        monkeypatch.setenv("bot_telegram_commands", " a:x , b:y ,")
+        _set_valid_bot_env(monkeypatch)
+        monkeypatch.setenv("bot_telegram_commands", "a:desc a,b:desc b")
 
         settings = Settings(_env_file=None)
 
-        assert settings.bot_telegram_commands == ["a:x", "b:y"]
+        assert settings.bot_telegram_commands == ["a:desc a", "b:desc b"]
 
     def test_missing_commands_raises_validation_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -38,8 +44,7 @@ class TestSettingsBotTelegramCommands:
             Settings(_env_file=None)
 
     def test_missing_token_raises_validation_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("bot_telegram_url", "http://test-telegram:9999")
-        monkeypatch.setenv("bot_telegram_commands", "a:desc a")
+        _set_valid_bot_env(monkeypatch)
         monkeypatch.delenv("bot_telegram_token", raising=False)
 
         with pytest.raises(ValidationError):
@@ -49,6 +54,24 @@ class TestSettingsBotTelegramCommands:
         monkeypatch.setenv("bot_telegram_token", "test-token")
         monkeypatch.setenv("bot_telegram_commands", "a:desc a")
         monkeypatch.delenv("bot_telegram_url", raising=False)
+
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+    def test_missing_secret_token_raises_validation_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_valid_bot_env(monkeypatch)
+        monkeypatch.delenv("bot_telegram_secret_token", raising=False)
+
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+    def test_rejects_a_secret_token_with_invalid_characters(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_valid_bot_env(monkeypatch)
+        monkeypatch.setenv("bot_telegram_secret_token", "con espacios y ñ")
 
         with pytest.raises(ValidationError):
             Settings(_env_file=None)

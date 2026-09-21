@@ -138,8 +138,18 @@ vez en este proyecto.
 
 En el `lifespan` de `main.py`, tras `configure_telemetry`:
 
+`bot_telegram_webhook_base_url` es solo el **origen público** (`https://api.tudominio.com`), no la URL
+completa. El path se obtiene del propio router con `url_path_for`, que resuelve por el nombre de la
+función del endpoint: así hay una sola fuente de verdad y cambiar el `prefix` o el decorador no
+obliga a sincronizar nada.
+
+Si el path viviera en la configuración, un cambio de ruta olvidado en el `.env` registraría la URL
+antigua, la comprobación de abajo compararía ese valor contra sí mismo —coincidirían— y la app
+arrancaría sana mientras Telegram hace POST contra un 404.
+
 ```python
-    expected_url = f"{settings.bot_telegram_webhook_base_url.rstrip('/')}/webhook/response"
+    path = app.url_path_for("telegram_webhook")  # /webhook/response
+    expected_url = f"{settings.bot_telegram_webhook_base_url.rstrip('/')}{path}"
     bot = await get_bot()
     await bot.set_webhook(
         url=expected_url,

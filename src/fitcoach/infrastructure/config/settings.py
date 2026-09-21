@@ -9,11 +9,14 @@ Precedence (high -> low): OS env vars > ``.env.<APP_ENV>`` > ``.env`` > defaults
 """
 
 import os
+import re
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 
 _APP_ENV = os.getenv("APP_ENV", "dev")
 
@@ -26,16 +29,25 @@ class Settings(BaseSettings):
     )
 
     app_env: str = _APP_ENV
-    bot_telegram_token: str
     bot_telegram_url: str  # webhook URL; not needed to send messages
     # "name:description" pairs joined by commas, e.g. "start:Inicia FitCoach,doubts:Resuelve dudas"
     bot_telegram_commands: Annotated[list[str], NoDecode]
+    bot_telegram_token: SecretStr
+    bot_telegram_secret_token: SecretStr
+    bot_telegram_webhook_base_url: str
 
     @field_validator("bot_telegram_commands", mode="before")
     @classmethod
     def _split_commands(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("bot_telegram_secret_token")
+    @classmethod
+    def _check_secret_token(cls, value: SecretStr) -> SecretStr:
+        if not _SECRET_TOKEN_RE.fullmatch(value.get_secret_value()):
+            raise ValueError("bot_telegram_secret_token: 1-256 caracteres de A-Z a-z 0-9 _ -")
         return value
 
 

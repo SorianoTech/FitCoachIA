@@ -20,7 +20,10 @@ def to_bot_command(raw: str) -> BotCommand:
 @lru_cache
 def _create_bot() -> Bot:
     """Build a single shared Bot instance (one HTTP connection pool)."""
-    return Bot(base_url=get_settings().bot_telegram_url, token=get_settings().bot_telegram_token)
+    return Bot(
+        base_url=get_settings().bot_telegram_url,
+        token=get_settings().bot_telegram_token.get_secret_value(),
+    )
 
 
 async def get_bot() -> Bot:

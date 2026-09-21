@@ -8,8 +8,9 @@ services:
     container_name: fitcoachia-test
     environment:
       # Dummy values: just enough for the fail-fast startup check to pass.
+      # PTB concatena <bot_telegram_url><token>, de ahi el "/bot" final.
       - bot_telegram_token=test-token
-      - bot_telegram_url=http://test-telegram-mock:9999
+      - bot_telegram_url=http://telegram-mock:9999/bot
       - bot_telegram_commands=start:Inicia FitCoach
       - log_level=INFO
       - ia_base_url=http://test-llm-mock:9999
@@ -17,19 +18,34 @@ services:
       - ia_model=test-model
       - ia_temperature=0.5
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
+      - bot_telegram_secret_token=test-secret-token
+      - bot_telegram_webhook_base_url=https://test.url.domain.com
+      # Las rate_limit_* se omiten a proposito: son opcionales y ningun test de
+      # integracion ejercita la cuota.
     ports:
       - "${IT_PORT:-8001}:8000"
     # python -c en lugar de curl: la imagen final es python:3.12-slim y no trae curl.
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
-      interval: 5s
+      interval: 30m
       timeout: 3s
       retries: 10
       start_period: 15s
     depends_on:
       postgres:
         condition: service_healthy
+      telegram-mock:
+        condition: service_started
+
+  # La app aborta el arranque si no puede registrar el webhook, asi que el
+  # contenedor necesita un Telegram alcanzable. Ver tests/telegram_mock.py.
+  telegram-mock:
+    image: python:3.12-alpine
+    container_name: telegram-mock-test
+    volumes:
+      - ./telegram_mock.py:/srv/telegram_mock.py:ro
+    command: ["python", "/srv/telegram_mock.py"]
 
   postgres:
     image: postgres:16-alpine

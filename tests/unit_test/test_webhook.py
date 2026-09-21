@@ -14,6 +14,7 @@ from fitcoach.domain.constants import Constants
 from fitcoach.domain.interviewer_profile import InterviewerTurn
 from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
+from fitcoach.infrastructure.config.settings import Settings, get_settings
 from fitcoach.main import app as fitcoach_app
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
@@ -23,6 +24,19 @@ from fitcoach.service.conversation_service import ConversationService
 _NO_QUOTA_PRESSURE = UsageLimits(
     hard_tokens=1_000_000, soft_tokens=900_000, window=timedelta(hours=24)
 )
+
+
+def _test_settings() -> Settings:
+    """Configuracion completa y hermetica: `_env_file=None` ignora el .env del disco."""
+    return Settings(
+        _env_file=None,
+        app_env="test",
+        bot_telegram_token="test-token",  # noqa: S106
+        bot_telegram_url="http://test-telegram:9999",
+        bot_telegram_commands=["start:Inicia FitCoach"],
+        bot_telegram_secret_token="test-secret-token",  # noqa: S106
+        bot_telegram_webhook_base_url="https://example.com",
+    )
 
 
 @pytest.fixture
@@ -451,6 +465,9 @@ class TestWebhookRouteRegistration:
         El resto de tests del fichero anulan `verify_telegram_secret`, asi que sin
         esta comprobacion quitar la dependencia del endpoint no rompería nada.
         """
+        # `verify_telegram_secret` resuelve `get_settings` de verdad: se anula para que
+        # el test no dependa de que exista un .env en la maquina que lo ejecuta.
+        fitcoach_app.dependency_overrides[get_settings] = _test_settings
         fitcoach_app.dependency_overrides[get_bot] = lambda: mock_bot
         fitcoach_app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
             bot=mock_bot,
@@ -463,6 +480,7 @@ class TestWebhookRouteRegistration:
                 "/webhook/response", json=_text_update(123, "/start")
             )
         finally:
+            fitcoach_app.dependency_overrides.pop(get_settings, None)
             fitcoach_app.dependency_overrides.pop(get_bot, None)
             fitcoach_app.dependency_overrides.pop(get_conversation_service, None)
 

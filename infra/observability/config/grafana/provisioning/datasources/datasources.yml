@@ -14,11 +14,6 @@ datasources:
     uid: prometheus
     isDefault: false
     editable: false
-    jsonData:
-      exemplarTraceIdDestinations:
-        - name: trace_id
-          datasourceUid: tempo
-          urlDisplayLabel: Ver traza
 
   - name: Loki
     type: loki

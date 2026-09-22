@@ -1,4 +1,4 @@
-name: fitcoach-prod
+name: fitcoach-vector-db
 
 services:
 
@@ -15,6 +15,7 @@ services:
       - pgvector_volume:/var/lib/postgresql
     networks:
       - fit-coach-net
+      - proxy-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U fitcoach" ]
@@ -61,7 +62,6 @@ services:
 volumes:
   pgadmin_data:
   pgvector_volume:
-  fitcoach_prod_pgvector:
 
 networks:
   proxy-network:

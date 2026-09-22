@@ -29,7 +29,11 @@ nueva sesión con estado `in_progress` y pide al agente que formule la pregunta 
 
 Cuando un usuario escribe sin tener sesión, el servicio inicia una automáticamente. Si el estado
 es `completed`, los mensajes normales no reabren la entrevista: se le indica al usuario que use
-`/interview` para sustituir su perfil por una entrevista nueva.
+`/train` para generar su plan, o `/interview` para sustituir su perfil por una entrevista nueva.
+
+Una vez existe un plan de entrenamiento, esos mensajes dejan de llegar aquí y los atiende el
+agente [`trainer`](trainer-agent.md). Ten en cuenta que `/interview` borra también el plan y la
+sesión de entrenamiento: un perfil nuevo invalida el mesociclo anterior.
 
 El aislamiento es por `chat_id`: un chat nunca incorpora el historial o perfil de otro.
 
@@ -62,8 +66,9 @@ no sea claro, respuestas breves aptas para Telegram y un trato no juzgador.
 
 Las instrucciones del usuario y cualquier bloque RAG se tratan como datos, nunca como instrucciones
 que puedan alterar el rol o revelar la configuración. El sistema ya deja preparado el marcador
-`{{rag_context}}`; actualmente se sustituye por un bloque vacío en cada turno, por lo que aún no hay
-un recuperador de conocimiento conectado.
+`{{rag_context}}`; en este agente se sustituye por un bloque vacío en cada turno, porque todavía no
+hay un recuperador conectado a la entrevista. El agente [`trainer`](trainer-agent.md) sí lo rellena,
+con el catálogo de ejercicios.
 
 ## Contrato entre el modelo y la aplicación
 
@@ -114,6 +119,9 @@ PostgreSQL conserva tres tipos de información:
 | `interview_sessions` | Estado `in_progress` o `completed` y fechas. | Al comenzar, reiniciar o completar. |
 | `interviewer_profiles` | Perfil JSON final e informe. | Solo al completar la entrevista. |
 
+La columna `agent` de `conversation_messages` vale `interviewer` en estos turnos: separa el
+historial de cada agente para que el entrenador no herede la transcripción de la entrevista.
+
 La consulta de historial ordena los últimos mensajes por identificador y los devuelve en orden
 cronológico para conservar el contexto del modelo. Consulta [how-to.md](how-to.md#consultar-la-base-de-datos-con-adminer)
 para visualizar estas tablas con Adminer en desarrollo.
@@ -148,7 +156,8 @@ Reinicia el entorno con `make dev-down && make dev-up` tras cambiar la configura
 | Orquestación de comandos, Telegram y persistencia | `src/fitcoach/service/conversation_service.py` |
 | Invocación LangChain, validación y errores del modelo | `src/fitcoach/service/agent/interviewer_chain.py` |
 | Perfil y sobre de respuesta Pydantic | `src/fitcoach/domain/interviewer_profile.py` |
-| Códigos de error seguros | `src/fitcoach/domain/interviewer_errors.py` |
+| Códigos de error seguros (compartidos entre agentes) | `src/fitcoach/domain/agent_errors.py` |
+| Invocación, conteo de tokens y validación comunes | `src/fitcoach/service/agent/llm_chain.py` |
 | Repositorio PostgreSQL | `src/fitcoach/infrastructure/database/postgres_conversation_repository.py` |
 
 ## Configuración

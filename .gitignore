@@ -3,6 +3,7 @@ venv**/
 .env
 .env.*
 .venv
+env-*/
 
 #initial files
 **/.gitkeep

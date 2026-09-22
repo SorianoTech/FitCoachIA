@@ -14,73 +14,9 @@
 
 SET default_transaction_read_only = off;
 
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-
---
--- Roles
---
-
-CREATE ROLE fitcoach;
-ALTER ROLE fitcoach WITH SUPERUSER INHERIT CREATEROLE CREATEDB LOGIN REPLICATION BYPASSRLS PASSWORD 'SCRAM-SHA-256$4096:ECajafkYcexmz0yHtEX+nA==$qSq3NJFOQvy9ZLC1TdZFAWsN0ipmDMfKuULuTsEbGpM=:AjQxIPPTXJiDCR+46KE4deXKTO3ocX0l0jFodaNI0T8=';
-
 --
 -- User Configurations
 --
-
-
-
-
-
-
-
---
--- Databases
---
-
---
--- Database "template1" dump
---
-
-\connect template1
-
---
--- PostgreSQL database dump
---
-
-
--- Dumped from database version 18.6 (Debian 18.6-1.pgdg13+2)
--- Dumped by pg_dump version 18.4
-
--- Started on 2026-09-18 09:02:20 UTC
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
--- Completed on 2026-09-18 09:02:21 UTC
-
---
--- PostgreSQL database dump complete
---
-
-
---
--- Database "fitcoach" dump
---
-
---
--- PostgreSQL database dump
---
-
 
 -- Dumped from database version 18.6 (Debian 18.6-1.pgdg13+2)
 -- Dumped by pg_dump version 18.4
@@ -99,29 +35,7 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
---
--- TOC entry 3697 (class 1262 OID 16384)
--- Name: fitcoach; Type: DATABASE; Schema: -; Owner: fitcoach
---
-
-CREATE DATABASE fitcoach WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.utf8';
-
-
-ALTER DATABASE fitcoach OWNER TO fitcoach;
-
 \connect fitcoach
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
 
 --
 -- TOC entry 2 (class 3079 OID 16385)

@@ -31,6 +31,9 @@ DEV_ENV_FALLBACK=.env.dev
 
 COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
 COMPOSE_PROD=$(DOCKER) compose
+# La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
+# cargan una sola vez y sobreviven a los despliegues de la app.
+COMPOSE_VECTOR=$(DOCKER) compose -f infra/vector-db/docker-compose.vector-db.yml
 
 define resolve_dev_env
 if [ -f "$(DEV_ENV_FILE)" ]; then \
@@ -54,7 +57,7 @@ echo ">> entorno prod: $(PROD_ENV_FILE)"; \
 export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -77,6 +80,9 @@ help:
 	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
 	@echo "  make prod-down                      - Detiene el entorno de produccion"
 	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
+	@echo "  make vector-up                      - Levanta pgVector y pgAdmin con el catalogo de ejercicios"
+	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
+	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
 
 container:
 	@$(DOCKER) ps -a
@@ -113,6 +119,17 @@ prod-down:
 prod-logs:
 	@$(resolve_prod_env); \
 	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
+
+vector-up:
+	@$(COMPOSE_VECTOR) up -d --build
+
+# Sin -v a proposito: el volumen guarda la carga inicial de 283 MB y volver a
+# crearlo tarda varios minutos. Para borrarlo de verdad, hazlo explicitamente.
+vector-down:
+	@$(COMPOSE_VECTOR) down --remove-orphans
+
+vector-logs:
+	@$(COMPOSE_VECTOR) logs -f
 
 tests:
 	@$(COMPOSE_UP); \

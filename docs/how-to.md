@@ -185,7 +185,7 @@ contenedores, volumen PostgreSQL y configuración `APP_ENV`.
 
 El agente `interviewer` guarda el historial por chat mientras la entrevista está en progreso. Al
 completar las preguntas, valida y guarda el perfil estructurado en PostgreSQL y envía un informe de
-resumen por Telegram. Los mensajes posteriores indican que el perfil está completado; envía
+resumen por Telegram. Los mensajes posteriores invitan a generar el plan con `/train`; envía
 `/interview` para reemplazar el perfil actual e iniciar una entrevista limpia.
 
 Para probar rápidamente la generación del informe final en desarrollo, `make dev-up` configura
@@ -194,12 +194,67 @@ mismo contrato de perfil, persistencia e informe que producción. La skill compl
 activa en producción con `ia_skill=interviewer`. Después de completar una prueba, consulta el
 informe en Adminer o envía `/interview` para empezar otra.
 
+> **Runtime de contenedores.** El `Makefile` usa `docker` por defecto, que es lo que hay en los
+> runners de CI. En local, donde el runtime es podman, pasa la variable en cada invocación:
+> `make vector-up DOCKER=podman`, `make dev-up DOCKER=podman`, `make tests DOCKER=podman`.
+
+## Plan de entrenamiento
+
+Con la entrevista completada, `/train` genera un mesociclo de 4 semanas. Requiere dos servicios
+adicionales, que `make dev-up` levanta o conecta automáticamente:
+
+- **pgVector** con el catálogo de ejercicios. Vive en su propio Compose, así que hay que levantarlo
+  por separado la primera vez:
+
+  ```bash
+  make vector-up      # pgVector + pgAdmin
+  make vector-logs
+  make vector-down    # conserva el volumen con la carga inicial
+  ```
+
+- **`embedder`**, que vectoriza la consulta con el mismo modelo que el corpus. Lo construye el
+  propio `make dev-up`. La primera build descarga el modelo y tarda varios minutos; las siguientes
+  usan caché.
+
+Ver [vector-db.md](vector-db.md) para el esquema, el modelo de embeddings y el rol de solo lectura,
+y [trainer-agent.md](trainer-agent.md) para el comportamiento del agente.
+
+En desarrollo, `make dev-up` fija `ia_trainer_skill=trainer-dev`: desarrolla bien la semana 1 y
+deriva las otras tres, con un máximo de 3 ejercicios por día. Mantiene intactas las comprobaciones
+que importan (ids del catálogo, 4 semanas, días comprometidos), así que sirve para probar el flujo
+completo sin gastar 4096 tokens por iteración.
+
+Repetir `/train` **no** sobrescribe el plan: crea la versión N+1 en `training_plans`. Mientras haya
+un plan activo, los mensajes sin comando los responde el entrenador sobre ese plan.
+
+### Variables de entorno del entrenador
+
+```dotenv
+ia_trainer_skill=trainer
+ia_trainer_max_tokens=4096
+ia_trainer_history_window_messages=10
+ia_rag_top_k=8
+
+vector_database_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
+VECTOR_DB_USER=fitcoach_ro
+VECTOR_DB_PASSWORD=<secreto>
+VECTOR_DB_NAME=fitcoach
+
+embedder_url=http://embedder-dev:8100
+embedder_timeout_seconds=10
+```
+
+La aplicación no arranca si falta `vector_database_url` o `embedder_url`.
+
 ```bash
 # Suite completa con cobertura mínima del 80 %
 uv run pytest tests --cov=src/fitcoach --cov-fail-under=80
 
-# Solo unitarias o integración
+# Solo unitarias (sin Docker, sin red, sin LLM)
 uv run pytest tests/unit_test --no-cov
+
+# Integración: necesita el entorno de tests levantado (make tests lo hace por ti).
+# Levanta PostgreSQL, pgVector con un corpus mínimo y un stub de Telegram/LLM/embedder.
 uv run pytest tests/it --no-cov
 
 # Calidad y tipos

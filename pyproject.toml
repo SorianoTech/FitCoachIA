@@ -28,6 +28,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.50b0",
     "opentelemetry-instrumentation-httpx>=0.50b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
+    "pgvector>=0.3.6",             # tipo Vector para SQLAlchemy; Python puro, no arrastra torch
     "pydantic>=2.13.0",
     "pydantic-settings>=2.13.1",
     "pydantic-extra-types>=2.11.1",

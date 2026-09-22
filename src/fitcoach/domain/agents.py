@@ -6,8 +6,8 @@ from enum import Enum
 class AgentType(Enum):
     """Identifies which agent handled a turn, for logs/spans/token_usage rows.
 
-    TRAINER/NUTRITIONIST/COACH are placeholders: no agent implements them yet,
-    but instrumentation can already tag turns without waiting for their code.
+    NUTRITIONIST/COACH are placeholders: no agent implements them yet, but
+    instrumentation can already tag turns without waiting for their code.
     """
 
     INTERVIEWER = "interviewer"
@@ -39,3 +39,15 @@ class InterviewerAgent(Agent):
 
     def __init__(self, system_prompt: str) -> None:
         super().__init__(system_prompt, AgentType.INTERVIEWER)
+
+
+class TrainerAgent(Agent):
+    """Entity for the Trainer (Agent 2 / Entrenador).
+
+    Unlike the Interviewer, this agent always runs with a filled
+    ``{{rag_context}}``: its exercise choices must come from the corpus, not
+    from the model's memory.
+    """
+
+    def __init__(self, system_prompt: str) -> None:
+        super().__init__(system_prompt, AgentType.TRAINER)

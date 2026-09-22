@@ -9,14 +9,19 @@ services:
     environment:
       # Dummy values: just enough for the fail-fast startup check to pass.
       - bot_telegram_token=test-token
-      - bot_telegram_url=http://test-telegram-mock:9999
+      # Telegram, el LLM y el embedder los sirve un unico stub (tests/fixtures/stub_server.py).
+      - bot_telegram_url=http://test-stubs:9999/bot
       - bot_telegram_commands=start:Inicia FitCoach
       - log_level=INFO
-      - ia_base_url=http://test-llm-mock:9999
+      - ia_base_url=http://test-stubs:9999/v1
       - ia_token=test-token
       - ia_model=test-model
       - ia_temperature=0.5
+      # Con 10 ejercicios en el fixture, top_k alto devuelve el corpus entero.
+      - ia_rag_top_k=10
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
+      - vector_database_url=postgresql+asyncpg://fitcoach_ro:fitcoach_ro_dev@pgvector-test:5432/fitcoach
+      - embedder_url=http://test-stubs:9999
     ports:
       - "${IT_PORT:-8001}:8000"
     # python -c en lugar de curl: la imagen final es python:3.11-slim y no trae curl.
@@ -30,6 +35,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgvector-test:
+        condition: service_healthy
+      test-stubs:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
@@ -38,8 +47,46 @@ services:
       POSTGRES_DB: fitcoach
       POSTGRES_PASSWORD: fitcoach
       POSTGRES_USER: fitcoach
+    # Publicado para que los tests puedan comprobar lo que se persistio.
+    ports:
+      - "${IT_DB_PORT:-55432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fitcoach -d fitcoach"]
       interval: 5s
       timeout: 5s
+      retries: 10
+
+  pgvector-test:
+    # Imagen oficial de pgVector con un corpus minimo: el volcado real son
+    # 283 MB y varios minutos de arranque, inaceptable en CI.
+    image: pgvector/pgvector:pg18-trixie
+    container_name: pgvector-test
+    environment:
+      POSTGRES_DB: fitcoach
+      POSTGRES_PASSWORD: fitcoach
+      POSTGRES_USER: fitcoach
+    volumes:
+      - ./fixtures/exercises_min.sql:/docker-entrypoint-initdb.d/001_exercises_min.sql:ro
+    ports:
+      - "${IT_VECTOR_DB_PORT:-55433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcoach -d fitcoach"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test-stubs:
+    # Solo libreria estandar: sin build ni dependencias, arranca en segundos.
+    image: python:3.11-slim
+    container_name: test-stubs
+    volumes:
+      - ./fixtures/stub_server.py:/stub/stub_server.py:ro
+    command: ["python", "/stub/stub_server.py"]
+    ports:
+      - "${IT_STUB_PORT:-9999}:9999"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:9999/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
       retries: 10

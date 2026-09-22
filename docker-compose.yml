@@ -19,11 +19,34 @@ services:
     environment:
       APP_ENV: prod
       database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres-prod:5432/${POSTGRES_DB:-fitcoach}
+      # pgVector vive en su propio compose (infra/vector-db), alcanzable por proxy-network.
+      vector_database_url: postgresql+asyncpg://${VECTOR_DB_USER:-fitcoach_ro}:${VECTOR_DB_PASSWORD:?VECTOR_DB_PASSWORD is required}@pgvector:5432/${VECTOR_DB_NAME:-fitcoach}
+      embedder_url: http://embedder-prod:8100
     depends_on:
       postgres-prod:
         condition: service_healthy
+      embedder-prod:
+        condition: service_healthy
     networks:
       - proxy-network
+
+  embedder-prod:
+    container_name: fitcoach-embedder
+    restart: unless-stopped
+    build:
+      context: infra/embedder
+      dockerfile: Dockerfile-embedder
+    healthcheck:
+      # /health solo responde 200 cuando el modelo esta cargado en memoria.
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+    networks:
+      - proxy-network
+
   postgres-prod:
     # Nombre fijo: sin el, un rename de servicio crearia un segundo Postgres
     # sobre el mismo volumen en vez de fallar por conflicto de nombre.

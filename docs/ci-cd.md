@@ -49,7 +49,8 @@ en minutos en CI).
 ### 2.2 Continuous Integration — `build.yml`
 
 **Dispara**: `push` y `pull_request` sobre `feature/**`, `feat/**`, `fix/**`, `bugfix/**` (se
-ignoran cambios que solo tocan documentación). Dos jobs encadenados por `needs`.
+ignoran cambios que solo tocan documentación). Tres jobs encadenados por `needs`:
+`quality-security-gate` → `semgrep-analysis` → `test-gate`.
 
 > ⚠️ El filtro de `pull_request` se evalúa sobre la rama **base**: un PR `feature/x → develop` no
 > vuelve a disparar este workflow, porque esos commits ya se validaron en el `push` a la rama de
@@ -79,7 +80,8 @@ el flujo de trabajo del equipo.
 
 Valida comportamiento funcional real (unitarios + integración) contra el mismo stack que se usaría
 en local (app + Postgres vía Docker), para que el resultado en CI nunca diverja del de desarrollo.
-Gate: cobertura mínima del 80 % como proxy de calidad.
+Esa equivalencia no es una coincidencia: el job ejecuta **`make tests`**, el mismo target que se
+usa en local. Gate: cobertura mínima del 80 % como proxy de calidad.
 
 ### 2.4 Continuous Delivery — `release.yml`
 
@@ -109,9 +111,10 @@ publicarla, y solo se publica después de crear el tag/release**:
 como `secrets` (no `inputs`) para que GitHub los enmascare en los logs.
 
 Patrón: **recreate verificado con rollback**. Se retira el contenedor en servicio conservando su
-imagen (el artefacto de rollback), se levanta la nueva versión y se espera a que Docker la marque
-`healthy` (`healthcheck` de `docker-compose.yml`, sondeado hasta 10 intentos); si no lo consigue, se
-descartan contenedor e imagen nuevos y se restaura la versión anterior desde la imagen retenida. La
+imagen (el artefacto de rollback), se levanta la nueva versión con `make prod-up` y se espera a que
+Docker la marque `healthy` (`healthcheck` de `docker-compose.yml`, sondeado hasta 10 intentos); si
+no lo consigue, se descartan contenedor e imagen nuevos y se restaura la versión anterior —también
+con `make prod-up`— desde la imagen retenida. La
 imagen previa solo se conserva hasta que la nueva demuestra estar sana. Esto implica una ventana
 breve sin servicio en cada despliegue (~10-40 s, más si hay que revertir): el proxy devuelve 502 y
 Telegram reintenta los updates, así que no se pierden mensajes.
@@ -126,7 +129,8 @@ red Docker externa `proxy-network`.
 No hay un job dedicado; el monitoreo continuo se apoya en dos señales que ya generan las fases
 anteriores:
 
-- **Health check `/health`** tras cada despliegue — señal de salud inmediata del artefacto en producción.
+- **`healthcheck` del contenedor** sobre `/health` — decide el resultado del despliegue (y su
+  rollback), y después sigue sondeando cada 5 min como señal de salud continua en producción.
 - **Pestaña Security de GitHub** — acumula los SARIF de Semgrep (CI, código fuente) y Trivy
   (release, imagen construida) como registro continuo de hallazgos, independiente de si bloquearon
   o no el pipeline que los generó.
@@ -173,12 +177,13 @@ flowchart TD
     end
 
     subgraph CD2["Continuous Deployment — deploy.yml"]
-        H4 -->|ok| I[ssh-deploy: rsync docker-compose.yml]
-        I --> J[Pull nueva imagen\ncontenedor anterior vivo]
-        J --> K[docker compose up -d]
-        K --> L{Health check /health\n·Continuous Monitoring·}
-        L -->|ok| M[✅ poda de huérfanos\ne imágenes antiguas]
-        L -->|falla| N[↩️ descarta imagen nueva,\ncontenedor previo intacto]
+        H4 -->|ok| I[ssh-deploy: rsync\ndocker-compose.yml + Makefile]
+        I --> J[docker pull nueva imagen\ncontenedor anterior aún en servicio]
+        J --> J1[Retirar contenedor en servicio\nsu imagen se conserva: artefacto de rollback]
+        J1 --> K[make prod-up]
+        K --> L{Docker lo marca healthy\n·Continuous Monitoring·}
+        L -->|sí| M[✅ poda de huérfanos\ne imágenes antiguas]
+        L -->|no| N[↩️ descarta contenedor e imagen nuevos\ny restaura la versión anterior]
     end
 ```
 
@@ -190,27 +195,37 @@ sequenceDiagram
     participant S as Servidor (SSH)
 
     Note over R,S: Continuous Deployment — deploy.yml
-    R->>S: rsync docker-compose.yml
-    R->>S: SCRIPT_BEFORE
+    R->>S: rsync docker-compose.yml + Makefile
+    R->>S: SCRIPT_BEFORE (sesión SSH 1)
     activate S
-    S->>S: Inspeccionar contenedor actual (imagen, estado)
-    S->>S: docker pull nueva imagen\n(contenedor anterior sigue vivo)
+    S->>S: 1/4 Verificar acceso al fichero de entorno (sudo -n)
+    S->>S: 2/4 Estado del contenedor actual (informativo)
+    S->>S: 3/4 Imágenes locales antes del pull
+    S->>S: 4/4 docker pull nueva imagen\n(contenedor anterior sigue vivo)
     deactivate S
-    R->>S: SCRIPT_AFTER
+    R->>S: SCRIPT_AFTER (sesión SSH 2)
     activate S
-    S->>S: docker compose up -d
+    S->>S: 1/6 Capturar la versión en servicio\n(artefacto de rollback)
+    S->>S: 2/6 Retirar el contenedor\n(su imagen se conserva)
+    S->>S: 3/6 sudo -n env VERSION=… PROD_ENV_FILE=… make prod-up
     Note right of S: Continuous Monitoring
-    S->>S: Esperar 5s + 5 intentos x 5s\nGET /health dentro del contenedor
-    alt Health check OK
-        S->>S: Eliminar contenedores huérfanos
-        S->>S: Podar imágenes semver antiguas\n(conserva la desplegada y tags no-semver)
-    else Health check falla
+    S->>S: 4/6 Esperar 5s + 10 intentos x 5s\ndocker inspect .State.Health.Status
+    alt healthy
+        S->>S: 5/6 Eliminar contenedores huérfanos
+        S->>S: 6/6 Podar imágenes semver antiguas\n(conserva la desplegada y tags no-semver)
+    else unhealthy o se agotan los intentos
         S->>S: Volcar últimas 50 líneas de log
-        S->>S: docker rm -f + docker rmi de la nueva imagen
+        S->>S: docker rm -f + docker rmi de lo recién desplegado
+        S->>S: make prod-up con la versión anterior
         S-->>R: exit 1 (workflow en rojo)
     end
     deactivate S
 ```
+
+> `SCRIPT_BEFORE` y `SCRIPT_AFTER` son **sesiones SSH distintas**: las variables no cruzan entre
+> ellas, y por eso la versión anterior se captura en el paso `1/6` y no antes. Detalle completo del
+> despliegue y de los targets del `Makefile` en
+> [entornos-y-despliegue.md](entornos-y-despliegue.md).
 
 ## 4. Gates, secretos y artefactos
 
@@ -226,7 +241,7 @@ sequenceDiagram
 | Versión no debe existir ya en el registro | `release.yml` | Bloquea |
 | Trivy (imagen, HIGH/CRITICAL) | `release.yml` | Informa (SARIF) |
 | Origen de release: `develop` o `release/*` | `release.yml` (`if:`) | Bloquea |
-| Health check `/health` tras el despliegue | `deploy.yml` | Bloquea (aborta el despliegue) |
+| Estado `healthy` del contenedor tras el despliegue | `deploy.yml` | Bloquea **y revierte** a la versión anterior |
 
 ### Artefactos publicados
 
@@ -283,7 +298,6 @@ ejecución o al modificar los workflows:
 | Observación | Detalle |
 |---|---|
 | PR a `develop` no re-ejecuta `build.yml` | El filtro `pull_request.branches` evalúa la rama **base**, no la de origen; la validación de esos commits ya ocurrió en el `push` a la rama de trabajo. |
-| Prefijos de rama inconsistentes | `build.yml` acepta `feat/**` y `bugfix/**`, pero `validate-develop-merge.yml` solo admite `feature/**` y `fix/**` al fusionar contra `develop`. |
-| Versión de Python sobrescrita | `env.PYTHON_VERSION: "3.12"` a nivel de workflow en `build.yml` queda pisado por `"3.11"` en los steps que usan `python-setup`. |
-| Versión del proyecto desincronizada | `pyproject.toml` declara `0.1.0` mientras los tags Git ya están en `0.3.0`; no hay bump automático de versión. |
+| `bugfix/**` se valida pero no se puede fusionar | `build.yml` dispara sobre `bugfix/**`, pero `validate-develop-merge.yml` solo admite `feature/`, `feat/` y `fix/`: un PR desde `bugfix/**` a `develop` queda bloqueado pese a haber pasado CI. |
+| Versión del proyecto desincronizada | `pyproject.toml` declara `0.1.0` mientras los tags Git ya están en `0.4.2`; no hay bump automático de versión. |
 | `README.md` desactualizado | La sección `## CI/CD` describe workflows que ya no existen (`validate-merge-source.yml`) y afirma que `release.yml` se dispara con push a `main`, cuando en realidad es manual (`workflow_dispatch`) desde `develop`/`release/*`. |

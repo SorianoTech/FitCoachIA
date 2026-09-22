@@ -542,6 +542,24 @@ class TestUsageQuota:
         )
 
     @pytest.mark.asyncio
+    async def test_a_blocked_interview_past_the_hard_limit_does_not_promise_a_conversation(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        """El mensaje blando ofrece seguir conversando: solo vale por debajo del limite duro."""
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 1_500)
+
+        await service.handle_update(_text_update(456, "/interview"))
+
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.QUOTA_EXCEEDED_MESSAGE,
+        )
+
+    @pytest.mark.asyncio
     async def test_free_text_still_works_between_both_thresholds(
         self,
         mock_bot: AsyncMock,

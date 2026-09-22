@@ -17,7 +17,7 @@ from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
-from fitcoach.domain.rate_limiter import UsageLimits, UsageTier
+from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.infrastructure.observability.telemetry import get_tracer
@@ -369,8 +369,8 @@ class ConversationService:
 
         tier = self._usage_limits.tier_for(command)
         logger.warning(f"{ctx} cuota superada: nivel={tier} consumido={used} limite={limit}")
-        return (
-            Constants.QUOTA_SOFT_MESSAGE
-            if tier is UsageTier.SOFT
-            else Constants.QUOTA_EXCEEDED_MESSAGE
-        )
+        # Por el consumo real, no por el nivel del comando: pasado el limite duro el
+        # mensaje blando prometeria una conversacion que tampoco esta disponible.
+        if used >= self._usage_limits.hard_tokens:
+            return Constants.QUOTA_EXCEEDED_MESSAGE
+        return Constants.QUOTA_SOFT_MESSAGE

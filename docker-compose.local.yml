@@ -8,8 +8,6 @@ services:
     container_name: fitcoach-postgres
     env_file:
       - .env
-    environment:
-      - database_url=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
@@ -59,10 +57,12 @@ services:
       #- proxy-network
 
   fitcoach-ia:
-    container_name: dev-fitcoach-ia
+    container_name: fitcoach-ia
     build:
       context: .
       dockerfile: src/Dockerfile
+    ports:
+      - "${APP_PORT}:8000"
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)" ]
       interval: 5m
@@ -73,11 +73,6 @@ services:
       start_interval: 5s
     env_file:
       - path: .env
-    environment:
-      - database_url=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      # pgVector vive en su propio compose (infra/vector-db). Levantalo con `make vector-up`.
-      - vector_db_url=postgresql+asyncpg://${VECTOR_DB_USER}:${VECTOR_DB_PASSWORD}@${VECTOR_DB_HOST}:${VECTOR_DB_PORT}/${VECTOR_DB}
-      - embedder_url=http://${embedder_host}:${embedder_port}
     depends_on:
       postgres:
         condition: service_healthy

@@ -8,7 +8,7 @@ services:
       context: .
       dockerfile: src/Dockerfile
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)" ]
       interval: 5m
       timeout: 5s
       retries: 3
@@ -27,7 +27,7 @@ services:
       ia_trainer_skill: ${ia_trainer_skill:-trainer-dev}
       database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres-dev:5432/${POSTGRES_DB:-fitcoach}
       # pgVector vive en su propio compose (infra/vector-db). Levantalo con `make vector-up`.
-      vector_database_url: postgresql+asyncpg://${VECTOR_DB_USER:-fitcoach_ro}:${VECTOR_DB_PASSWORD:-fitcoach_ro_dev}@pgvector:5432/${VECTOR_DB_NAME:-fitcoach}
+      vector_db_url: postgresql+asyncpg://${VECTOR_DB_USER:-fitcoach_ro}:${VECTOR_DB_PASSWORD:-fitcoach_ro_dev}@pgvector:5432/${VECTOR_DB_NAME:-fitcoach}
       embedder_url: http://embedder-dev:8100
     depends_on:
       postgres-dev:
@@ -48,7 +48,7 @@ services:
     volumes:
       - fitcoach-dev-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -63,7 +63,7 @@ services:
       dockerfile: Dockerfile-embedder
     healthcheck:
       # /health solo responde 200 cuando el modelo esta cargado en memoria.
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)"]
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]
       interval: 30s
       timeout: 5s
       retries: 3

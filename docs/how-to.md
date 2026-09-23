@@ -10,7 +10,7 @@
 ## Entornos y variables
 
 | Entorno | Compose | Proyecto | API | Base de datos |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `dev-fitcoach-ia`, `proxy-network` | volumen `fitcoach-dev-postgres` |
 | Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia`, `proxy-network` | volumen `fitcoach-prod-postgres` |
 
@@ -21,7 +21,7 @@ Los `make dev-up` / `make prod-up` (ver más abajo) leen el fichero de entorno d
 repositorio, en `/etc/fitcoachia/<entorno>/`:
 
 | Entorno | Fichero preferido | Si no existe |
-|---|---|---|
+| --- | --- | --- |
 | Desarrollo | `/etc/fitcoachia/dev/.env.dev` | usa `.env.dev` en la raíz del repositorio |
 | Producción | `/etc/fitcoachia/prod/.env.prod` | falla: no hay fallback en producción |
 
@@ -230,21 +230,39 @@ un plan activo, los mensajes sin comando los responde el entrenador sobre ese pl
 ### Variables de entorno del entrenador
 
 ```dotenv
+# Agente 2 (entrenador). El mesociclo completo no cabe en ia_max_tokens.
 ia_trainer_skill=trainer
 ia_trainer_max_tokens=4096
 ia_trainer_history_window_messages=10
+# Ejercicios recuperados de la BD vectorial por grupo muscular.
 ia_rag_top_k=8
 
-vector_database_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
-VECTOR_DB_USER=fitcoach_ro
-VECTOR_DB_PASSWORD=<secreto>
-VECTOR_DB_NAME=fitcoach
+POSTGRES_USER=fitcoach
+POSTGRES_PASSWORD=...
+POSTGRES_HOST=postgres
+POSTGRES_DB=fitcoach
+POSTGRES_PORT=5432
 
-embedder_url=http://embedder-dev:8100
+# Base de datos vectorial (catalogo de ejercicios). Solo lectura: ver
+# infra/vector-db/ddl/002_2026-09-21_readonly-role.sql. Levantala con `make vector-up`.
+VECTOR_DB_USER=fitcoach_ro
+VECTOR_DB_PASSWORD=...
+VECTOR_DB_HOST=pgvector
+VECTOR_DB_NAME=fitcoach
+VECTOR_DB_PORT=5433
+
+PGADMIN_DEFAULT_EMAIL=admin@admin.com
+PGADMIN_DEFAULT_PASSWORD=admin
+PGADMIN_PORT=8010
+STANDARD_HTTP_PORT=80
+
+# Servicio de embeddings (infra/embedder). DEBE usar el mismo modelo que el
+# corpus: all-MiniLM-L6-v2, 384 dimensiones.
+embedder_port=8100
 embedder_timeout_seconds=10
 ```
 
-La aplicación no arranca si falta `vector_database_url` o `embedder_url`.
+La aplicación no arranca si falta `vector_db_url` o `embedder_url`.
 
 ```bash
 # Suite completa con cobertura mínima del 80 %

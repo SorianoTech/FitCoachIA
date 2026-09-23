@@ -126,16 +126,14 @@ class TestTrainerIASettings:
 
 class TestVectorDatabaseSettings:
     def test_reads_the_url_from_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(
-            "vector_database_url", "postgresql+asyncpg://ro:pwd@pgvector:5432/fitcoach"
-        )
+        monkeypatch.setenv("vector_db_url", "postgresql+asyncpg://ro:pwd@pgvector:5432/fitcoach")
 
         settings = VectorDatabaseSettings(_env_file=None)
 
         assert settings.url == "postgresql+asyncpg://ro:pwd@pgvector:5432/fitcoach"
 
     def test_missing_url_raises_validation_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("vector_database_url", raising=False)
+        monkeypatch.delenv("vector_db_url", raising=False)
 
         with pytest.raises(ValidationError):
             VectorDatabaseSettings(_env_file=None)

@@ -1,0 +1,97 @@
+name: fitcoach-local
+
+# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: fitcoach-postgres
+    env_file:
+      - .env
+    environment:
+      - database_url=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - fitcoach_postgres_volume:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - fit-coach-net
+      #- proxy-network
+
+  adminer:
+    container_name: fitcoach-adminer
+    image: adminer:4.8.1-standalone
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      # - proxy-network
+
+  embedder:
+    container_name: fitcoach-embedder
+    build:
+      context: infra/embedder
+      dockerfile: Dockerfile-embedder
+    env_file:
+      - infra/embedder/.env
+    environment:
+      - embedder_url=http://${embedder_host}:${embedder_port}
+    healthcheck:
+      # /health solo responde 200 cuando el modelo esta cargado en memoria.
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('${embedder_url}/health',timeout=2)" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+    networks:
+      - fit-coach-net
+      #- proxy-network
+
+  fitcoach-ia:
+    container_name: dev-fitcoach-ia
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)" ]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      # Sondeo rapido solo durante el arranque; en regimen estable basta cada 5 min.
+      start_interval: 5s
+    env_file:
+      - path: .env
+    environment:
+      - database_url=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      # pgVector vive en su propio compose (infra/vector-db). Levantalo con `make vector-up`.
+      - vector_db_url=postgresql+asyncpg://${VECTOR_DB_USER}:${VECTOR_DB_PASSWORD}@${VECTOR_DB_HOST}:${VECTOR_DB_PORT}/${VECTOR_DB}
+      - embedder_url=http://${embedder_host}:${embedder_port}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedder:
+        condition: service_healthy
+    networks:
+      - fit-coach-net
+      #- proxy-network
+
+volumes:
+  fitcoach_postgres_volume:
+
+networks:
+  #proxy-network:
+  #  external: true
+  fit-coach-net:
+    driver: bridge

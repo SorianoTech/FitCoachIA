@@ -10,15 +10,15 @@ services:
     env_file:
       - .env
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - pgvector_volume:/var/lib/postgresql
     networks:
       - fit-coach-net
-      - proxy-network
+      # - proxy-network
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U fitcoach" ]
+      test: [ "CMD-SHELL", "pg_isready -U fitcoach -d fitcoach" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -64,7 +64,7 @@ volumes:
   pgvector_volume:
 
 networks:
-  proxy-network:
-    external: true
+  # proxy-network:
+  #   external: true
   fit-coach-net:
     driver: bridge

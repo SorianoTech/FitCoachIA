@@ -36,7 +36,7 @@ sobre el que se calculó una dieta.
 Un mensaje sin comando se enruta según dos estados:
 
 | `interview_sessions.status` | `training_sessions.status` | Destino |
-|---|---|---|
+| --- | --- | --- |
 | `null` | — | Arranca una entrevista |
 | `in_progress` | — | `interviewer` |
 | `completed` | `null` | Mensaje indicando que use `/train` |
@@ -50,14 +50,14 @@ perfil nuevo invalida el mesociclo anterior.
 El comportamiento se define en dos recursos que se ensamblan al crear el agente:
 
 | Recurso | Responsabilidad |
-|---|---|
+| --- | --- |
 | `src/fitcoach/infrastructure/prompts/trainer/system_prompt.txt` | Rol, tono, límites de seguridad, contrato de integración y reglas del catálogo. |
 | `src/fitcoach/infrastructure/ia/skills/trainer/SKILL.md` | Periodización, volumen, splits, sustituciones por lesión y estructura del plan. |
 
 La periodización es de cuatro semanas:
 
 | Semana | `intensity` | Volumen respecto a la semana 1 |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `accumulation` | 100 % de `initial_calculations.tolerable_volume_sets` |
 | 2 | `intensification` | ~110 %, o mismas series con más RPE |
 | 3 | `peak` | ~120 %, RPE más alto del bloque |
@@ -108,7 +108,7 @@ cadenas son *singletons* compartidos entre peticiones concurrentes.
 ## Recuperación (RAG)
 
 | Componente | Ubicación |
-|---|---|
+| --- | --- |
 | Consulta a partir del perfil y bloque de contexto | `src/fitcoach/service/agent/rag_context.py` |
 | Una consulta por grupo muscular, deduplicada | `src/fitcoach/service/agent/exercise_retriever.py` |
 | Cliente HTTP del servicio de embeddings | `src/fitcoach/infrastructure/ia/embedder_client.py` |
@@ -127,7 +127,7 @@ constructor del bloque elimina caracteres de control y trunca las instrucciones.
 ### Degradación
 
 | Situación | `/train` | Modo preguntas |
-|---|---|---|
+| --- | --- | --- |
 | Embedder o pgVector caídos | Falla con mensaje de reintento | Responde sin catálogo (`rag.degraded=true`) |
 | Catálogo vacío | Falla con mensaje de reintento | Responde sin catálogo |
 
@@ -137,7 +137,7 @@ agente existe para evitar, mientras que una pregunta se puede responder desde el
 ## Persistencia
 
 | Tabla | Contenido | Cuándo se actualiza |
-|---|---|---|
+| --- | --- | --- |
 | `training_plans` | Plan JSON e informe, versionados por `chat_id`. | En cada `/train` correcto. |
 | `training_sessions` | Estado `active` y plan vigente. | Al generar o regenerar un plan. |
 | `conversation_messages` | Turnos, con la columna `agent` que separa entrevista de entrenamiento. | En cada turno válido. |
@@ -164,7 +164,7 @@ en vez de `ia_max_tokens`.
 El span `conversation.turn` añade, además de los atributos habituales:
 
 | Atributo | Significado |
-|---|---|
+| --- | --- |
 | `agent` | `trainer` |
 | `rag.exercises_retrieved` | Ejercicios recuperados y entregados al modelo |
 | `rag.latency_ms` | Tiempo de embeddings más consulta a pgVector |
@@ -173,7 +173,7 @@ El span `conversation.turn` añade, además de los atributos habituales:
 ## Componentes principales
 
 | Componente | Ubicación |
-|---|---|
+| --- | --- |
 | Orquestación, comandos y enrutado | `src/fitcoach/service/conversation_service.py` |
 | Invocación LangChain y anclaje al catálogo | `src/fitcoach/service/agent/trainer_chain.py` |
 | Plumbing compartido entre agentes | `src/fitcoach/service/agent/llm_chain.py` |
@@ -191,14 +191,14 @@ ia_trainer_history_window_messages=10
 ia_rag_top_k=8
 
 # Base de datos vectorial (solo lectura)
-vector_database_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
+vector_db_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
 
 # Servicio de embeddings
 embedder_url=http://embedder:8100
 embedder_timeout_seconds=10
 ```
 
-El arranque falla rápido si falta `vector_database_url` o `embedder_url`.
+El arranque falla rápido si falta `vector_db_url` o `embedder_url`.
 
 En desarrollo, `docker-compose.dev.yml` fija `ia_trainer_skill=trainer-dev`. Esa variante desarrolla
 bien la semana 1 y deriva las otras tres, con un máximo de 3 ejercicios por día. Sirve para probar

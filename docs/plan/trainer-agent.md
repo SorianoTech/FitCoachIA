@@ -12,7 +12,7 @@ Pydantic estricto.
 ## Decisiones tomadas
 
 | Decisión | Valor | Motivo |
-|---|---|---|
+| --- | --- | --- |
 | Disparador | Comando `/train` | Explícito, permite regenerar, aísla el agente para tests. |
 | Interacción | One-shot + preguntas posteriores | Una llamada genera el plan; después el usuario puede preguntar o pedir ajustes. |
 | Embeddings de consulta | Servicio `embedder` independiente | `metadata_vector` es `vector(384)` de `all-MiniLM-L6-v2`; hay que usar **el mismo modelo**. Meter `sentence-transformers` en la app arrastraría torch (~2-3 GB) al contenedor del webhook. |
@@ -109,7 +109,7 @@ La app nunca escribe en esta base de datos.
 ### 2.3 Composes
 
 - `docker-compose.dev.yml`: añadir el servicio `embedder-dev` y las variables
-  `embedder_url` y `vector_database_url` al servicio de la app, con
+  `embedder_url` y `vector_db_url` al servicio de la app, con
   `depends_on: embedder-dev: {condition: service_healthy}`.
 - `docker-compose.yml` (prod): equivalente, con `restart: unless-stopped`.
 - `Makefile`: targets `vector-up`, `vector-down`, `vector-logs` para
@@ -131,7 +131,7 @@ class EmbedderSettings(BaseSettings):         # env_prefix="embedder_"
 Y en `IASettings` (prefijo `ia_`):
 
 | Variable | Defecto | Uso |
-|---|---|---|
+| --- | --- | --- |
 | `ia_trainer_skill` | `trainer` | Skill que se inyecta en el prompt del entrenador. |
 | `ia_trainer_max_tokens` | `4096` | Un mesociclo completo no cabe en el `ia_max_tokens` de la entrevista. |
 | `ia_rag_top_k` | `8` | Ejercicios recuperados por grupo muscular. |
@@ -147,7 +147,7 @@ Actualizar `.env.example` y `docs/how-to.md` con todas ellas.
 ### 4.1 Refactor previo (habilita el reuso, sin cambiar comportamiento)
 
 | Cambio | Ficheros |
-|---|---|
+| --- | --- |
 | `domain/interviewer_errors.py` → `domain/agent_errors.py`, con `AgentError`/`AgentErrorCode`. Los **valores string se mantienen idénticos** para no invalidar filas de `token_usage` ni los paneles de Grafana. | 4 imports a actualizar: `interviewer_chain.py`, `conversation_service.py`, `test_interviewer_chain.py`, `test_conversation_service.py` |
 | Extraer `service/agent/llm_chain.py` con `BaseLLMChain`: `_invoke`, `_extract_usage`, `_error_for_exception`, `_status_error`, `_to_langchain_messages` y un `_validate_or_repair(raw, model_cls)` genérico (la reparación JSON de una pasada, hoy embebida en `InterviewerChain`). | `interviewer_chain.py` pasa a ser una subclase delgada |
 | `conversation_messages` necesita una columna `agent` (`String(32)`, default `'interviewer'`) e índice `(chat_id, agent, id)`. Sin ella, el modo preguntas del entrenador heredaría el historial de la entrevista. | `models.py`, repositorio, migración |
@@ -328,7 +328,7 @@ Métodos nuevos en `ConversationRepository` (Protocol) y en
 - Tabla de enrutado del mensaje sin comando:
 
 | `interview_sessions.status` | `training_sessions.status` | Destino |
-|---|---|---|
+| --- | --- | --- |
 | `null` | — | arranca entrevista (comportamiento actual) |
 | `in_progress` | — | interviewer (actual) |
 | `completed` | `null` | mensaje: "usa /train para tu plan" |
@@ -337,6 +337,7 @@ Métodos nuevos en `ConversationRepository` (Protocol) y en
   Esto sustituye al `INTERVIEW_COMPLETED_MESSAGE` incondicional de hoy
   (`conversation_service.py:143`): es un cambio de comportamiento y hay que
   documentarlo.
+
 - `/train` sin perfil → `NO_PROFILE_MESSAGE`. Con perfil → genera el plan.
 - El span `conversation.turn` marca `agent=trainer` y añade los atributos
   `rag.exercises_retrieved`, `rag.latency_ms` y `rag.degraded`.
@@ -358,7 +359,7 @@ umbral de cobertura del 80 % (`pyproject.toml`).
 ### 5.1 Unitarios nuevos
 
 | Fichero | Casos |
-|---|---|
+| --- | --- |
 | `test_trainer_plan.py` | 4 semanas exactas y numeradas; `days` == `days_per_week`; `status="plan"` exige `plan`+`report`; `status="answer"` los prohíbe; enums inválidos rechazados. |
 | `test_trainer_chain.py` | Prompt compuesto (system + rag + perfil); plan válido; reparación JSON de una pasada; rechazo cuando un `exercise_id` no está en el conjunto recuperado; captura de `TokenUsage` incluida la llamada de reparación; mapeo de cada excepción de OpenAI a su `AgentErrorCode`. |
 | `test_rag_context.py` | Formato del bloque; truncado de instrucciones; top-k respetado; caracteres de control eliminados; lista vacía → bloque vacío sin romper. |
@@ -376,7 +377,7 @@ umbral de cobertura del 80 % (`pyproject.toml`).
   `build_trainer_agent` e `insert_context` sobre el prompt del entrenador.
 - `test_settings.py`: nuevas settings y su fallo cuando faltan.
 - `test_webhook.py`: las nuevas dependencias se resuelven y se inyectan.
-- `test_main.py`: el `lifespan` aborta si falta `vector_database_url` o
+- `test_main.py`: el `lifespan` aborta si falta `vector_db_url` o
   `embedder_url`.
 
 ### 5.3 Integración
@@ -399,7 +400,7 @@ fila y que todos los `exercise_id` del plan existen en `exercises`.
 ## 6. Documentación
 
 | Documento | Acción |
-|---|---|
+| --- | --- |
 | `docs/trainer-agent.md` | **Nuevo**, espejo de `docs/interviewer-agent.md`: flujo, contrato JSON, tablas, errores, configuración y componentes. |
 | `docs/vector-db.md` | **Nuevo**: esquema de `exercises`/`exercise_media`, modelo de embeddings y por qué no se puede cambiar sin re-vectorizar, cómo levantar pgVector y pgAdmin, cómo consultar, rol de solo lectura. |
 | `docs/embedder.md` | **Nuevo** (o sección dentro de `vector-db.md`): contrato del servicio, healthcheck, tamaño de imagen, cómo cambiar de modelo. |
@@ -407,7 +408,7 @@ fila y que todos los `exercise_id` del plan existen en `exercises`.
 | `docs/how-to.md` | Nuevas variables de entorno, `make vector-up`, cómo probar `/train` en dev. |
 | `docs/queries-reference.md` | Consultas de `token_usage` y coste desglosadas por `agent`. |
 | `README.md` | Árbol de proyecto con `infra/embedder/` e `infrastructure/vectordb/`; el Agente 2 deja de estar pendiente. |
-| `.env.example` | `vector_database_url`, `embedder_url`, `embedder_timeout_seconds`, `ia_trainer_*`, `ia_rag_top_k` y el comando `train`. |
+| `.env.example` | `vector_db_url`, `embedder_url`, `embedder_timeout_seconds`, `ia_trainer_*`, `ia_rag_top_k` y el comando `train`. |
 
 ## 7. Orden de trabajo sugerido (una PR por bloque)
 
@@ -427,7 +428,7 @@ fila y que todos los `exercise_id` del plan existen en `exercises`.
 ## 8. Riesgos y puntos abiertos
 
 | Riesgo | Mitigación |
-|---|---|
+| --- | --- |
 | El modelo inventa `exercise_id` que no existen. | Validación cruzada contra el conjunto recuperado más una reparación; si falla, no se persiste nada. |
 | Un mesociclo de 4 semanas se corta por `max_tokens`. | `ia_trainer_max_tokens=4096` como suelo; `trainer-dev` para iterar barato; `llm_output_limit` ya tiene mensaje de usuario. |
 | Latencia: embedder + pgVector + LLM en un solo update de Telegram. | Enviar `PLAN_GENERATING_MESSAGE` antes de la llamada; el webhook ya responde 200 pase lo que pase. Si se acerca al límite de Telegram, mover la generación a una tarea de fondo (fuera del alcance de este plan). |

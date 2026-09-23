@@ -75,7 +75,7 @@ modifica uno, hay que modificar el otro.
 `infra/embedder/` es un FastAPI mínimo que expone el modelo:
 
 | Ruta | Qué hace |
-|---|---|
+| --- | --- |
 | `POST /embed` | `{"texts": ["..."]}` → `{"model": ..., "dimensions": 384, "vectors": [[...]]}` |
 | `GET /health` | 200 solo cuando el modelo está cargado en memoria |
 
@@ -105,7 +105,7 @@ La primera vez, el contenedor aplica en orden alfabético todo lo que hay en
 `infra/vector-db/ddl/`:
 
 | Fichero | Contenido |
-|---|---|
+| --- | --- |
 | `001_2026-09-18_Initial-exercises-load_part-01..08.sql` | Volcado inicial, troceado para respetar el límite de 100 MB por fichero de GitHub. |
 | `002_2026-09-21_readonly-role.sql` | Rol `fitcoach_ro`, de solo lectura, que usa la aplicación. |
 
@@ -117,7 +117,7 @@ La aplicación se conecta con `fitcoach_ro`, no con el rol `fitcoach` del volcad
 `SUPERUSER`). La contraseña sale de `VECTOR_DB_RO_PASSWORD` al inicializar el contenedor:
 
 ```dotenv
-vector_database_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
+vector_db_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
 ```
 
 > **Rotación pendiente:** el volcado inicial incluye el hash SCRAM del rol `fitcoach` en el

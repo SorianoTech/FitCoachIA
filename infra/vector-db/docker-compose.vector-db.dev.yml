@@ -42,7 +42,7 @@ services:
     image: dpage/pgadmin4
     container_name: pgadmin4
     env_file:
-      - .env
+      - .env.dev
     ports:
       - "${PGADMIN_PORT}:80"
     volumes:

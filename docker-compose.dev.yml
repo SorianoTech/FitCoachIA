@@ -64,7 +64,7 @@ services:
     env_file:
       - path: infra/embedder/.env
     ports:
-      - "${EMBEDDER_PORT}:8100"
+      - "${embedder_port}:8100"
     healthcheck:
       # /health solo responde 200 cuando el modelo esta cargado en memoria.
       test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]

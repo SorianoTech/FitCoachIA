@@ -35,7 +35,7 @@ services:
   #   networks:
   #     - fit-coach-net
   #   depends_on:
-  #     pgvector:
+  #     pgvector-dev:
   #       condition: service_healthy
 
   pgadmin-dev:
@@ -57,7 +57,7 @@ services:
       timeout: 10s
       retries: 5
     depends_on:
-      pgvector:
+      pgvector-dev:
         condition: service_healthy
 
 volumes:

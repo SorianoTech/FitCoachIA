@@ -1,7 +1,6 @@
 # Environments
 venv**/
 .env
-.env.*
 .venv
 env-*/
 

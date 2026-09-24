@@ -1,0 +1,71 @@
+name: fitcoach-vector-db
+
+services:
+
+  pgvector-prod:
+    build:
+      context: ./
+      dockerfile: Dockerfile-pgVector
+    container_name: pgvector-prod
+    env_file:
+      - .env.prod
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pgvector-prod_volume:/var/lib/postgresql
+    networks:
+      #- fit-coach-net
+      - proxy-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U fitcoach -d fitcoach" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # fitcoach-db-loader:
+  #   build:
+  #     context: ./
+  #     dockerfile: Dockerfile-db-loader
+  #   container_name: fitcoach-db-loader
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./loader/resources:/media:ro
+  #   networks:
+  #     - fit-coach-net
+  #   depends_on:
+  #     pgvector:
+  #       condition: service_healthy
+
+  pgadmin-prod:
+    image: dpage/pgadmin4
+    container_name: pgadmin-prod
+    env_file:
+      - .env.prod
+    ports:
+      - "${PGADMIN_PORT}:80"
+    volumes:
+      - pgadmin-prod_data:/root/.pgadmin
+    networks:
+      #- fit-coach-net
+      - proxy-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+volumes:
+  pgadmin-prod_data:
+  pgvector-prod_volume:
+
+networks:
+  proxy-network:
+    external: true
+  # fit-coach-net:
+  #   driver: bridge

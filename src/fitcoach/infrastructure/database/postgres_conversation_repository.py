@@ -208,6 +208,7 @@ class PostgresConversationRepository:
         assistant_content: str,
     ) -> int:
         """Append version N+1 and point the session at it. Older plans are kept."""
+        await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
         current_version = await self._session.scalar(
             select(func.max(TrainingPlanRecord.version)).where(
                 TrainingPlanRecord.chat_id == chat_id

@@ -87,5 +87,9 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"at most {MAX_TEXTS} texts per request",
         )
-    vectors = _model.encode(request.texts, show_progress_bar=False).tolist()
+    import asyncio
+
+    vectors = (
+        await asyncio.to_thread(_model.encode, request.texts, show_progress_bar=False)
+    ).tolist()
     return EmbedResponse(model=MODEL_NAME, dimensions=EXPECTED_DIMENSIONS, vectors=vectors)

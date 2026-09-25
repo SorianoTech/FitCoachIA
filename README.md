@@ -9,7 +9,7 @@ El sistema es capaz de transformar una entrevista inicial en un **Plan Personali
 El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquestar cuatro agentes especializados:
 
 *   **Agente 1 (Secretario):** Transcribe entrevistas y genera informes estructurados del cliente.
-*   **Agente 2 (Entrenador):** Diseña planes de entrenamiento optimizados en mesociclos.
+*   **Agente 2 (Entrenador):** Diseña planes de entrenamiento optimizados en mesociclos, anclados a una base de datos vectorial de ejercicios. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
 
@@ -42,18 +42,27 @@ FitCoachIA/
 │   │   ├── infrastructure/
 │   │   │   ├── config/           # Configuración de la aplicación
 │   │   │   ├── database/         # Conexión y setup de base de datos
-│   │   │   ├── ia/               # Clientes y adaptadores de LLMs
-│   │   │   └── prompts/          # Plantillas de prompts por agente
+│   │   │   ├── ia/               # Clientes LLM, skills y cliente de embeddings
+│   │   │   ├── prompts/          # Plantillas de prompts por agente
+│   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
 │   │   ├── repository/           # Acceso a datos (patrón Repository)
 │   │   ├── service/              # Casos de uso y lógica de negocio
 │   │   └── main.py               # Punto de entrada de la aplicación
 │   ├── Dockerfile                # Dockerización de la aplicación
 │   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
+├── infra/
+│   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
+│   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
+│   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
 ├── tests/
-│   ├── unit_test/                     # Tests unitarios
-│   └── it/                       # Tests de integración
+│   ├── unit_test/                # Tests unitarios
+│   ├── it/                       # Tests de integración
+│   └── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
 ├── docs/                         # Documentación técnica
 │   ├── AUTHORS.md
+│   ├── interviewer-agent.md      # Agente 1 (Secretario)
+│   ├── trainer-agent.md          # Agente 2 (Entrenador)
+│   ├── vector-db.md              # Base de datos vectorial y embeddings
 │   ├── Dockerfile-guide.md
 │   └── Makefile.md
 ├── .github/

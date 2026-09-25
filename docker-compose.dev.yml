@@ -4,11 +4,14 @@ name: fitcoach-dev
 services:
   fitcoach-ia-dev:
     container_name: dev-fitcoach-ia
+    restart: unless-stopped
     build:
       context: .
       dockerfile: src/Dockerfile
+    ports:
+      - "${APP_PORT}:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)" ]
       interval: 5m
       timeout: 5s
       retries: 3
@@ -21,12 +24,10 @@ services:
         required: false
       - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
         required: false
-    environment:
-      APP_ENV: dev
-      ia_skill: ${ia_skill:-interviewer-dev}
-      database_url: postgresql+asyncpg://${POSTGRES_USER:-fitcoach}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres-dev:5432/${POSTGRES_DB:-fitcoach}
     depends_on:
       postgres-dev:
+        condition: service_healthy
+      embedder-dev:
         condition: service_healthy
     networks:
       - default
@@ -35,17 +36,43 @@ services:
   postgres-dev:
     container_name: dev-fitcoach-postgres
     image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-fitcoach}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_USER: ${POSTGRES_USER:-fitcoach}
+    env_file:
+      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
+      - path: .env.dev
+        required: false
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
+        required: false
+    ports:
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - fitcoach-dev-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - default
+      - proxy-network
+
+  embedder-dev:
+    container_name: dev-fitcoach-embedder
+    build:
+      context: infra/embedder
+      dockerfile: Dockerfile-embedder
+    restart: unless-stopped
+    env_file:
+      - path: infra/embedder/.env
+    ports:
+      - "${embedder_port}:8100"
+    healthcheck:
+      # /health solo responde 200 cuando el modelo esta cargado en memoria.
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
     networks:
       - default
       - proxy-network

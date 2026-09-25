@@ -5,15 +5,15 @@
 **Tipo**: Timeseries | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  date_trunc('hour', created_at) AS time, 
-  agent, 
-  sum(total_tokens) AS tokens 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY 1, agent 
+SELECT
+  date_trunc('hour', created_at) AS time,
+  agent,
+  sum(total_tokens) AS tokens
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY 1, agent
 ORDER BY 1
 ```
 
@@ -24,18 +24,18 @@ ORDER BY 1
 **Tipo**: Table | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  chat_id AS telegram_user_id, 
-  agent, 
-  sum(total_tokens) AS total_tokens, 
-  count(*) AS llamadas, 
-  round(avg(latency_ms)) AS latencia_media_ms 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY chat_id, agent 
-ORDER BY total_tokens DESC 
+SELECT
+  chat_id AS telegram_user_id,
+  agent,
+  sum(total_tokens) AS total_tokens,
+  count(*) AS llamadas,
+  round(avg(latency_ms)) AS latencia_media_ms
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY chat_id, agent
+ORDER BY total_tokens DESC
 LIMIT 20
 ```
 
@@ -46,15 +46,15 @@ LIMIT 20
 **Tipo**: Timeseries | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  date_trunc('hour', created_at) AS time, 
-  agent, 
-  avg(latency_ms) AS latencia_ms 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY 1, agent 
+SELECT
+  date_trunc('hour', created_at) AS time,
+  agent,
+  avg(latency_ms) AS latencia_ms
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY 1, agent
 ORDER BY 1
 ```
 
@@ -65,15 +65,15 @@ ORDER BY 1
 **Tipo**: Timeseries | **DataSource**: PostgreSQL
 
 ```sql
-SELECT 
-  date_trunc('hour', created_at) AS time, 
-  status, 
-  count(*) AS llamadas 
-FROM token_usage 
-WHERE $__timeFilter(created_at) 
-  AND agent IN ($agent) 
-  AND chat_id::text IN ($telegram_user_id) 
-GROUP BY 1, status 
+SELECT
+  date_trunc('hour', created_at) AS time,
+  status,
+  count(*) AS llamadas
+FROM token_usage
+WHERE $__timeFilter(created_at)
+  AND agent IN ($agent)
+  AND chat_id::text IN ($telegram_user_id)
+GROUP BY 1, status
 ORDER BY 1
 ```
 
@@ -336,3 +336,41 @@ labels_masker {
 - Docs Grafana: https://grafana.com/docs/grafana/latest/datasources/loki/
 - Docs LogQL: https://grafana.com/docs/loki/latest/logql/
 - Docs PostgreSQL datasource: https://grafana.com/docs/grafana/latest/datasources/postgres/
+
+
+## 📊 Coste y consumo por agente
+
+`token_usage.agent` distingue cada agente (`interviewer`, `trainer`, ...), así que las consultas de
+coste se desglosan sin tocar el esquema.
+
+```sql
+-- Tokens y coste por agente en los últimos 7 días
+SELECT agent,
+       count(*)              AS llamadas,
+       sum(total_tokens)     AS tokens,
+       round(sum(cost_usd), 4) AS coste_usd
+FROM token_usage
+WHERE created_at > now() - interval '7 days'
+GROUP BY agent
+ORDER BY tokens DESC;
+
+-- Coste medio de generar un plan (el entrenador hace 1 llamada, 2 si repara)
+SELECT round(avg(total_tokens)) AS tokens_medios,
+       round(avg(cost_usd), 6)  AS coste_medio_usd,
+       round(avg(latency_ms))   AS latencia_media_ms
+FROM token_usage
+WHERE agent = 'trainer' AND status = 'success';
+
+-- Cuántas veces el entrenador necesitó reparación (ids inventados o JSON inválido)
+SELECT status, count(*)
+FROM token_usage
+WHERE agent = 'trainer'
+GROUP BY status
+ORDER BY 2 DESC;
+
+-- Planes generados por usuario y versión vigente
+SELECT chat_id, count(*) AS versiones, max(version) AS vigente
+FROM training_plans
+GROUP BY chat_id
+ORDER BY versiones DESC;
+```

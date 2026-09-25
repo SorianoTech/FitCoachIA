@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# El modelo vive dentro de la imagen: asi el arranque no depende de HuggingFace
+# ni de la red, y el healthcheck pasa en segundos en vez de minutos.
+ENV HF_HOME=/opt/hf
+ENV EMBEDDER_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Descarga el modelo en build. Si cambias EMBEDDER_MODEL, reconstruye la imagen.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDER_MODEL}')"
+
+COPY app.py .
+
+EXPOSE 8100
+
+CMD ["fastapi", "run", "app.py", "--port", "8100"]

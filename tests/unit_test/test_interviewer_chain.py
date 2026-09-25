@@ -6,8 +6,8 @@ import openai
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.conversation import ConversationMessage
-from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerResultError
 
 
@@ -51,7 +51,7 @@ async def test_raises_when_model_response_is_not_text(model: MagicMock) -> None:
     with pytest.raises(InterviewerResultError) as exc_info:
         await chain.respond("Hola", [])
 
-    assert exc_info.value.code is InterviewerErrorCode.INVALID_OUTPUT
+    assert exc_info.value.code is AgentErrorCode.INVALID_OUTPUT
 
 
 @pytest.mark.asyncio
@@ -128,7 +128,7 @@ class TestTokenUsageCapture:
         assert len(reply.token_usages) == 2
         assert reply.token_usages[0].total_tokens == 23
         assert reply.token_usages[1].total_tokens == 36
-        assert reply.token_usages[0].status == InterviewerErrorCode.INVALID_OUTPUT.value
+        assert reply.token_usages[0].status == AgentErrorCode.INVALID_OUTPUT.value
         assert reply.token_usages[1].status == "success"
         assert reply.token_usages[0].latency_ms >= 0
         assert reply.token_usages[1].latency_ms >= 0
@@ -158,53 +158,53 @@ def _api_status_error(
     [
         (
             openai.LengthFinishReasonError(completion=MagicMock()),
-            InterviewerErrorCode.OUTPUT_LIMIT,
+            AgentErrorCode.OUTPUT_LIMIT,
         ),
         (
             _api_status_error(openai.AuthenticationError, 401),
-            InterviewerErrorCode.AUTHENTICATION,
+            AgentErrorCode.AUTHENTICATION,
         ),
         (
             _api_status_error(openai.PermissionDeniedError, 403),
-            InterviewerErrorCode.AUTHENTICATION,
+            AgentErrorCode.AUTHENTICATION,
         ),
         (
             _api_status_error(openai.RateLimitError, 429),
-            InterviewerErrorCode.RATE_LIMITED,
+            AgentErrorCode.RATE_LIMITED,
         ),
         (
             _api_status_error(openai.BadRequestError, 400),
-            InterviewerErrorCode.INVALID_REQUEST,
+            AgentErrorCode.INVALID_REQUEST,
         ),
         (
             _api_status_error(openai.APIStatusError, 402),
-            InterviewerErrorCode.QUOTA,
+            AgentErrorCode.QUOTA,
         ),
         (
             _api_status_error(openai.InternalServerError, 503),
-            InterviewerErrorCode.UNAVAILABLE,
+            AgentErrorCode.UNAVAILABLE,
         ),
         (
             openai.APITimeoutError(
                 request=httpx.Request("POST", "https://example.invalid/v1/chat/completions")
             ),
-            InterviewerErrorCode.TIMEOUT,
+            AgentErrorCode.TIMEOUT,
         ),
         (
             openai.APIConnectionError(
                 request=httpx.Request("POST", "https://example.invalid/v1/chat/completions")
             ),
-            InterviewerErrorCode.UNAVAILABLE,
+            AgentErrorCode.UNAVAILABLE,
         ),
     ],
 )
 async def test_maps_openai_failures_to_safe_error_codes(
-    model: MagicMock, error: Exception, expected_code: InterviewerErrorCode
+    model: MagicMock, error: Exception, expected_code: AgentErrorCode
 ) -> None:
     model.ainvoke.side_effect = error
     chain = InterviewerChain(model)
 
-    with pytest.raises(InterviewerError) as exc_info:
+    with pytest.raises(AgentError) as exc_info:
         await chain.respond("Hola", [])
 
     assert exc_info.value.code is expected_code

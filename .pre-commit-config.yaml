@@ -21,11 +21,14 @@ repos:
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace        # elimina espacios en blanco al final de línea
+        exclude: ^infra/vector-db/ddl/.*[.]sql$   # los dumps COPY son datos: no tocar espacios
       - id: end-of-file-fixer           # asegura un único salto de línea al final del fichero
+        exclude: ^infra/vector-db/ddl/.*[.]sql$
       - id: check-yaml                  # valida sintaxis YAML
       - id: check-merge-conflict        # bloquea commits con marcadores de conflicto
       - id: check-added-large-files     # evita subir binarios pesados al repo
         args: ['--maxkb=500']
+        exclude: ^infra/vector-db/(ddl/.*[.]sql|loader/resources/)$   # dumps troceados <100MB
       - id: no-commit-to-branch         # impide commits directos a ramas protegidas
         args: ['--branch', 'main', '--branch', 'develop']
 

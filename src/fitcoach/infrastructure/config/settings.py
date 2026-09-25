@@ -61,6 +61,14 @@ class IASettings(BaseSettings):
     history_window_messages: int = 20
     skill: str = "interviewer"
 
+    # --- Trainer (agent 2) ---
+    trainer_skill: str = "trainer"
+    # A full 4-week mesocycle does not fit in the interview's max_tokens.
+    trainer_max_tokens: int = 4096
+    trainer_history_window_messages: int = 10
+    # Exercises retrieved from the vector DB per muscle group.
+    rag_top_k: int = 8
+
 
 class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -73,9 +81,49 @@ class DatabaseSettings(BaseSettings):
     url: str
 
 
+class VectorDatabaseSettings(BaseSettings):
+    """Connection to the read-only pgVector instance holding the exercises corpus.
+
+    Deliberately separate from ``DatabaseSettings``: it is a different server,
+    reached with a read-only role, and it never takes part in a business
+    transaction.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file_encoding="utf-8",
+        env_prefix="vector_database_",
+        extra="ignore",
+    )
+
+    url: str
+
+
+class EmbedderSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file_encoding="utf-8",
+        env_prefix="embedder_",
+        extra="ignore",
+    )
+
+    url: str
+    timeout_seconds: int = 10
+
+
 @lru_cache
 def get_database_settings() -> DatabaseSettings:
     return DatabaseSettings()
+
+
+@lru_cache
+def get_vector_database_settings() -> VectorDatabaseSettings:
+    return VectorDatabaseSettings()
+
+
+@lru_cache
+def get_embedder_settings() -> EmbedderSettings:
+    return EmbedderSettings()
 
 
 @lru_cache

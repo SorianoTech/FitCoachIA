@@ -19,8 +19,8 @@ from fitcoach.domain.interviewer_profile import InterviewerProfile
 
 logger = logging.getLogger(__name__)
 
-# Everything except tab/newline: keeps the block readable and un-spoofable.
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# Strip C0 controls so each catalogue record remains on one prompt line.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 MAX_INSTRUCTION_CHARS = 400
 
 # Equipment values in the corpus for someone training without a gym. Used as a

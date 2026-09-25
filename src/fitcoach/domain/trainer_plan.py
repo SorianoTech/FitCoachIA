@@ -57,6 +57,12 @@ class TrainingPlan(PlanModel):
         weeks = [week.week for week in self.weeks]
         if weeks != list(range(1, MESOCYCLE_WEEKS + 1)):
             raise ValueError(f"A mesocycle needs weeks 1..{MESOCYCLE_WEEKS} in order, got {weeks}")
+        intensities = [week.intensity for week in self.weeks]
+        expected_intensities = ["accumulation", "intensification", "peak", "deload"]
+        if intensities != expected_intensities:
+            raise ValueError(
+                f"A mesocycle needs intensities {expected_intensities}, got {intensities}"
+            )
         for week in self.weeks:
             if len(week.days) != self.days_per_week:
                 raise ValueError(

@@ -95,12 +95,16 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
                 "%s result invalid; raw model output: %s", turn_type.__name__, result.content
             )
             logger.debug("%s validation error: %s", turn_type.__name__, validation_error)
+            # `except ... as` borra el nombre al salir del bloque: se copia aqui.
+            repair_hint = str(validation_error)
             if result.usage is not None:
                 token_usages[0] = replace(result.usage, status=AgentErrorCode.INVALID_OUTPUT.value)
 
         logger.debug("%s result was invalid; requesting a repair", turn_type.__name__)
         try:
-            repair = await self._invoke(self._repair_messages(result.content, turn_type))
+            repair = await self._invoke(
+                self._repair_messages(result.content, turn_type, repair_hint)
+            )
         except AgentError as error:
             error.token_usages = [*token_usages, *error.token_usages]
             raise
@@ -116,13 +120,16 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
             raise InvalidModelOutputError(token_usages) from repair_error
 
     @staticmethod
-    def _repair_messages(raw_result: str, turn_type: type[TurnT]) -> list[BaseMessage]:
+    def _repair_messages(raw_result: str, turn_type: type[TurnT], errors: str) -> list[BaseMessage]:
+        """El esquema solo no basta: sin los errores concretos el modelo tiene que
+        encontrar el fallo por su cuenta en un JSON grande, y suele repetirlo."""
         return [
             SystemMessage(
                 content=(
                     "Return only a valid JSON object matching this JSON schema. Do not return "
                     f"Markdown or prose. Schema: {turn_type.model_json_schema()}. "
-                    "Correct all missing, invalid, and inconsistent fields."
+                    "Fix exactly these validation errors, leaving every valid field untouched:\n"
+                    f"{errors}"
                 )
             ),
             HumanMessage(content=raw_result),

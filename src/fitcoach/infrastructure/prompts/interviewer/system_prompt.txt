@@ -90,6 +90,9 @@ STRICT JSON CONTRACT:
 
 VALUE DISCIPLINE:
 - Use the exact enum values defined by the schema, not approximations.
+- An empty nested object is `{}` with its own fields empty, NEVER `[]`. With no supplements:
+  `"supplementation": {"current": [], "monthly_budget_usd": null, "restrictions": []}` — not `[]`.
+  The same applies to every object in the profile: only `injuries` and other declared lists use `[]`.
 - `goal.primary` must be one of: `lose_fat`, `gain_muscle`, `performance`.
 - `activity.neat_level` must be one of: `sedentary`, `active`, `very_physical`.
 - `digestive_energy.bloating_frequency` must be one of: `never`, `sometimes`, `always`.

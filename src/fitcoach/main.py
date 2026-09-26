@@ -1,18 +1,23 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from telegram.error import BadRequest, InvalidToken, NetworkError, TelegramError
 
 from fitcoach.api.webhook import webhook
-from fitcoach.infrastructure.bot.telegram_bot import to_bot_command
+from fitcoach.infrastructure.bot.telegram_bot import get_bot, to_bot_command
 from fitcoach.infrastructure.config.logging_config import configure_logging
 from fitcoach.infrastructure.config.settings import (
+    Settings,
     get_database_settings,
     get_ia_settings,
     get_settings,
 )
 from fitcoach.infrastructure.database.session import close_database
 from fitcoach.infrastructure.observability.telemetry import configure_telemetry, shutdown_telemetry
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -25,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         to_bot_command(raw)  # ValueError if a pair is malformed
     get_database_settings()  # ValidationError if the PostgreSQL URL is missing
     configure_telemetry(app)  # no-op unless otel_exporter_otlp_endpoint is set
+    await _register_webhook(app, settings)
     try:
         yield
     finally:
@@ -48,3 +54,44 @@ async def root() -> dict[str, str]:
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "healthy"}
+
+
+async def _register_webhook(app: FastAPI, settings: Settings) -> None:
+    """Registra el webhook con su secreto; aborta el arranque si no se puede."""
+    path = app.url_path_for("telegram_webhook")
+    expected_url = f"{settings.bot_telegram_webhook_base_url.rstrip('/')}{path}"
+
+    logger.info("[webhook 1/4] resolviendo URL de registro")
+    try:
+        bot = await get_bot()
+        logger.info("[webhook 2/4] bot autenticado en Telegram")
+
+        await bot.set_webhook(
+            url=expected_url,
+            secret_token=settings.bot_telegram_secret_token.get_secret_value(),
+            allowed_updates=["message", "edited_message"],
+            drop_pending_updates=False,
+        )
+        logger.info("[webhook 3/4] setWebhook aceptado con secreto")
+
+        info = await bot.get_webhook_info()
+    except InvalidToken as exc:
+        raise RuntimeError("Token invalido: Telegram no reconoce el bot") from exc
+    except BadRequest as exc:
+        raise RuntimeError(
+            f"Telegram rechazo la URL {expected_url!r}: {exc}. Revisar la variable url definida en el entorno"
+        ) from exc
+    except NetworkError as exc:
+        raise RuntimeError(f"no se pudo contactar con la API de Telegram: {exc}") from exc
+
+    except TelegramError as exc:
+        raise RuntimeError(f"fallo registrando el webhook: {exc}") from exc
+
+    if info.url != expected_url:
+        raise RuntimeError(
+            f"webhook mal registrado: Telegram apunta a {info.url!r}, esperado {expected_url!r}"
+        )
+    logger.info("[webhook 4/4] registro confirmado por Telegram")
+
+    if info.last_error_message:
+        logger.warning("Telegram reporta un error de entrega previo")

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Protocol
 
 from fitcoach.domain.conversation import ConversationMessage
@@ -39,3 +40,5 @@ class ConversationRepository(Protocol):
         status: str,
         conversation_message_id: int | None,
     ) -> None: ...
+
+    async def tokens_used_since(self, chat_id: int, since: datetime) -> int: ...

@@ -60,7 +60,7 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
             response = await self._model.ainvoke(messages)
         except Exception as exc:
             error = self._error_for_exception(exc)
-            error.token_usages = [self._failed_usage(error.code, started)]
+            error.token_usages = [self._usage_from_exception(exc, error.code, started)]
             raise error from exc
         if not isinstance(response.content, str):
             raise InvalidModelOutputError([
@@ -127,6 +127,39 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
             ),
             HumanMessage(content=raw_result),
         ]
+
+    def _usage_from_exception(
+        self, exc: Exception, code: AgentErrorCode, started: float
+    ) -> TokenUsage:
+        """Real counts when the provider attached them to the exception.
+
+        ``LengthFinishReasonError`` carries the completion that exhausted the
+        budget: esos tokens se facturaron, asi que registrar ceros ocultaria los
+        fallos mas caros al coste y al limitador de consumo. ``reasoning_tokens``
+        solo se registra en el log: va dentro de ``completion_tokens`` y sumarlo
+        en otro campo seria contarlo dos veces.
+        """
+        usage = getattr(getattr(exc, "completion", None), "usage", None)
+        if usage is None:
+            return self._failed_usage(code, started)
+
+        details = getattr(usage, "completion_tokens_details", None)
+        logger.warning(
+            "%s con consumo real: prompt=%s completion=%s (razonamiento=%s) total=%s",
+            code.value,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            getattr(details, "reasoning_tokens", "?"),
+            usage.total_tokens,
+        )
+        return TokenUsage(
+            model=self._model_name,
+            prompt_tokens=usage.prompt_tokens or 0,
+            completion_tokens=usage.completion_tokens or 0,
+            total_tokens=usage.total_tokens or 0,
+            status=code.value,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+        )
 
     def _failed_usage(self, code: AgentErrorCode, started: float) -> TokenUsage:
         return TokenUsage(

@@ -17,7 +17,7 @@ from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
-from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE
+from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE, TrainerAction
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent import agent_factory
@@ -303,7 +303,9 @@ class ConversationService:
         try:
             reply = await self._trainer.generate_plan(profile, exercises)
         except AgentError as exc:
-            await self._record_trainer_error(ctx, chat_id, message_thread_id, exc, started)
+            await self._record_trainer_error(
+                ctx, chat_id, message_thread_id, TrainerAction.GENERATE_PLAN, exc, started
+            )
             return
         except Exception:
             logger.exception(f"{ctx} fallo al invocar al entrenador")
@@ -318,7 +320,12 @@ class ConversationService:
             logger.warning(f"{ctx} el entrenador no devolvio un plan: status={turn.status}")
             await self._send(chat_id, message_thread_id, turn.reply)
             await self._record_token_usage(
-                ctx, chat_id, None, reply.token_usages, elapsed_ms, AgentType.TRAINER.value
+                ctx,
+                chat_id,
+                None,
+                reply.token_usages,
+                elapsed_ms,
+                AgentType.TRAINER.value,
             )
             return
 
@@ -374,7 +381,9 @@ class ConversationService:
         try:
             reply = await self._trainer.answer(user_message, stored_plan.plan, history, exercises)
         except AgentError as exc:
-            await self._record_trainer_error(ctx, chat_id, message_thread_id, exc, started)
+            await self._record_trainer_error(
+                ctx, chat_id, message_thread_id, TrainerAction.ANSWER_PLAN, exc, started
+            )
             return
         except Exception:
             logger.exception(f"{ctx} fallo al invocar al entrenador")
@@ -405,6 +414,7 @@ class ConversationService:
         ctx: str,
         chat_id: int,
         message_thread_id: int | None,
+        action: TrainerAction,
         exc: AgentError,
         started: float,
     ) -> None:
@@ -418,7 +428,11 @@ class ConversationService:
             AgentType.TRAINER.value,
         )
         logger.warning(
-            "%s fallo controlado del entrenador code=%s retryable=%s", ctx, exc.code, exc.retryable
+            "%s fallo controlado del entrenador --> action=%s, code=%s retryable=%s",
+            ctx,
+            action,
+            exc.code,
+            exc.retryable,
         )
         await self._send(chat_id, message_thread_id, self._message_for_agent_error(exc.code))
 

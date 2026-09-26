@@ -13,7 +13,12 @@ from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile, InterviewerTurn
 from fitcoach.domain.token_usage import TokenUsage
-from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE, TrainerTurn, TrainingPlan
+from fitcoach.domain.trainer_plan import (
+    TRAINING_STATUS_ACTIVE,
+    TrainerAction,
+    TrainerTurn,
+    TrainingPlan,
+)
 from fitcoach.repository.conversation_repository import (
     ConversationRepository,
     StoredTrainingPlan,
@@ -443,7 +448,7 @@ class TestTrainerFlow:
     def _plan_reply() -> TrainerReply:
         return TrainerReply(
             turn=TrainerTurn(
-                status="plan",
+                status=TrainerAction.GENERATE_PLAN,
                 reply="Listo",
                 report="Tu plan de 4 semanas",
                 plan=TrainingPlan.model_validate(build_plan_payload()),
@@ -570,7 +575,7 @@ class TestTrainerFlow:
     ) -> None:
         mock_conversation_repository.get_interviewer_profile.return_value = profile
         mock_trainer.generate_plan.return_value = TrainerReply(
-            turn=TrainerTurn(status="answer", reply="No puedo con este catalogo"),
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="No puedo con este catalogo"),
             token_usages=[],
         )
 
@@ -689,7 +694,7 @@ class TestFreeMessageRouting:
         mock_conversation_repository.get_interviewer_profile.return_value = profile
         mock_conversation_repository.get_recent.return_value = []
         mock_trainer.answer.return_value = TrainerReply(
-            turn=TrainerTurn(status="answer", reply="Porque progresas mejor"),
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Porque progresas mejor"),
             token_usages=[],
         )
 
@@ -717,7 +722,7 @@ class TestFreeMessageRouting:
         mock_conversation_repository.get_interviewer_profile.return_value = profile
         mock_conversation_repository.get_recent.return_value = []
         mock_trainer.answer.return_value = TrainerReply(
-            turn=TrainerTurn(status="answer", reply="Claro"), token_usages=[]
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Claro"), token_usages=[]
         )
 
         await routed_service.handle_update(_text_update(456, "duda"))
@@ -751,7 +756,8 @@ class TestFreeMessageRouting:
         mock_conversation_repository.get_interviewer_profile.return_value = profile
         mock_conversation_repository.get_recent.return_value = []
         mock_trainer.answer.return_value = TrainerReply(
-            turn=TrainerTurn(status="answer", reply="Te respondo igualmente"), token_usages=[]
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Te respondo igualmente"),
+            token_usages=[],
         )
 
         await service.handle_update(_text_update(456, "duda"))

@@ -5,6 +5,7 @@ allow is rejected here rather than handed to the user, so a hallucinated plan
 never reaches Telegram or the database.
 """
 
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -83,10 +84,17 @@ class TrainingPlan(PlanModel):
         }
 
 
+class TrainerAction(StrEnum):
+    """Que hizo el entrenador en un turno. Los valores son los de ``TrainerTurn.status``."""
+
+    GENERATE_PLAN = "plan"
+    ANSWER_PLAN = "answer"
+
+
 class TrainerTurn(PlanModel):
     """``plan`` delivers a new mesocycle; ``answer`` is a follow-up reply."""
 
-    status: Literal["plan", "answer"]
+    status: TrainerAction
     reply: str = Field(min_length=1)
     report: str | None = None
     plan: TrainingPlan | None = None

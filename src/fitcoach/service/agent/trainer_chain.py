@@ -126,7 +126,7 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
         temperature=settings.temperature,
         # A full mesocycle needs far more room than an interview question.
         max_tokens=settings.trainer_max_tokens or None,
-        timeout=settings.timeout_seconds or None,
+        timeout=settings.trainer_timeout or settings.timeout_seconds,
         model_kwargs={"response_format": {"type": "json_object"}},
     )
 

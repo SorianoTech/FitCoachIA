@@ -56,13 +56,14 @@ class IASettings(BaseSettings):
     token: str
     model: str
     temperature: float
-    timeout_seconds: int = 0
+    timeout_seconds: int = 60
     max_tokens: int = 0
     history_window_messages: int = 20
     skill: str = "interviewer"
 
     # --- Trainer (agent 2) ---
     trainer_skill: str = "trainer"
+    trainer_timeout: int = 60
     # A full 4-week mesocycle does not fit in the interview's max_tokens.
     trainer_max_tokens: int = 4096
     trainer_history_window_messages: int = 10

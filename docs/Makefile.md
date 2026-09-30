@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # Comandos `make`
 
 `make help` lista todo con una descripción corta. Este documento explica lo que no cabe ahí.
@@ -128,3 +129,42 @@ No son lo mismo y conviven:
 - **`VERSION`** (mayúsculas) — la que interpola el Compose de producción en el tag de la imagen.
 
 Por eso `make prod-up VERSION=0.3.0` lleva mayúsculas y `make build version=0.3.0` minúsculas.
+=======
+# Makefile
+
+El `Makefile` es el punto de entrada común en local y en los workflows de GitHub (`.github/`). Ejecuta `make help` para ver el listado.
+
+## Imagen y contenedor de la aplicación
+
+*   `make build [version=x.y.z]`: construye la imagen (`src/Dockerfile`, contexto en la raíz del repo). Por defecto `latest`; si se indica versión, etiqueta también `latest`.
+*   `make run [version=x.y.z] [log_level=...]`: arranca el contenedor en segundo plano (puerto 8000) con el fichero `.env`.
+*   `make stop`: detiene y elimina el contenedor.
+*   `make logs`: muestra los logs del contenedor en tiempo real.
+*   `make container`: lista todos los contenedores (en ejecución y detenidos).
+*   `make clean`: detiene el contenedor y elimina todas las imágenes locales de la aplicación.
+*   `make clean-image [version=x.y.z]`: elimina solo la imagen de esa versión (por defecto `latest`).
+*   `make clean-images`: elimina todas las imágenes locales de la aplicación.
+*   `make all`: limpia, construye y arranca.
+
+## Tests
+
+*   `make tests`: levanta `tests/docker-compose-test.yml`, ejecuta unitarios e integración con cobertura (falla si es < 80 %) y lo detiene al terminar. En CI se invoca como `make tests PYTEST=pytest`.
+
+## Entornos (Docker Compose)
+
+*   `make dev-up | dev-down | dev-logs`: entorno de desarrollo (`docker-compose.dev.yml`). Usa `$(ENV_ROOT)/dev/.env.dev` si existe y, si no, `.env.dev` del repositorio.
+*   `make prod-up [VERSION=x.y.z] | prod-down | prod-logs`: producción (`docker-compose.yml`). Requiere `$(ENV_ROOT)/prod/.env.prod` (se puede sustituir con `PROD_ENV_FILE=ruta`). Es el target que ejecuta `deploy.yml`.
+*   `make vector-up | vector-down | vector-logs`: base de datos vectorial (`infra/vector-db`), con su propio ciclo de vida. `vector-down` conserva el volumen a propósito.
+
+## Variables configurables
+
+| Variable | Por defecto | Uso |
+|---|---|---|
+| `version` | `latest` | Versión de la imagen en `build`, `run` y `clean-image` |
+| `VERSION` | `latest` | Versión de la imagen en `prod-up` |
+| `PORT` | `8000` | Puerto del contenedor en `run` |
+| `IT_PORT` | `8001` | Puerto de la aplicación en los tests de integración |
+| `PYTEST` | `.venv/Scripts/pytest.exe` | Ejecutable de pytest en `tests` |
+| `ENV_ROOT` | `/etc/fitcoachia` | Raíz de los ficheros de entorno fuera del repo |
+| `DEV_ENV_FILE` / `PROD_ENV_FILE` | `$(ENV_ROOT)/dev/.env.dev` / `$(ENV_ROOT)/prod/.env.prod` | Fichero de entorno de cada entorno |
+>>>>>>> Stashed changes

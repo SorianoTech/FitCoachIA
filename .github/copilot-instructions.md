@@ -1,5 +1,6 @@
 # FitCoachIA Copilot Instructions
 
+<<<<<<< Updated upstream
 ## Tooling and validation
 
 - Python 3.12 is the project baseline. Use `uv sync --all-groups` to prepare a local environment; `pyproject.toml` is the dependency source of truth.
@@ -34,3 +35,6 @@
 - `ConversationService` deliberately strips emoji before command detection or LLM input, preserves Telegram forum `message_thread_id` when replying, and includes an update/chat/thread/message/user prefix on its logs. Preserve those behaviors when adding message flows.
 - For tests that exercise cached settings, clear the relevant `lru_cache` functions or construct `Settings`/`IASettings` with `_env_file=None` so local `.env` files cannot affect the result.
 - Follow the existing test layout and naming: `tests/unit_test` for isolated unit tests, `tests/it` for FastAPI/lifespan integration tests, and `test_*.py` / `Test*` / `test_*` discovery names.
+=======
+The project instructions live in [`AGENTS.md`](../AGENTS.md) at the repository root. Read it fully before making any change.
+>>>>>>> Stashed changes

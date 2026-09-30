@@ -19,6 +19,14 @@ def _set_valid_bot_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("bot_telegram_webhook_base_url", "https://example.com")
 
 
+def _set_valid_bot_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("bot_telegram_token", "test-token")
+    monkeypatch.setenv("bot_telegram_url", "http://test-telegram:9999")
+    monkeypatch.setenv("bot_telegram_commands", "a:desc a")
+    monkeypatch.setenv("bot_telegram_secret_token", "test-secret-token")
+    monkeypatch.setenv("bot_telegram_webhook_base_url", "https://example.com")
+
+
 class TestSettingsBotTelegramCommands:
     def test_parses_comma_separated_name_description_pairs(
         self, monkeypatch: pytest.MonkeyPatch

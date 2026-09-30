@@ -510,11 +510,8 @@ class TestWebhookRouteRegistration:
             fitcoach_app.dependency_overrides.pop(get_bot, None)
             fitcoach_app.dependency_overrides.pop(get_conversation_service, None)
 
-        assert response.status_code == 200
-        assert response.json() == {"ok": True}
-        mock_bot.send_message.assert_awaited_once_with(
-            chat_id=123, message_thread_id=None, text=Constants.WELCOME_MESSAGE
-        )
+        assert response.status_code == 403
+        mock_bot.send_message.assert_not_awaited()
 
     def test_webhook_response_route_only_accepts_post(self) -> None:
         response = TestClient(fitcoach_app).get("/webhook/response")

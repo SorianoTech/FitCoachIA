@@ -1,16 +1,19 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Bot, Message, Update
+from telegram.error import RetryAfter
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
 from fitcoach.domain.interviewer_profile import InterviewerTurn
+from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.service import conversation_service
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.conversation_service import (
     ConversationService,
@@ -31,9 +34,20 @@ def mock_interviewer() -> AsyncMock:
     return AsyncMock(spec=InterviewerChain)
 
 
+# Cuota holgada: la mayoria de tests no ejercitan el limite y no deben chocar con el.
+_NO_QUOTA_PRESSURE = UsageLimits(
+    hard_tokens=1_000_000, soft_tokens=900_000, window=timedelta(hours=24)
+)
+# Cuota estrecha para los tests del propio limite: /interview corta en 900, texto libre en 1000.
+_TIGHT_QUOTA = UsageLimits(hard_tokens=1_000, soft_tokens=900, window=timedelta(hours=24))
+
+
 @pytest.fixture
 def mock_conversation_repository() -> AsyncMock:
-    return AsyncMock(spec=ConversationRepository)
+    repository = AsyncMock(spec=ConversationRepository)
+    # Sin esto el mock devuelve otro AsyncMock y la comparacion con el umbral falla.
+    repository.tokens_used_since.return_value = 0
+    return repository
 
 
 @pytest.fixture
@@ -46,6 +60,7 @@ def service(
         bot=mock_bot,
         interviewer=mock_interviewer,
         conversation_repository=mock_conversation_repository,
+        usage_limits=_NO_QUOTA_PRESSURE,
     )
 
 
@@ -232,6 +247,7 @@ class TestPersistentConversation:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
             history_window_messages=12,
         )
 
@@ -264,6 +280,7 @@ class TestPersistentConversation:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Mi respuesta final"))
@@ -293,6 +310,7 @@ class TestPersistentConversation:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Quiero cambiar mi objetivo"))
@@ -319,6 +337,7 @@ class TestInterviewerErrorHandling:
             bot=AsyncMock(spec=Bot),
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Hola"))
@@ -354,6 +373,7 @@ class TestInterviewerErrorHandling:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Hola"))
@@ -399,3 +419,214 @@ class TestUnexpectedErrorHandling:
         await service.handle_update(_text_update(456, "hola"))
 
         assert any("tampoco se pudo avisar al usuario" in r.message for r in caplog.records)
+
+
+class TestTelegramFloodControl:
+    @pytest.mark.asyncio
+    async def test_retries_once_after_a_short_retry_after(
+        self,
+        service: ConversationService,
+        mock_bot: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        slept: list[float] = []
+
+        async def _fake_sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        monkeypatch.setattr(conversation_service.asyncio, "sleep", _fake_sleep)
+        mock_bot.send_message.side_effect = [RetryAfter(2), None]
+
+        await service.handle_update(_text_update(123, "/start"))
+
+        assert mock_bot.send_message.await_count == 2
+        assert slept == [2]
+
+    @pytest.mark.asyncio
+    async def test_gives_up_when_telegram_asks_for_a_long_wait(
+        self,
+        service: ConversationService,
+        mock_bot: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Esperar mas bloquearia la peticion y Telegram reenviaria el update."""
+        slept: list[float] = []
+
+        async def _fake_sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        monkeypatch.setattr(conversation_service.asyncio, "sleep", _fake_sleep)
+        espera = Constants.MAX_TELEGRAM_RETRY_SECONDS + 1
+        mock_bot.send_message.side_effect = RetryAfter(espera)
+        caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
+
+        await service.handle_update(_text_update(123, "/start"))
+
+        assert mock_bot.send_message.await_count == 1
+        assert slept == []
+        assert any("se descarta el envio" in record.message for record in caplog.records)
+
+
+def _quota_service(
+    mock_bot: AsyncMock,
+    mock_interviewer: AsyncMock,
+    mock_conversation_repository: AsyncMock,
+    consumed_tokens: int,
+) -> ConversationService:
+    """Servicio con cuota estrecha y un consumo previo dado para el chat."""
+    mock_conversation_repository.tokens_used_since.return_value = consumed_tokens
+    return ConversationService(
+        bot=mock_bot,
+        interviewer=mock_interviewer,
+        conversation_repository=mock_conversation_repository,
+        usage_limits=_TIGHT_QUOTA,
+    )
+
+
+class TestUsageQuota:
+    @pytest.mark.asyncio
+    async def test_lets_the_turn_through_when_consumption_is_below_the_threshold(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="Cuentame mas"),
+            token_usages=[],
+        )
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 899)
+
+        await service.handle_update(_text_update(456, "Quiero ganar musculo"))
+
+        mock_interviewer.respond.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_blocks_free_text_when_the_hard_threshold_is_reached(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 1_000)
+
+        await service.handle_update(_text_update(456, "Quiero ganar musculo"))
+
+        mock_interviewer.respond.assert_not_awaited()
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.QUOTA_EXCEEDED_MESSAGE,
+        )
+
+    @pytest.mark.asyncio
+    async def test_blocks_a_new_interview_at_the_soft_threshold(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 900)
+
+        await service.handle_update(_text_update(456, "/interview"))
+
+        # Critico: `restart_interview` borra historial y perfil. Cortar despues de
+        # llamarlo destruiria los datos del usuario y ademas le negaria el servicio.
+        mock_conversation_repository.restart_interview.assert_not_awaited()
+        mock_interviewer.respond.assert_not_awaited()
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.QUOTA_SOFT_MESSAGE,
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_blocked_interview_past_the_hard_limit_does_not_promise_a_conversation(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        """El mensaje blando ofrece seguir conversando: solo vale por debajo del limite duro."""
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 1_500)
+
+        await service.handle_update(_text_update(456, "/interview"))
+
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.QUOTA_EXCEEDED_MESSAGE,
+        )
+
+    @pytest.mark.asyncio
+    async def test_free_text_still_works_between_both_thresholds(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        """Degradacion escalonada: se corta lo caro y se deja terminar lo empezado."""
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="Casi terminamos"),
+            token_usages=[],
+        )
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 950)
+
+        await service.handle_update(_text_update(456, "Entreno tres dias"))
+
+        mock_interviewer.respond.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_logs_a_warning_with_the_cause_when_it_blocks(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 1_500)
+        caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
+
+        await service.handle_update(_text_update(456, "Quiero ganar musculo"))
+
+        blocked = [r for r in caplog.records if "cuota superada" in r.message]
+        assert len(blocked) == 1
+        assert "consumido=1500" in blocked[0].message
+        assert "limite=1000" in blocked[0].message
+        assert "456" in blocked[0].message  # el chat_id llega en el contexto
+
+    @pytest.mark.asyncio
+    async def test_does_not_query_consumption_for_commands_that_never_call_the_model(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 99_999)
+
+        await service.handle_update(_text_update(456, "/start"))
+
+        mock_conversation_repository.tokens_used_since.assert_not_awaited()
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.WELCOME_MESSAGE,
+        )
+
+    @pytest.mark.asyncio
+    async def test_asks_for_the_consumption_of_the_configured_window(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 1_000)
+
+        await service.handle_update(_text_update(456, "Quiero ganar musculo"))
+
+        chat_id, since = mock_conversation_repository.tokens_used_since.await_args.args
+        assert chat_id == 456
+        # Debe ser tz-aware: `created_at` es TIMESTAMPTZ y asyncpg no compara naive.
+        assert since.tzinfo is not None
+        assert abs((datetime.now(UTC) - since) - _TIGHT_QUOTA.window) < timedelta(seconds=5)

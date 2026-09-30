@@ -33,11 +33,16 @@ def patched_bot_class(monkeypatch: pytest.MonkeyPatch, mock_bot_instance: AsyncM
     monkeypatch.setattr(
         telegram_bot,
         "get_settings",
+        # _env_file=None: sin esto los campos que falten se rellenan desde el .env
+        # del disco, y el test pasaria en local y fallaria en CI.
         lambda: Settings(
+            _env_file=None,
             app_env="test",
             bot_telegram_token="test-token",  # noqa: S106
             bot_telegram_url="http://test-telegram:9999",
             bot_telegram_commands=["start:Inicia FitCoach", "doubts:Resuelve dudas"],
+            bot_telegram_secret_token="test-secret-token",  # noqa: S106
+            bot_telegram_webhook_base_url="https://example.com",
         ),
     )
     return bot_cls

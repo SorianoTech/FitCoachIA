@@ -73,4 +73,14 @@ Tu nueva vida te espera, ¡Adelante!
     MAX_LOGGED_CHARS: Final = 300
     SLOW_LLM_MS: Final = 30_000
     UNKNOWN_ID: Final = -1
+    # Telegram limita a un mensaje por segundo y chat; esperas mayores no compensan.
+    MAX_TELEGRAM_RETRY_SECONDS: Final = 5
     UNKNOWN_USER: Final = "desconocido"
+
+    QUOTA_SOFT_MESSAGE: Final = (
+        "No puedes iniciar una entrevista nueva por hoy, "
+        "pero puedes seguir con la conversación actual."
+    )
+    QUOTA_EXCEEDED_MESSAGE: Final = (
+        "Has alcanzado el límite de uso por hoy. Vuelve a intentarlo más tarde."
+    )

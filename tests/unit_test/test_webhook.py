@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -7,14 +8,35 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from telegram import Bot
 
+from fitcoach.api.security import verify_telegram_secret
 from fitcoach.api.webhook import get_conversation_service, webhook
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.interviewer_profile import InterviewerTurn
+from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
+from fitcoach.infrastructure.config.settings import Settings, get_settings
 from fitcoach.main import app as fitcoach_app
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.conversation_service import ConversationService
+
+# Cuota holgada: estos tests verifican el endpoint, no el limite de consumo.
+_NO_QUOTA_PRESSURE = UsageLimits(
+    hard_tokens=1_000_000, soft_tokens=900_000, window=timedelta(hours=24)
+)
+
+
+def _test_settings() -> Settings:
+    """Configuracion completa y hermetica: `_env_file=None` ignora el .env del disco."""
+    return Settings(
+        _env_file=None,
+        app_env="test",
+        bot_telegram_token="test-token",  # noqa: S106
+        bot_telegram_url="http://test-telegram:9999",
+        bot_telegram_commands=["start:Inicia FitCoach"],
+        bot_telegram_secret_token="test-secret-token",  # noqa: S106
+        bot_telegram_webhook_base_url="https://example.com",
+    )
 
 
 @pytest.fixture
@@ -29,7 +51,10 @@ def mock_interviewer() -> AsyncMock:
 
 @pytest.fixture
 def mock_conversation_repository() -> AsyncMock:
-    return AsyncMock(spec=ConversationRepository)
+    repository = AsyncMock(spec=ConversationRepository)
+    # Sin esto el mock devuelve otro AsyncMock y la comparacion con el umbral falla.
+    repository.tokens_used_since.return_value = 0
+    return repository
 
 
 @pytest.fixture
@@ -40,10 +65,12 @@ def client(
 ) -> TestClient:
     app = FastAPI()
     app.include_router(webhook)
+    app.dependency_overrides[verify_telegram_secret] = lambda: None
     app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
         bot=mock_bot,
         interviewer=mock_interviewer,
         conversation_repository=mock_conversation_repository,
+        usage_limits=_NO_QUOTA_PRESSURE,
     )
     return TestClient(app)
 
@@ -427,23 +454,59 @@ class TestLogTraceability:
 
 
 class TestWebhookRouteRegistration:
-    def test_webhook_response_route_is_registered_on_the_app(
+    def test_webhook_response_route_rejects_requests_without_the_secret(
         self,
         mock_bot: AsyncMock,
         mock_interviewer: AsyncMock,
         mock_conversation_repository: AsyncMock,
     ) -> None:
+        """Sobre la app real y SIN anular la dependencia: el candado esta puesto.
+
+        El resto de tests del fichero anulan `verify_telegram_secret`, asi que sin
+        esta comprobacion quitar la dependencia del endpoint no rompería nada.
+        """
+        # `verify_telegram_secret` resuelve `get_settings` de verdad: se anula para que
+        # el test no dependa de que exista un .env en la maquina que lo ejecuta.
+        fitcoach_app.dependency_overrides[get_settings] = _test_settings
         fitcoach_app.dependency_overrides[get_bot] = lambda: mock_bot
         fitcoach_app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
         try:
             response = TestClient(fitcoach_app).post(
                 "/webhook/response", json=_text_update(123, "/start")
             )
         finally:
+            fitcoach_app.dependency_overrides.pop(get_settings, None)
+            fitcoach_app.dependency_overrides.pop(get_bot, None)
+            fitcoach_app.dependency_overrides.pop(get_conversation_service, None)
+
+        assert response.status_code == 403
+        mock_bot.send_message.assert_not_awaited()
+
+    def test_webhook_response_route_is_registered_on_the_app(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        fitcoach_app.dependency_overrides[verify_telegram_secret] = lambda: None
+        fitcoach_app.dependency_overrides[get_bot] = lambda: mock_bot
+        fitcoach_app.dependency_overrides[get_conversation_service] = lambda: ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
+        )
+        try:
+            response = TestClient(fitcoach_app).post(
+                "/webhook/response", json=_text_update(123, "/start")
+            )
+        finally:
+            fitcoach_app.dependency_overrides.pop(verify_telegram_secret, None)
             fitcoach_app.dependency_overrides.pop(get_bot, None)
             fitcoach_app.dependency_overrides.pop(get_conversation_service, None)
 

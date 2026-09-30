@@ -110,11 +110,19 @@ está configurada en la app; si no lo está, `configure_telemetry` es un no-op
 - `traces_spanmetrics_latency_bucket` (histograma de latencias, para p50/p95/p99).
 - Métricas de servicio-a-servicio (`service-graph`).
 
-El pipeline `metrics` del Collector ya está montado y escribe a Prometheus por
-remote-write, pero de momento no recibe nada. Se activará cuando la app cree su
-`MeterProvider` (ver [plan/plan-metricas-custom.md](plan/plan-metricas-custom.md)).
-Ese plan también decide apagar el `span-metrics` de Tempo para no medir lo mismo
-dos veces, así que esta sección cambiará cuando se ejecute.
+Además de las dimensiones por defecto (`service`, `span_name`, `span_kind`, `status_code`),
+`tempo.yml` añade `command`, `agent` y `deployment.environment.name` (en Prometheus,
+`deployment_environment_name`). Así la latencia del span `conversation.turn` se separa por comando,
+agente y entorno. Sin ellas, un `/train` de decenas de segundos se mezcla con los turnos de la
+entrevista y la p95 no dice nada. Tampoco se distinguía dev de prod. Los spans que no llevan esos
+atributos (HTTP, SQL) quedan con la etiqueta vacía. Los ids de usuario/chat no se añaden a
+propósito, porque crearían una serie por usuario en Prometheus.
+
+```promql
+histogram_quantile(0.95, sum by (le, command) (
+  rate(traces_spanmetrics_latency_bucket{span_name="conversation.turn",
+       deployment_environment_name="prod"}[5m])))
+```
 
 ### 3.4 Tokens y coste del LLM (Postgres, tabla `token_usage`)
 

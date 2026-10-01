@@ -20,7 +20,7 @@ services:
       # Con 10 ejercicios en el fixture, top_k alto devuelve el corpus entero.
       - ia_rag_top_k=10
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
-      - vector_db_url=postgresql+asyncpg://fitcoach_ro:fitcoach_ro_dev@pgvector-test:5432/fitcoach
+      - vector_database_url=postgresql+asyncpg://fitcoach_ro:fitcoach_ro_dev@pgvector-test:5432/fitcoach
       - embedder_url=http://test-stubs:9999
     ports:
       - "${IT_PORT:-8001}:8000"

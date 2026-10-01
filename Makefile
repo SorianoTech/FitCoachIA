@@ -57,7 +57,7 @@ echo ">> entorno prod: $(PROD_ENV_FILE)"; \
 export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -84,6 +84,7 @@ help:
 	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
 	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
 	@echo "  make trainer-debug ARGS=\"...\"       - Ejecuta el entrenador offline y guarda artefactos en runs/trainer (ver docs/trainer-agent.md)"
+	@echo "  make trainer-refresh-catalogues     - Regenera los catalogos congelados de evals/trainer/cases con la recuperacion real"
 
 container:
 	@$(DOCKER) ps -a
@@ -135,6 +136,14 @@ vector-logs:
 # Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
 trainer-debug:
 	@uv run python -m fitcoach.devtools.trainer_debug $(ARGS)
+
+TRAINER_CASES=evals/trainer/cases
+
+trainer-refresh-catalogues:
+	@for case in $(TRAINER_CASES)/*/; do \
+		uv run python -m fitcoach.devtools.trainer_debug --case-dir "$$case" --live-retrieval \
+			--save-catalogue "$$case/catalogue.json" --render-only --out /tmp/fitcoach-trainer-render || exit 1; \
+	done
 
 tests:
 	@$(COMPOSE_UP); \

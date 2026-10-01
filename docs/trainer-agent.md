@@ -180,14 +180,16 @@ ejecución depende solo de (perfil, catálogo, variante de prompt/skill, modelo)
 repetir mientras se ajusta el `SKILL.md` o el `system_prompt.txt`. La cadena se construye en cada
 ejecución, de modo que los cambios en disco se aplican sin reiniciar nada.
 
+Los casos del *golden set* viven en [`evals/trainer/cases`](../evals/trainer/README.md): cada uno es
+un `profile.json` y el `catalogue.json` congelado que devolvió la recuperación real para ese perfil.
+
 ```bash
 # Solo renderiza el prompt que se enviaría (sin llamar al LLM, sin coste)
-make trainer-debug ARGS="--profile evals/trainer/profiles/beginner_gym.json \
-  --catalogue evals/trainer/catalogue.json --render-only"
+make trainer-debug ARGS="--case-dir evals/trainer/cases/beginner_gym_lose_fat --render-only"
 
 # Ejecución completa con una copia de la skill que se está editando
-make trainer-debug ARGS="--profile evals/trainer/profiles/knee_injury_home.json \
-  --catalogue evals/trainer/catalogue.json --skills-root /tmp/skills --skill trainer --variant v2"
+make trainer-debug ARGS="--case-dir evals/trainer/cases/knee_injury_home \
+  --skills-root /tmp/skills --skill trainer --variant v2"
 
 # Reproducir el caso real de un usuario: perfil desde la BD, catálogo desde pgVector
 make trainer-debug ARGS="--chat-id 123 --live-retrieval --save-catalogue evals/trainer/catalogue_123.json"
@@ -195,8 +197,10 @@ make trainer-debug ARGS="--chat-id 123 --live-retrieval --save-catalogue evals/t
 
 | Opción | Uso |
 | --- | --- |
+| `--case-dir` | Carpeta de un caso con `profile.json` y `catalogue.json` |
 | `--profile` / `--chat-id` | Perfil desde un JSON o desde `interviewer_profiles` |
 | `--catalogue` / `--live-retrieval` | Catálogo congelado o recuperación real (embedder + pgVector) |
+| `--top-k` | Ejercicios por grupo muscular en la recuperación real (por defecto `ia_rag_top_k`) |
 | `--save-catalogue` | Congela el catálogo usado para repetir la ejecución |
 | `--prompts-root` / `--skills-root` / `--skill` | Variante de `trainer/system_prompt.txt` y `<skill>/SKILL.md` |
 | `--model` / `--temperature` / `--max-tokens` | Sobrescriben `ia_model`, `ia_temperature`, `ia_trainer_max_tokens` |

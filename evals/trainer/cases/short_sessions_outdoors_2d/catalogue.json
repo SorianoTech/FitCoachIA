@@ -1,0 +1,318 @@
+[
+  {
+    "id": 684,
+    "name": "run (equipment)",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Start by standing upright with your feet hip-width apart. Engage your core and keep your upper body relaxed. Begin jogging in place, lifting your knees up towards your chest and landing softly on the balls of your feet. Maintain a steady pace and continue jogging for the desired duration or distance. Remember to breathe deeply and maintain good posture throughout the exercise."
+  },
+  {
+    "id": 3124,
+    "name": "resistance band seated chest press",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "resistance band",
+    "muscle_group": "shoulders",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Sit on a chair or bench with your back straight and feet flat on the ground. Hold the resistance band handles in each hand, with your palms facing down and elbows bent at a 90-degree angle. Extend your arms forward, pushing the resistance band away from your chest. Pause for a moment at the end of the movement, then slowly return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 685,
+    "name": "run",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Start by standing upright with your feet hip-width apart. Engage your core and keep your upper body relaxed. Begin jogging in place, lifting your knees up towards your chest and landing softly on the balls of your feet. Maintain a steady pace and continue jogging for the desired duration or distance. Remember to breathe deeply and maintain good posture throughout the exercise."
+  },
+  {
+    "id": 1689,
+    "name": "push and pull bodyweight",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "body weight",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "deltoids"
+    ],
+    "instructions_en": "Start in a push-up position with your hands slightly wider than shoulder-width apart and your body in a straight line. Lower your chest towards the ground by bending your elbows, keeping your body straight. Push through your palms to extend your arms and return to the starting position. From the push-up position, pull your chest towards the ground by bending your elbows, keeping your body straight. Push through your palms to extend your arms and return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3638,
+    "name": "push to run",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Start in a push-up position with your hands shoulder-width apart and your body in a straight line. Lower your chest towards the ground by bending your elbows, keeping your body straight. Push through your hands to extend your arms and return to the starting position. Quickly bring one knee towards your chest, then quickly switch and bring the other knee towards your chest. Continue alternating knees as fast as you can while maintaining good form. Continue for the desired duration or number of repetitions."
+  },
+  {
+    "id": 3679,
+    "name": "sit-up with arms on chest",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Lie flat on your back with your knees bent and feet flat on the ground. Cross your arms over your chest. Engaging your abs, lift your upper body off the ground towards your knees. Pause for a moment at the top, then slowly lower your upper body back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 631,
+    "name": "muscle up",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "body weight",
+    "muscle_group": "biceps",
+    "target": "lats",
+    "secondary_muscles": [
+      "biceps",
+      "triceps",
+      "shoulders",
+      "chest"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with your palms facing away from you and your arms fully extended. Engage your core and pull your body up towards the bar, leading with your chest. As you reach the top of the movement, transition your grip so that your palms are facing towards you. Continue pulling yourself up until your chest is above the bar and your arms are fully flexed. Reverse the movement by slowly lowering yourself back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 630,
+    "name": "mountain climber",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "core",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "core",
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Start in a high plank position with your hands directly under your shoulders and your body in a straight line. Engage your core and bring your right knee towards your chest, then quickly switch and bring your left knee towards your chest. Continue alternating legs in a running motion, keeping your hips low and your core engaged. Maintain a steady pace and breathe evenly throughout the exercise. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3144,
+    "name": "resistance band seated straight back row",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "resistance band",
+    "muscle_group": "biceps",
+    "target": "upper back",
+    "secondary_muscles": [
+      "biceps",
+      "shoulders"
+    ],
+    "instructions_en": "Sit on the floor with your legs extended and loop the resistance band around your feet. Hold the ends of the resistance band with your hands, palms facing each other. Keep your back straight and lean slightly back, engaging your core. Pull the resistance band towards your chest, squeezing your shoulder blades together. Pause for a moment at the top, then slowly release the tension and return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3672,
+    "name": "back and forth step",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "glutes",
+      "calves"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart. Step forward with your right foot, bending your knee and lowering your body into a lunge position. Push off with your right foot and step back to the starting position. Repeat the movement with your left foot, alternating legs with each step. Continue stepping back and forth, maintaining a steady pace. Repeat for the desired duration or number of repetitions."
+  },
+  {
+    "id": 3007,
+    "name": "resistance band leg extension",
+    "category": "upper legs",
+    "body_part": "upper legs",
+    "equipment": "resistance band",
+    "muscle_group": "hamstrings",
+    "target": "quads",
+    "secondary_muscles": [
+      "hamstrings"
+    ],
+    "instructions_en": "Attach the resistance band to a sturdy anchor point and secure it around your ankle. Stand facing the anchor point with your feet shoulder-width apart. Keeping your core engaged and your upper body stable, extend your leg straight out in front of you. Pause for a moment at the top, then slowly return your leg to the starting position. Repeat for the desired number of repetitions, then switch legs."
+  },
+  {
+    "id": 689,
+    "name": "seated leg raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Sit on a flat bench with your back straight and your feet flat on the ground. Place your hands on the sides of the bench for support. Keeping your legs straight, slowly raise them up in front of you until they are parallel to the ground. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 472,
+    "name": "hanging leg raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Hang from a pull-up bar with your arms fully extended and your palms facing away from you. Engage your core and lift your legs up in front of you, keeping them straight. Continue lifting until your legs are parallel to the ground or as high as you can comfortably go. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 865,
+    "name": "lying leg-hip raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Lie flat on your back with your legs extended and your arms by your sides. Place your hands under your glutes for support. Engage your core and lift your legs off the ground, raising them towards the ceiling. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3665,
+    "name": "power point plank",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps",
+      "glutes"
+    ],
+    "instructions_en": "Start in a high plank position with your hands directly under your shoulders and your body in a straight line from head to toe. Engage your core and squeeze your glutes to maintain a stable position. Lower your body down onto your forearms, one arm at a time, maintaining a straight line from head to toe. Hold this position for the desired amount of time, keeping your core and glutes engaged. To return to the starting position, push through your forearms and lift your body back up into a high plank position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3122,
+    "name": "resistance band seated shoulder press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "resistance band",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "upper back"
+    ],
+    "instructions_en": "Sit on a chair or bench with your back straight and feet flat on the ground. Hold the resistance band with both hands, palms facing forward, and bring it up to shoulder level. Press the band overhead, extending your arms fully. Pause for a moment at the top, then slowly lower the band back down to shoulder level. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3699,
+    "name": "shoulder tap",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Start in a high plank position with your hands directly under your shoulders and your body in a straight line. Engage your core and lift your right hand off the ground, reaching across to tap your left shoulder. Place your right hand back on the ground and repeat with your left hand tapping your right shoulder. Continue alternating shoulder taps while keeping your hips and torso stable. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3300,
+    "name": "lean planche",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "chest",
+      "triceps"
+    ],
+    "instructions_en": "Start in a push-up position with your hands shoulder-width apart and your body straight. Engage your core and slowly shift your weight forward, bringing your shoulders past your hands. Keep your elbows slightly bent and your body straight as you lean forward. Hold this position for a few seconds, then slowly return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 794,
+    "name": "standing lateral stretch",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "body weight",
+    "muscle_group": "shoulders",
+    "target": "lats",
+    "secondary_muscles": [
+      "shoulders",
+      "obliques"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart and your knees slightly bent. Extend your arms straight out to the sides, parallel to the ground. Slowly lean your upper body to one side, feeling a stretch in your side and lats. Hold the stretch for 15-30 seconds. Return to the starting position and repeat on the other side. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3296,
+    "name": "front lever",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "lats",
+    "target": "abs",
+    "secondary_muscles": [
+      "lats",
+      "shoulders",
+      "forearms"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with an overhand grip, hands shoulder-width apart. Engage your core and pull your shoulder blades down and back. Bend your knees and tuck them towards your chest. Simultaneously, lift your legs up and extend them straight out in front of you, keeping your body parallel to the ground. Hold this position for as long as you can, aiming for a full front lever position. To release, slowly lower your legs back down and return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 858,
+    "name": "wind sprints",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "abs",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Find an open space or a track to perform the exercise. Start by standing with your feet shoulder-width apart. Begin running as fast as you can, pumping your arms and driving your knees up. Continue sprinting for a specific distance or time period. Rest and repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3656,
+    "name": "short stride run",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Find an open space or a treadmill to perform the exercise. Stand tall with your feet hip-width apart. Start jogging in place, lifting your knees high and pumping your arms. After a few seconds, start taking short strides forward, maintaining a quick pace. Continue running with short strides for the desired duration or distance."
+  }
+]

@@ -55,14 +55,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="trainer_debug", description="Run the Trainer agent offline and dump its artifacts."
     )
-    profile = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument(
+        "--case-dir",
+        type=Path,
+        help="Golden case folder with profile.json and catalogue.json (see evals/trainer)",
+    )
+    profile = parser.add_mutually_exclusive_group()
     profile.add_argument("--profile", type=Path, help="InterviewerProfile JSON file")
     profile.add_argument("--chat-id", type=int, help="Load the stored profile of this chat")
-    catalogue = parser.add_mutually_exclusive_group(required=True)
+    catalogue = parser.add_mutually_exclusive_group()
     catalogue.add_argument("--catalogue", type=Path, help="Frozen exercise catalogue JSON")
     catalogue.add_argument(
         "--live-retrieval", action="store_true", help="Retrieve from embedder + pgVector"
     )
+    parser.add_argument("--top-k", type=int, help="Exercises per muscle group (live retrieval)")
     parser.add_argument("--save-catalogue", type=Path, help="Write the catalogue used to a file")
     parser.add_argument("--case", help="Case name for the artifacts (default: profile stem)")
     add_variant_arguments(parser)
@@ -158,20 +164,36 @@ def print_run(run: TrainerRun, out_dir: Path) -> None:
     echo(f"artifacts: {out_dir}")
 
 
-async def main_async(args: argparse.Namespace) -> int:
-    if args.profile is not None:
-        profile = load_profile(args.profile)
-        case = args.case or args.profile.stem
-    else:
-        profile = await load_profile_from_db(args.chat_id)
-        case = args.case or f"chat-{args.chat_id}"
+DEFAULT_TOP_K = 8
 
-    settings = None if args.render_only and not args.live_retrieval else model_settings(args)
+
+async def resolve_profile(args: argparse.Namespace) -> tuple[InterviewerProfile, str]:
+    if args.profile is not None:
+        return load_profile(args.profile), args.case or args.profile.stem
+    if args.chat_id is not None:
+        return await load_profile_from_db(args.chat_id), args.case or f"chat-{args.chat_id}"
+    if args.case_dir is not None:
+        return load_profile(args.case_dir / "profile.json"), args.case or args.case_dir.name
+    raise SystemExit("a profile is required: use --case-dir, --profile or --chat-id")
+
+
+async def resolve_catalogue(
+    args: argparse.Namespace, profile: InterviewerProfile, settings: IASettings | None
+) -> list[Exercise]:
     if args.catalogue is not None:
-        exercises = load_catalogue(args.catalogue)
-    else:
-        top_k = settings.rag_top_k if settings is not None else 8
-        exercises = await retrieve_live(profile, top_k)
+        return load_catalogue(args.catalogue)
+    if args.live_retrieval:
+        top_k = args.top_k or (settings.rag_top_k if settings is not None else DEFAULT_TOP_K)
+        return await retrieve_live(profile, top_k)
+    if args.case_dir is not None:
+        return load_catalogue(args.case_dir / "catalogue.json")
+    raise SystemExit("a catalogue is required: use --case-dir, --catalogue or --live-retrieval")
+
+
+async def main_async(args: argparse.Namespace) -> int:
+    profile, case = await resolve_profile(args)
+    settings = None if args.render_only else model_settings(args)
+    exercises = await resolve_catalogue(args, profile, settings)
     if args.save_catalogue is not None:
         dump_catalogue(exercises, args.save_catalogue)
         echo(f"catalogue saved: {args.save_catalogue} ({len(exercises)} exercises)")

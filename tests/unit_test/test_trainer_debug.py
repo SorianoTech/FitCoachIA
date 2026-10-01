@@ -191,6 +191,73 @@ def test_render_messages_does_not_call_the_model(
 
 
 class TestCli:
+    def test_case_dir_provides_profile_and_catalogue(
+        self, tmp_path: Path, profile_file: Path, catalogue_file: Path
+    ) -> None:
+        case = tmp_path / "case_x"
+        case.mkdir()
+        (case / "profile.json").write_text(profile_file.read_text())
+        (case / "catalogue.json").write_text(catalogue_file.read_text())
+
+        code = trainer_debug.main([
+            "--case-dir",
+            str(case),
+            "--out",
+            str(tmp_path / "runs"),
+            "--render-only",
+        ])
+
+        assert code == 0
+        [run_dir] = (tmp_path / "runs").iterdir()
+        assert "-case_x-default" in run_dir.name
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            ([], "a profile is required"),
+            (["--profile", "PROFILE"], "a catalogue is required"),
+        ],
+    )
+    def test_requires_a_profile_and_a_catalogue(
+        self, profile_file: Path, argv: list[str], message: str
+    ) -> None:
+        argv = [str(profile_file) if arg == "PROFILE" else arg for arg in argv]
+
+        with pytest.raises(SystemExit, match=message):
+            trainer_debug.main([*argv, "--render-only"])
+
+    def test_live_retrieval_uses_top_k_and_can_freeze_the_catalogue(
+        self,
+        tmp_path: Path,
+        profile_file: Path,
+        exercises: list[Exercise],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: list[int] = []
+
+        async def fake_retrieve(profile: InterviewerProfile, top_k: int) -> list[Exercise]:
+            calls.append(top_k)
+            return exercises
+
+        monkeypatch.setattr(trainer_debug, "retrieve_live", fake_retrieve)
+
+        code = trainer_debug.main([
+            "--profile",
+            str(profile_file),
+            "--live-retrieval",
+            "--top-k",
+            "3",
+            "--save-catalogue",
+            str(tmp_path / "frozen.json"),
+            "--out",
+            str(tmp_path / "runs"),
+            "--render-only",
+        ])
+
+        assert code == 0
+        assert calls == [3]
+        assert load_catalogue(tmp_path / "frozen.json") == exercises
+
     def test_render_only_needs_no_llm_settings(
         self, tmp_path: Path, profile_file: Path, catalogue_file: Path
     ) -> None:

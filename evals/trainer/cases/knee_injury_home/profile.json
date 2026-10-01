@@ -1,0 +1,80 @@
+{
+  "user": {
+    "name_or_username": "Elena",
+    "registration_date": "2026-09-01T10:00:00Z"
+  },
+  "biometrics": {
+    "age": 41,
+    "weight_kg": 68.0,
+    "height_cm": 168,
+    "bmi": 24.1,
+    "perceived_composition": "normal",
+    "estimated_composition": "normal"
+  },
+  "goal": {
+    "primary": "lose_fat",
+    "secondary": null,
+    "timeframe_weeks": 12,
+    "realistic_expectation": true
+  },
+  "activity": {
+    "occupation": "oficina",
+    "neat_level": "sedentary",
+    "description": "trabajo sentado"
+  },
+  "nutrition": {
+    "meals_per_day": 3,
+    "critical_foods": [],
+    "general_pattern": "variada"
+  },
+  "digestive_energy": {
+    "bloating_frequency": "never",
+    "energy_crash": false,
+    "triggers": []
+  },
+  "injuries": [
+    {
+      "location": "rodilla derecha",
+      "type": "condromalacia rotuliana",
+      "age": "2 años",
+      "restriction": "evitar flexion profunda de rodilla e impacto (saltos, sentadilla profunda, zancadas)",
+      "diagnosis": "fisioterapeuta"
+    }
+  ],
+  "training": {
+    "consistent_years": 1.5,
+    "environment": "home",
+    "equipment": [
+      "dumbbell",
+      "resistance band",
+      "body weight"
+    ]
+  },
+  "sleep": {
+    "average_hours": 7.5,
+    "quality": "good",
+    "problems": []
+  },
+  "supplementation": {
+    "current": [],
+    "monthly_budget_usd": null,
+    "restrictions": []
+  },
+  "commitment": {
+    "days_per_week": 3,
+    "minutes_per_session": 40,
+    "flexibility": "flexible",
+    "dropout_history": null
+  },
+  "flags": {
+    "red": [],
+    "yellow": [
+      "dolor de rodilla en escaleras"
+    ]
+  },
+  "initial_calculations": {
+    "bmr": 1700.0,
+    "estimated_tdee": 2300.0,
+    "tolerable_volume_sets": 10
+  }
+}

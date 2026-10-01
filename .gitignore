@@ -28,3 +28,6 @@ __pycache__/
 infra/vector-db/loader/resources/**
 .env.dev
 .env.prod
+
+# Artefactos de las ejecuciones offline de los agentes (make trainer-debug)
+runs/

@@ -14,7 +14,7 @@ from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.trainer_plan import TrainerTurn, TrainingPlan
 from fitcoach.infrastructure.config.settings import IASettings
 from fitcoach.service.agent.llm_chain import InvalidModelOutputError, strict_response_format
-from fitcoach.service.agent.trainer_chain import TrainerChain, _build_model
+from fitcoach.service.agent.trainer_chain import TrainerChain, build_trainer_model
 from tests.unit_test.conftest import build_plan_payload
 
 
@@ -250,7 +250,7 @@ class TestStrictResponseFormat:
             _env_file=None,  # type: ignore[call-arg]
         )
 
-        response_format = _build_model(settings).model_kwargs["response_format"]
+        response_format = build_trainer_model(settings).model_kwargs["response_format"]
 
         assert response_format["type"] == "json_schema"
         assert response_format["json_schema"]["name"] == "TrainerTurn"

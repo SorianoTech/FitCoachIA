@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 from pydantic_core import InitErrorDetails, PydanticCustomError
@@ -15,6 +15,7 @@ from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TrainerTurn, TrainingPlan
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
+from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.agent_factory import build_trainer_agent
 from fitcoach.service.agent.llm_chain import (
     AsyncChatModel,
@@ -49,19 +50,30 @@ class TrainerChain(BaseLLMChain):
         model: AsyncChatModel,
         model_name: str = "unknown",
         skill_name: str = "trainer",
+        loader: PromptLoader | None = None,
     ) -> None:
         super().__init__(model, model_name)
-        self._agent = build_trainer_agent(skill_name=skill_name)
+        self._agent = build_trainer_agent(loader, skill_name=skill_name)
+
+    @property
+    def system_prompt(self) -> str:
+        """Assembled prompt (skill injected, ``{{rag_context}}`` still unresolved)."""
+        return self._agent.system_prompt
+
+    def plan_messages(
+        self, profile: InterviewerProfile, exercises: Sequence[Exercise]
+    ) -> list[BaseMessage]:
+        """Exact messages ``generate_plan`` sends, exposed so they can be inspected offline."""
+        return [
+            SystemMessage(content=self._agent.insert_context(build_rag_context(exercises))),
+            HumanMessage(content=_PLAN_INSTRUCTION + profile.model_dump_json()),
+        ]
 
     async def generate_plan(
         self, profile: InterviewerProfile, exercises: Sequence[Exercise]
     ) -> TrainerReply:
-        messages = [
-            SystemMessage(content=self._agent.insert_context(build_rag_context(exercises))),
-            HumanMessage(content=_PLAN_INSTRUCTION + profile.model_dump_json()),
-        ]
         turn, token_usages = await self._invoke_validated(
-            messages, TrainerTurn, self._validator_for(exercises)
+            self.plan_messages(profile, exercises), TrainerTurn, self._validator_for(exercises)
         )
         return TrainerReply(turn=turn, token_usages=token_usages)
 
@@ -122,7 +134,7 @@ class TrainerChain(BaseLLMChain):
         return validate
 
 
-def _build_model(settings: IASettings) -> ChatOpenAI:
+def build_trainer_model(settings: IASettings) -> ChatOpenAI:
     return ChatOpenAI(
         base_url=settings.base_url,
         api_key=settings.token,
@@ -140,5 +152,5 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
 def get_trainer_chain() -> TrainerChain:
     settings = get_ia_settings()
     return TrainerChain(
-        _build_model(settings), model_name=settings.model, skill_name=settings.trainer_skill
+        build_trainer_model(settings), model_name=settings.model, skill_name=settings.trainer_skill
     )

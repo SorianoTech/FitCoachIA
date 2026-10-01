@@ -173,6 +173,45 @@ El span `conversation.turn` añade, además de los atributos habituales:
 | `rag.latency_ms` | Tiempo de embeddings más consulta a pgVector |
 | `rag.degraded` | `true` si se respondió sin catálogo |
 
+## Depuración offline del prompt y la skill
+
+`fitcoach.devtools.trainer_debug` ejecuta el entrenador sin Telegram ni BD de conversaciones: una
+ejecución depende solo de (perfil, catálogo, variante de prompt/skill, modelo), así que se puede
+repetir mientras se ajusta el `SKILL.md` o el `system_prompt.txt`. La cadena se construye en cada
+ejecución, de modo que los cambios en disco se aplican sin reiniciar nada.
+
+```bash
+# Solo renderiza el prompt que se enviaría (sin llamar al LLM, sin coste)
+make trainer-debug ARGS="--profile evals/trainer/profiles/beginner_gym.json \
+  --catalogue evals/trainer/catalogue.json --render-only"
+
+# Ejecución completa con una copia de la skill que se está editando
+make trainer-debug ARGS="--profile evals/trainer/profiles/knee_injury_home.json \
+  --catalogue evals/trainer/catalogue.json --skills-root /tmp/skills --skill trainer --variant v2"
+
+# Reproducir el caso real de un usuario: perfil desde la BD, catálogo desde pgVector
+make trainer-debug ARGS="--chat-id 123 --live-retrieval --save-catalogue evals/trainer/catalogue_123.json"
+```
+
+| Opción | Uso |
+| --- | --- |
+| `--profile` / `--chat-id` | Perfil desde un JSON o desde `interviewer_profiles` |
+| `--catalogue` / `--live-retrieval` | Catálogo congelado o recuperación real (embedder + pgVector) |
+| `--save-catalogue` | Congela el catálogo usado para repetir la ejecución |
+| `--prompts-root` / `--skills-root` / `--skill` | Variante de `trainer/system_prompt.txt` y `<skill>/SKILL.md` |
+| `--model` / `--temperature` / `--max-tokens` | Sobrescriben `ia_model`, `ia_temperature`, `ia_trainer_max_tokens` |
+| `--render-only` | Escribe el prompt y los mensajes sin llamar al modelo |
+
+Cada ejecución crea `runs/trainer/<fecha>-<caso>-<variante>/` (ignorado por git) con:
+
+- `system_prompt.txt`: el prompt exacto enviado (skill y catálogo incluidos).
+- `calls/NN_request.json` y `calls/NN_response.txt`: cada llamada, incluida la reparación.
+- `plan.json` y `plan.md`: el turno validado y una vista legible por semanas y días.
+- `run.json`: estado, error, llamadas, tokens, latencia y huella (`prompt_fingerprint`) del prompt.
+- `profile.json` y `catalogue.json`: las entradas, para repetir la ejecución.
+
+El proceso termina con código 0 si se generó un plan y 1 en otro caso.
+
 ## Componentes principales
 
 | Componente | Ubicación |
@@ -183,6 +222,7 @@ El span `conversation.turn` añade, además de los atributos habituales:
 | Contrato Pydantic del plan | `src/fitcoach/domain/trainer_plan.py` |
 | Repositorio PostgreSQL | `src/fitcoach/infrastructure/database/postgres_conversation_repository.py` |
 | Sesión de la BD vectorial | `src/fitcoach/infrastructure/vectordb/session.py` |
+| Depuración offline (CLI y runner) | `src/fitcoach/devtools/` |
 
 ## Configuración
 

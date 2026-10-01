@@ -355,7 +355,7 @@ class ConversationService:
         self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
     ) -> None:
         """Follow-up question about an existing plan."""
-        if self._trainer is None or self._exercise_retriever is None:
+        if self._trainer is None:
             await self._send(chat_id, message_thread_id, Constants.TRAINER_UNAVAILABLE_MESSAGE)
             return
 
@@ -366,17 +366,6 @@ class ConversationService:
             return
 
         profile = await self._conversation_repository.get_interviewer_profile(chat_id)
-        span = trace.get_current_span()
-        exercises = []
-        if profile is not None:
-            try:
-                exercises = await self._exercise_retriever.retrieve(profile)
-            except Exception:
-                # Unlike /train, a question can still be answered from the plan
-                # itself, so degrade instead of refusing.
-                logger.warning(f"{ctx} respondiendo sin catalogo: la recuperacion fallo")
-        span.set_attribute("rag.exercises_retrieved", len(exercises))
-        span.set_attribute("rag.degraded", not exercises)
 
         history = await self._conversation_repository.get_recent(
             chat_id, self._trainer_history_window_messages, AgentType.TRAINER.value
@@ -384,7 +373,7 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            reply = await self._trainer.answer(user_message, stored_plan.plan, history, exercises)
+            reply = await self._trainer.answer(user_message, stored_plan.plan, history, profile)
         except AgentError as exc:
             await self._record_trainer_error(
                 ctx, chat_id, message_thread_id, TrainerAction.ANSWER_PLAN, exc, started

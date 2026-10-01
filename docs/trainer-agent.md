@@ -25,7 +25,14 @@ atención profesional.
 7. Envía el informe al usuario y persiste el plan como una nueva versión.
 
 Los mensajes posteriores, mientras la sesión de entrenamiento está `active`, van al modo preguntas:
-misma cadena, con el plan vigente e historial propio del agente.
+se consulta en PostgreSQL la última versión del plan, el perfil disponible y el historial propio del
+agente. No se llama al embedder ni a pgVector.
+
+Este modo utiliza `prompts/trainer/answer_prompt.txt`, sin la skill de generación ni el catálogo.
+El plan guardado prevalece sobre el historial y el perfil aporta restricciones y contexto de
+seguridad. Si falta información, el entrenador no debe inventarla. Las consultas son de solo lectura:
+no sustituyen ejercicios, no ajustan el plan ni crean versiones. Ante una petición de cambios, el
+entrenador explica esta limitación; las modificaciones persistentes requieren un flujo futuro.
 
 ## Comandos y estados
 
@@ -45,9 +52,32 @@ Un mensaje sin comando se enruta según dos estados:
 `/interview` borra el historial, el perfil **y también el plan y la sesión de entrenamiento**: un
 perfil nuevo invalida el mesociclo anterior.
 
+## Selección del prompt
+
+El código selecciona el prompt; el LLM no decide qué modo utilizar. `ConversationService` enruta
+el mensaje según el comando y los estados de entrevista y entrenamiento:
+
+| Entrada | Método de `TrainerChain` | Prompt y contexto |
+| --- | --- | --- |
+| `/train`, con perfil disponible | `generate_plan()` | `trainer/system_prompt.txt` + skill seleccionada + catálogo recuperado; el perfil se añade como mensaje. |
+| Mensaje sin comando, con entrevista completada y entrenamiento activo | `answer()` | `trainer/answer_prompt.txt`; se añaden el historial, el plan guardado, el perfil disponible y la pregunta. Sin skill ni catálogo. |
+
+En generación, `ia_trainer_skill` selecciona `trainer` o `trainer-dev`. `PromptLoader` ensambla
+`system_prompt.txt` con esa skill al crear la cadena y el catálogo se inserta en cada generación.
+En consulta, `answer()` carga explícitamente el prompt independiente:
+
+```python
+self._loader.load_system_prompt("trainer", "answer_prompt.txt")
+```
+
+Ambos métodos usan el mismo modelo, pero cada petición lleva su propio `SystemMessage`: uno para
+diseñar el mesociclo y otro para explicar el plan en modo de solo lectura. La consulta no reutiliza
+el prompt de generación ni depende de que el modelo recuerde una petición anterior. Si hay que
+reparar una respuesta inválida, se conservan el prompt y el contexto del modo correspondiente.
+
 ## Método de entrenamiento
 
-El comportamiento se define en dos recursos que se ensamblan al crear el agente:
+El método de generación se define en dos recursos que se ensamblan al crear el agente:
 
 | Recurso | Responsabilidad |
 | --- | --- |
@@ -84,7 +114,9 @@ Al responder una pregunta sobre el plan:
 ```json
 {
   "status": "answer",
-  "reply": "Respuesta breve."
+  "reply": "Respuesta breve.",
+  "report": null,
+  "plan": null
 }
 ```
 
@@ -93,6 +125,11 @@ Al responder una pregunta sobre el plan:
 - `plan` exige `report` y `plan`; `answer` prohíbe ambos.
 - `weeks` debe tener exactamente 4 entradas, numeradas 1-4 y en orden.
 - Cada semana debe tener exactamente `days_per_week` días, con valores de `day` distintos.
+
+En consulta se valida con `TrainerAnswerTurn`, que solo permite `status=answer`, `report=null` y
+`plan=null`. Si el modelo intenta devolver un plan, se solicita una reparación conservando el
+contexto de consulta; si vuelve a incumplir, se informa del error al usuario. Solo la generación
+produce trazas de planes; las consultas mantienen el registro habitual de mensajes y tokens.
 
 ### Anclaje al catálogo
 
@@ -131,8 +168,8 @@ constructor del bloque elimina caracteres de control y trunca las instrucciones.
 
 | Situación | `/train` | Modo preguntas |
 | --- | --- | --- |
-| Embedder o pgVector caídos | Falla con mensaje de reintento | Responde sin catálogo (`rag.degraded=true`) |
-| Catálogo vacío | Falla con mensaje de reintento | Responde sin catálogo |
+| Embedder o pgVector caídos | Falla con mensaje de reintento | No depende de estos servicios |
+| Catálogo vacío | Falla con mensaje de reintento | No consulta el catálogo |
 
 La asimetría es deliberada: un mesociclo sin catálogo de ejercicios es exactamente lo que este
 agente existe para evitar, mientras que una pregunta se puede responder desde el plan ya guardado.
@@ -171,7 +208,9 @@ El span `conversation.turn` añade, además de los atributos habituales:
 | `agent` | `trainer` |
 | `rag.exercises_retrieved` | Ejercicios recuperados y entregados al modelo |
 | `rag.latency_ms` | Tiempo de embeddings más consulta a pgVector |
-| `rag.degraded` | `true` si se respondió sin catálogo |
+| `rag.degraded` | `false` en generación; no se emite en consultas |
+
+Los atributos `rag.*` corresponden a generación, no a consultas: estas no realizan recuperación.
 
 ## Depuración offline del prompt y la skill
 

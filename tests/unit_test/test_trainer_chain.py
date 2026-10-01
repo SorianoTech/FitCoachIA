@@ -142,7 +142,7 @@ class TestGeneratePlan:
 class TestAnswer:
     @pytest.mark.asyncio
     async def test_sends_plan_history_and_question(
-        self, model: MagicMock, exercises: list[Exercise]
+        self, model: MagicMock, profile: InterviewerProfile
     ) -> None:
         model.ainvoke.return_value = AIMessage(
             content='{"status":"answer","reply":"Porque progresas mejor"}'
@@ -153,15 +153,60 @@ class TestAnswer:
             ConversationMessage(1, "assistant", "Por tu compromiso", datetime.now(UTC)),
         ]
 
-        reply = await TrainerChain(model).answer("¿Y el descanso?", plan, history, exercises)
+        reply = await TrainerChain(model).answer("¿Y el descanso?", plan, history, profile)
 
         assert reply.turn.reply == "Porque progresas mejor"
         messages = model.ainvoke.await_args.args[0]
         assert isinstance(messages[0], SystemMessage)
-        assert "gain_muscle" in messages[1].content  # el plan vigente
-        assert messages[2].content == "¿Por qué tres días?"
-        assert messages[3].content == "Por tu compromiso"
+        assert "read-only" in messages[0].content
+        assert "rag_context" not in messages[0].content
+        assert "<skill>" not in messages[0].content
+        assert "PLAN STRUCTURE" not in messages[0].content
+        assert messages[1].content == "¿Por qué tres días?"
+        assert messages[2].content == "Por tu compromiso"
+        assert plan.model_dump_json() in messages[3].content
+        assert profile.model_dump_json() in messages[3].content
         assert messages[4].content == "¿Y el descanso?"
+        assert reply.trace is None
+
+    @pytest.mark.asyncio
+    async def test_answers_without_a_profile(self, model: MagicMock) -> None:
+        model.ainvoke.return_value = AIMessage(
+            content='{"status":"answer","reply":"Descansa 120 segundos","report":null,"plan":null}'
+        )
+        plan = TrainingPlan.model_validate(build_plan_payload())
+
+        reply = await TrainerChain(model).answer("¿Cuánto descanso?", plan, [])
+
+        assert reply.turn.status == "answer"
+        assert "Not available." in model.ainvoke.await_args.args[0][1].content
+
+    @pytest.mark.asyncio
+    async def test_repairs_a_plan_turn_in_read_only_mode(self, model: MagicMock) -> None:
+        model.ainvoke.side_effect = [
+            AIMessage(content=_plan_json()),
+            AIMessage(content='{"status":"answer","reply":"No he cambiado tu plan"}'),
+        ]
+        plan = TrainingPlan.model_validate(build_plan_payload())
+
+        reply = await TrainerChain(model).answer("Cambia los ejercicios", plan, [])
+
+        assert reply.turn.status == "answer"
+        assert reply.turn.plan is None
+        assert model.ainvoke.await_count == 2
+        repair = model.ainvoke.await_args_list[1].args[0]
+        assert "read-only" in repair[0].content
+        assert plan.model_dump_json() in repair[1].content
+        assert "TrainerAnswerTurn" in repair[-1].content
+
+    @pytest.mark.asyncio
+    async def test_rejects_a_plan_even_after_repair(self, model: MagicMock) -> None:
+        plan = TrainingPlan.model_validate(build_plan_payload())
+
+        with pytest.raises(InvalidModelOutputError):
+            await TrainerChain(model).answer("Cambia el volumen", plan, [])
+
+        assert model.ainvoke.await_count == 2
 
 
 class TestTokenUsage:

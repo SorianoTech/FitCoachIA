@@ -737,6 +737,13 @@ class TestFreeMessageRouting:
         )
         # El historial que se pide es el del entrenador, no el de la entrevista.
         assert mock_conversation_repository.get_recent.await_args.args[2] == AgentType.TRAINER.value
+        mock_trainer.answer.assert_awaited_once_with(
+            "por que 3 dias?", self._stored_plan().plan, [], profile
+        )
+        assert routed_service._exercise_retriever is not None
+        routed_service._exercise_retriever.retrieve.assert_not_awaited()
+        mock_conversation_repository.get_current_plan.assert_awaited_once_with(456)
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_the_trainer_turn_is_persisted_under_the_trainer_agent(
@@ -760,30 +767,29 @@ class TestFreeMessageRouting:
         assert mock_conversation_repository.add_turn.await_args.args[3] == AgentType.TRAINER.value
 
     @pytest.mark.asyncio
-    async def test_answers_degrade_to_an_empty_catalogue_instead_of_refusing(
+    @pytest.mark.parametrize("has_profile", [True, False])
+    async def test_answers_without_a_retriever(
         self,
         mock_bot: AsyncMock,
         mock_interviewer: AsyncMock,
         mock_conversation_repository: AsyncMock,
         mock_trainer: AsyncMock,
         profile: InterviewerProfile,
+        has_profile: bool,
     ) -> None:
-        # A diferencia de /train, una pregunta se puede responder desde el plan.
-        retriever = AsyncMock(spec=ExerciseRetriever)
-        retriever.retrieve.side_effect = AgentError(AgentErrorCode.UNAVAILABLE, retryable=True)
         service = ConversationService(
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
             trainer=mock_trainer,
-            exercise_retriever=retriever,
         )
         mock_conversation_repository.get_interview_status.return_value = "completed"
         mock_conversation_repository.get_training_status.return_value = TRAINING_STATUS_ACTIVE
         mock_conversation_repository.get_current_plan.return_value = (
             TestFreeMessageRouting._stored_plan()
         )
-        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        stored_profile = profile if has_profile else None
+        mock_conversation_repository.get_interviewer_profile.return_value = stored_profile
         mock_conversation_repository.get_recent.return_value = []
         mock_trainer.answer.return_value = TrainerReply(
             turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Te respondo igualmente"),
@@ -793,7 +799,8 @@ class TestFreeMessageRouting:
         await service.handle_update(_text_update(456, "duda"))
 
         mock_trainer.answer.assert_awaited_once()
-        assert mock_trainer.answer.await_args.args[3] == []
+        assert mock_trainer.answer.await_args.args[3] == stored_profile
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_an_active_session_without_a_stored_plan_asks_for_train(

@@ -25,6 +25,14 @@ def loader(tmp_path: Path) -> PromptLoader:
 
 
 class TestPromptLoader:
+    def test_loads_consultation_without_a_skill(self, tmp_path: Path) -> None:
+        prompts = tmp_path / "prompts" / "trainer"
+        prompts.mkdir(parents=True)
+        (prompts / "answer_prompt.txt").write_text("read-only", encoding="utf-8")
+        loader = PromptLoader(prompts_root=prompts.parent, skills_root=tmp_path / "missing")
+
+        assert loader.load_system_prompt("trainer", "answer_prompt.txt") == "read-only"
+
     def test_default_roots_load_the_interviewer_prompt_and_skill(self) -> None:
         result = PromptLoader().load_assembled_system_prompt("interviewer")
 

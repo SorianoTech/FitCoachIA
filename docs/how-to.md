@@ -234,6 +234,9 @@ completo sin gastar 4096 tokens por iteración.
 
 Repetir `/train` **no** sobrescribe el plan: crea la versión N+1 en `training_plans`. Mientras haya
 un plan activo, los mensajes sin comando los responde el entrenador sobre ese plan.
+Cada consulta recupera de PostgreSQL el plan más reciente, el perfil disponible y el historial del
+entrenador, sin consultar pgVector ni el embedder. Es un modo de solo lectura: explica el plan, pero
+no sustituye ejercicios ni guarda ajustes.
 
 ### Variables de entorno del entrenador
 

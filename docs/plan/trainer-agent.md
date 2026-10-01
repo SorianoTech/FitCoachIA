@@ -1,5 +1,9 @@
 # Plan de implementación del agente `trainer`
 
+> Documento de diseño inicial. El modo preguntas actual es de solo lectura y no consulta RAG:
+> utiliza el plan, el perfil disponible y el historial de PostgreSQL. La sustitución de ejercicios
+> y los ajustes persistentes quedan pendientes. Ver [comportamiento actual](../trainer-agent.md).
+
 ## Objetivo
 
 Añadir el **Agente 2 (Entrenador)** siguiendo la misma estructura que el agente

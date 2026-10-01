@@ -121,3 +121,11 @@ class TrainerTurn(PlanModel):
         if self.status == "answer" and (self.report is not None or self.plan is not None):
             raise ValueError("An answer turn cannot include report or plan")
         return self
+
+
+class TrainerAnswerTurn(TrainerTurn):
+    """Read-only follow-up: never accepts a generated or modified plan."""
+
+    status: Literal[TrainerAction.ANSWER_PLAN]
+    report: None = None
+    plan: None = None

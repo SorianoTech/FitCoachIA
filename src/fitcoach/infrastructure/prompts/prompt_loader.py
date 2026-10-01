@@ -25,11 +25,15 @@ class PromptLoader:
         ``{{rag_context}}`` is left untouched: it is filled per request, not at load time.
         """
 
-        template = self._read(self._prompts_root / asset_name / "system_prompt.txt", asset_name)
+        template = self.load_system_prompt(asset_name)
         skill_asset = skill_name or asset_name
         skill = self.load_skill(skill_asset)
 
         return template.replace("{{skill_content}}", skill)
+
+    def load_system_prompt(self, asset_name: str, file_name: str = "system_prompt.txt") -> str:
+        """Load a prompt without injecting a generation skill."""
+        return self._read(self._prompts_root / asset_name / file_name, asset_name)
 
     def load_skill(self, skill_name: str) -> str:
         """Return one skill asset exactly as stored, for assembly and trace hashing."""

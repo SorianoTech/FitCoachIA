@@ -79,6 +79,37 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_a_question_answers_from_the_plan_without_modifying_it(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        before = await app_db.fetchrow(
+            "SELECT id, version, plan FROM training_plans WHERE chat_id = $1", CHAT_ID
+        )
+        embedding_calls = stub.get("/__counts").json()["embed"]
+        assert embedding_calls > 0
+
+        response = client.post("/webhook/response", json=_update(3, "¿Cuánto descanso?"))
+
+        assert response.status_code == 200
+        assert stub.get("/__counts").json()["embed"] == embedding_calls
+        plans = await app_db.fetch(
+            "SELECT id, version, plan FROM training_plans WHERE chat_id = $1", CHAT_ID
+        )
+        assert len(plans) == 1
+        assert plans[0] == before
+        texts = [message.get("text", "") for message in stub.get("/__sent").json()]
+        assert "El plan indica 120 segundos de descanso." in texts
+        latest = await app_db.fetchrow(
+            """SELECT role, content, agent
+               FROM conversation_messages WHERE chat_id = $1 ORDER BY id DESC LIMIT 1""",
+            CHAT_ID,
+        )
+        assert latest["agent"] == "trainer"
+        assert latest["role"] == "assistant"
+        assert latest["content"] == "El plan indica 120 segundos de descanso."
+
     async def test_train_persists_a_plan_built_from_real_exercises(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:

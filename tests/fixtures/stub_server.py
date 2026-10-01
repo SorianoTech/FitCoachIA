@@ -26,6 +26,7 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 
 # Mensajes enviados por la app, para que el test pueda inspeccionarlos.
 SENT_MESSAGES: list[dict[str, object]] = []
+REQUEST_COUNTS = {"embed": 0}
 
 _INTERVIEW_PROFILE = {
     "user": {"name_or_username": "Ana", "registration_date": "2026-01-01T00:00:00Z"},
@@ -154,8 +155,11 @@ class StubHandler(BaseHTTPRequestHandler):
             self._respond({"status": "healthy"})
         elif self.path == "/__sent":
             self._respond(SENT_MESSAGES)
+        elif self.path == "/__counts":
+            self._respond(REQUEST_COUNTS)
         elif self.path == "/__reset":
             SENT_MESSAGES.clear()
+            REQUEST_COUNTS["embed"] = 0
             self._respond({"ok": True})
         else:
             self._respond({"error": "not found"}, status=404)
@@ -169,6 +173,7 @@ class StubHandler(BaseHTTPRequestHandler):
             self._respond(_completion(self._turn_for(body)))
             return
         if self.path.startswith("/embed"):
+            REQUEST_COUNTS["embed"] += 1
             texts = body.get("texts") or []
             self._respond({
                 "model": "stub",
@@ -212,6 +217,13 @@ class StubHandler(BaseHTTPRequestHandler):
         # Ojo: el prompt del interviewer tambien menciona "Trainer" al citar a
         # los agentes siguientes. Hay que mirar la linea de ROLE.
         if "You are the Trainer" in system:
+            if "This is a read-only consultation" in system:
+                return {
+                    "status": "answer",
+                    "reply": "El plan indica 120 segundos de descanso.",
+                    "report": None,
+                    "plan": None,
+                }
             return _TRAINER_TURN
         return _INTERVIEWER_TURN
 

@@ -45,6 +45,9 @@ async def app_db() -> asyncpg.Connection:
     connection = await asyncpg.connect(APP_DB_URL)
     # Cada ejecucion parte de cero para este chat: los tests no deben heredar
     # el plan de una ejecucion anterior.
+    await connection.execute(
+        "DELETE FROM processed_updates WHERE update_id = ANY($1::bigint[])", [1, 2, 3, 5]
+    )
     await connection.execute("DELETE FROM token_usage WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM training_sessions WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM training_plans WHERE chat_id = $1", CHAT_ID)
@@ -88,12 +91,23 @@ class TestTrainerFlowIntegration:
         _run_train(client)
 
         rows = await app_db.fetch(
-            "SELECT version, plan, report FROM training_plans WHERE chat_id = $1 ORDER BY version",
+            """
+            SELECT version, plan, report, model, skill_name, prompt_hash, skill_hash,
+                   retrieved_exercise_ids
+            FROM training_plans
+            WHERE chat_id = $1
+            ORDER BY version
+            """,
             CHAT_ID,
         )
         assert len(rows) == 1
         assert rows[0]["version"] == 1
         assert rows[0]["report"]
+        assert rows[0]["model"]
+        assert rows[0]["skill_name"] == "trainer"
+        assert len(rows[0]["prompt_hash"]) == 64
+        assert len(rows[0]["skill_hash"]) == 64
+        assert json.loads(rows[0]["retrieved_exercise_ids"])
 
     async def test_every_exercise_in_the_plan_exists_in_the_vector_database(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client

@@ -16,6 +16,7 @@ from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import (
     TRAINING_STATUS_ACTIVE,
     TrainerAction,
+    TrainerGenerationTrace,
     TrainerTurn,
     TrainingPlan,
 )
@@ -472,6 +473,13 @@ class TestTrainerFlow:
                 plan=TrainingPlan.model_validate(build_plan_payload()),
             ),
             token_usages=[],
+            trace=TrainerGenerationTrace(
+                model="trace-model",
+                skill_name="trainer",
+                prompt_hash="p" * 64,
+                skill_hash="s" * 64,
+                retrieved_exercise_ids=(101, 102),
+            ),
         )
 
     @staticmethod
@@ -514,6 +522,10 @@ class TestTrainerFlow:
         assert "Tu plan de 4 semanas" in texts
         mock_trainer.generate_plan.assert_awaited_once_with(profile, exercises)
         mock_conversation_repository.save_training_plan.assert_awaited_once()
+        assert (
+            mock_conversation_repository.save_training_plan.await_args.args[-1]
+            == self._plan_reply().trace
+        )
 
     @pytest.mark.asyncio
     async def test_train_refuses_when_the_catalogue_cannot_be_reached(

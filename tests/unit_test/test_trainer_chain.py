@@ -58,11 +58,19 @@ class TestGeneratePlan:
     async def test_returns_the_validated_plan(
         self, model: MagicMock, profile: InterviewerProfile, exercises: list[Exercise]
     ) -> None:
-        reply = await TrainerChain(model).generate_plan(profile, exercises)
+        reply = await TrainerChain(model, model_name="trace-model").generate_plan(
+            profile, exercises
+        )
 
         assert reply.turn.plan is not None
         assert len(reply.turn.plan.weeks) == 4
         assert reply.turn.plan.exercise_ids() == {101}
+        assert reply.trace is not None
+        assert reply.trace.model == "trace-model"
+        assert reply.trace.skill_name == "trainer"
+        assert len(reply.trace.prompt_hash) == 64
+        assert len(reply.trace.skill_hash) == 64
+        assert reply.trace.retrieved_exercise_ids == (101, 102)
 
     @pytest.mark.asyncio
     async def test_rejects_a_plan_using_an_exercise_that_was_not_retrieved(

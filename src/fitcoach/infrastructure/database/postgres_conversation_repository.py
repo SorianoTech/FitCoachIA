@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.interviewer_profile import InterviewerProfile
-from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE, TrainingPlan
+from fitcoach.domain.trainer_plan import (
+    TRAINING_STATUS_ACTIVE,
+    TrainerGenerationTrace,
+    TrainingPlan,
+)
 from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
@@ -213,8 +217,27 @@ class PostgresConversationRepository:
         except ValidationError:
             logger.exception("Stored plan %s for chat %s no longer validates", record.id, chat_id)
             return None
+        trace = None
+        if (
+            record.model is not None
+            and record.skill_name is not None
+            and record.prompt_hash is not None
+            and record.skill_hash is not None
+            and record.retrieved_exercise_ids is not None
+        ):
+            trace = TrainerGenerationTrace(
+                model=record.model,
+                skill_name=record.skill_name,
+                prompt_hash=record.prompt_hash,
+                skill_hash=record.skill_hash,
+                retrieved_exercise_ids=tuple(record.retrieved_exercise_ids),
+            )
         return StoredTrainingPlan(
-            id=record.id, version=record.version, plan=plan, report=record.report
+            id=record.id,
+            version=record.version,
+            plan=plan,
+            report=record.report,
+            trace=trace,
         )
 
     async def save_training_plan(
@@ -224,6 +247,7 @@ class PostgresConversationRepository:
         report: str,
         user_content: str,
         assistant_content: str,
+        trace: TrainerGenerationTrace | None,
     ) -> int:
         """Append version N+1 and point the session at it. Older plans are kept."""
         await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
@@ -237,6 +261,11 @@ class PostgresConversationRepository:
             version=(current_version or 0) + 1,
             plan=plan.model_dump(mode="json"),
             report=report,
+            model=trace.model if trace else None,
+            skill_name=trace.skill_name if trace else None,
+            prompt_hash=trace.prompt_hash if trace else None,
+            skill_hash=trace.skill_hash if trace else None,
+            retrieved_exercise_ids=list(trace.retrieved_exercise_ids) if trace else None,
         )
         assistant_message = ConversationMessageRecord(
             chat_id=chat_id,

@@ -5,6 +5,7 @@ allow is rejected here rather than handed to the user, so a hallucinated plan
 never reaches Telegram or the database.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
 
@@ -14,6 +15,17 @@ MESOCYCLE_WEEKS = 4
 
 # Estado de training_sessions: hay un plan vigente y el entrenador responde preguntas.
 TRAINING_STATUS_ACTIVE = "active"
+
+
+@dataclass(frozen=True, slots=True)
+class TrainerGenerationTrace:
+    """Identifiers needed to reproduce which Trainer inputs generated a plan."""
+
+    model: str
+    skill_name: str
+    prompt_hash: str
+    skill_hash: str
+    retrieved_exercise_ids: tuple[int, ...]
 
 
 class PlanModel(BaseModel):

@@ -27,9 +27,13 @@ class PromptLoader:
 
         template = self._read(self._prompts_root / asset_name / "system_prompt.txt", asset_name)
         skill_asset = skill_name or asset_name
-        skill = self._read(self._skills_root / skill_asset / "SKILL.md", skill_asset)
+        skill = self.load_skill(skill_asset)
 
         return template.replace("{{skill_content}}", skill)
+
+    def load_skill(self, skill_name: str) -> str:
+        """Return one skill asset exactly as stored, for assembly and trace hashing."""
+        return self._read(self._skills_root / skill_name / "SKILL.md", skill_name)
 
     def _read(self, path: Path, asset_name: str) -> str:
         try:

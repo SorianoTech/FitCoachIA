@@ -340,7 +340,7 @@ class ConversationService:
 
         await self._send(chat_id, message_thread_id, turn.report)
         conversation_message_id = await self._conversation_repository.save_training_plan(
-            chat_id, turn.plan, turn.report, user_message, turn.reply
+            chat_id, turn.plan, turn.report, user_message, turn.reply, reply.trace
         )
         await self._record_token_usage(
             ctx,

@@ -4,7 +4,7 @@ from typing import Protocol
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.interviewer_profile import InterviewerProfile
-from fitcoach.domain.trainer_plan import TrainingPlan
+from fitcoach.domain.trainer_plan import TrainerGenerationTrace, TrainingPlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +15,7 @@ class StoredTrainingPlan:
     version: int
     plan: TrainingPlan
     report: str
+    trace: TrainerGenerationTrace | None = None
 
 
 class ConversationRepository(Protocol):
@@ -61,6 +62,7 @@ class ConversationRepository(Protocol):
         report: str,
         user_content: str,
         assistant_content: str,
+        trace: TrainerGenerationTrace | None,
     ) -> int: ...
 
     async def record_token_usage(

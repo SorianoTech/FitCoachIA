@@ -86,6 +86,11 @@ class TrainingPlanRecord(Base):
     version: Mapped[int] = mapped_column(nullable=False)
     plan: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     report: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    skill_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prompt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    skill_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    retrieved_exercise_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

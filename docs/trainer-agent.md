@@ -253,6 +253,19 @@ latencia por caso y agregados por variante. Una puntuación baja no hace fallar 
 resultado que se quiere comparar—; el código de salida es 1 solo si alguna ejecución no pudo
 producir una respuesta validada.
 
+### Trazabilidad de planes en producción
+
+Cada fila nueva de `training_plans` conserva, además del plan y el informe:
+
+- modelo y nombre de la skill;
+- SHA-256 del system prompt exacto enviado (skill y catálogo RAG incluidos);
+- SHA-256 del contenido de la skill;
+- ids de los ejercicios recuperados.
+
+Estos campos permiten identificar la variante que produjo un fallo y reconstruir su catálogo sin
+guardar el prompt, el perfil ni la salida bruta por duplicado. Las filas anteriores a la migración
+mantienen estos campos a `null`.
+
 ## Componentes principales
 
 | Componente | Ubicación |

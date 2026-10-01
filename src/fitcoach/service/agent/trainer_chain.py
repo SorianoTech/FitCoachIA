@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
+from hashlib import sha256
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -13,7 +14,7 @@ from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.token_usage import TokenUsage
-from fitcoach.domain.trainer_plan import TrainerTurn, TrainingPlan
+from fitcoach.domain.trainer_plan import TrainerGenerationTrace, TrainerTurn, TrainingPlan
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.agent_factory import build_trainer_agent
@@ -42,6 +43,7 @@ class TrainerReply:
 
     turn: TrainerTurn
     token_usages: list[TokenUsage]
+    trace: TrainerGenerationTrace | None = None
 
 
 class TrainerChain(BaseLLMChain):
@@ -53,6 +55,9 @@ class TrainerChain(BaseLLMChain):
         loader: PromptLoader | None = None,
     ) -> None:
         super().__init__(model, model_name)
+        loader = loader or PromptLoader()
+        self._skill_name = skill_name
+        self._skill_hash = _hash_text(loader.load_skill(skill_name))
         self._agent = build_trainer_agent(loader, skill_name=skill_name)
 
     @property
@@ -72,10 +77,15 @@ class TrainerChain(BaseLLMChain):
     async def generate_plan(
         self, profile: InterviewerProfile, exercises: Sequence[Exercise]
     ) -> TrainerReply:
+        messages = self.plan_messages(profile, exercises)
         turn, token_usages = await self._invoke_validated(
-            self.plan_messages(profile, exercises), TrainerTurn, self._validator_for(exercises)
+            messages, TrainerTurn, self._validator_for(exercises)
         )
-        return TrainerReply(turn=turn, token_usages=token_usages)
+        return TrainerReply(
+            turn=turn,
+            token_usages=token_usages,
+            trace=self._trace(messages, exercises),
+        )
 
     async def answer(
         self,
@@ -93,7 +103,25 @@ class TrainerChain(BaseLLMChain):
         turn, token_usages = await self._invoke_validated(
             messages, TrainerTurn, self._validator_for(exercises)
         )
-        return TrainerReply(turn=turn, token_usages=token_usages)
+        return TrainerReply(
+            turn=turn,
+            token_usages=token_usages,
+            trace=self._trace(messages, exercises),
+        )
+
+    def _trace(
+        self, messages: Sequence[BaseMessage], exercises: Sequence[Exercise]
+    ) -> TrainerGenerationTrace:
+        system_prompt = messages[0].content
+        if not isinstance(system_prompt, str):
+            raise TypeError("Trainer system prompt must be text")
+        return TrainerGenerationTrace(
+            model=self._model_name,
+            skill_name=self._skill_name,
+            prompt_hash=_hash_text(system_prompt),
+            skill_hash=self._skill_hash,
+            retrieved_exercise_ids=tuple(sorted(allowed_exercise_ids(exercises))),
+        )
 
     @staticmethod
     def _validator_for(exercises: Sequence[Exercise]) -> Callable[[str], TrainerTurn]:
@@ -146,6 +174,10 @@ def build_trainer_model(settings: IASettings) -> ChatOpenAI:
         max_retries=settings.max_retries,
         model_kwargs={"response_format": strict_response_format(TrainerTurn)},
     )
+
+
+def _hash_text(text: str) -> str:
+    return sha256(text.encode("utf-8")).hexdigest()
 
 
 @lru_cache

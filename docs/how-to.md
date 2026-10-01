@@ -118,6 +118,14 @@ docker network inspect proxy-network >/dev/null 2>&1 || docker network create pr
 make dev-up
 ```
 
+Tras cambiar el código, los prompts o las skills, reconstruye solo la API sin volver a construir el
+embedder ni reiniciar PostgreSQL (deben estar ya levantados con `make dev-up`). Al arrancar también
+aplica las migraciones pendientes:
+
+```bash
+make dev-app
+```
+
 Consulta los logs de la API:
 
 ```bash

@@ -30,6 +30,7 @@ PROD_ENV_FILE ?= $(ENV_ROOT)/prod/.env.prod
 DEV_ENV_FALLBACK=.env.dev
 
 COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
+DEV_APP_SERVICE=fitcoach-ia-dev
 COMPOSE_PROD=$(DOCKER) compose
 # La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
 # cargan una sola vez y sobreviven a los despliegues de la app.
@@ -57,7 +58,7 @@ echo ">> entorno prod: $(PROD_ENV_FILE)"; \
 export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-app dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -75,6 +76,7 @@ help:
 	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
 	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado. Usa $(DEV_ENV_FILE) si existe, si no $(DEV_ENV_FALLBACK)"
+	@echo "  make dev-app                        - Reconstruye y reinicia solo la app de desarrollo (sin embedder ni postgres)"
 	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
 	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
 	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
@@ -102,6 +104,12 @@ build:
 dev-up:
 	@$(resolve_dev_env); \
 	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build
+
+# Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y postgres,
+# que deben estar ya levantados con `make dev-up`.
+dev-app:
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(DEV_APP_SERVICE)
 
 dev-down:
 	@$(resolve_dev_env); \

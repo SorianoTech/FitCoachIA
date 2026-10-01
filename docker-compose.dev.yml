@@ -5,6 +5,8 @@ services:
   fitcoach-ia-dev:
     container_name: dev-fitcoach-ia
     restart: unless-stopped
+    # Etiqueta "dev" para no pisar las imagenes de produccion (latest / x.y.z).
+    image: fitcoachia/fitcoach-app:dev
     build:
       context: .
       dockerfile: src/Dockerfile
@@ -57,6 +59,7 @@ services:
 
   embedder-dev:
     container_name: dev-fitcoach-embedder
+    image: fitcoachia/embedder:dev
     build:
       context: infra/embedder
       dockerfile: Dockerfile-embedder

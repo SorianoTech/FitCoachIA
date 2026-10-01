@@ -24,10 +24,21 @@ ejecuciones entre sí. Cada caso es una carpeta `cases/<caso>/` con:
 # Un caso
 make trainer-debug ARGS="--case-dir evals/trainer/cases/knee_injury_home"
 
+# Todos los casos con dos variantes de skill
+make trainer-compare ARGS="--skill trainer --skill trainer-dev"
+
+# Producto cartesiano de skills y modelos
+make trainer-compare ARGS="--skill trainer --skill trainer-dev \
+  --model modelo-a --model modelo-b"
+
 # Regenerar los catálogos tras cambiar la recuperación o el corpus
 # (requiere vector_database_url y embedder_url apuntando a servicios en marcha)
 make trainer-refresh-catalogues
 ```
+
+La comparativa crea una carpeta en `runs/trainer-comparisons/` con los artefactos completos de cada
+ejecución y tres resúmenes (`comparison.md`, `.csv` y `.json`). La tabla agregada muestra planes
+generados, puntuación media, errores, avisos, reparaciones, tokens y latencia por variante.
 
 Los catálogos reflejan la recuperación del momento en que se congelaron. Si un plan es malo porque
 el catálogo no ofrece buenas opciones (por ejemplo, ningún ejercicio de espalda), el problema está

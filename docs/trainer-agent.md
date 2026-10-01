@@ -238,6 +238,21 @@ Las métricas (`weekly_sets`, `mean_rpe`, `week1_sets_per_target`, `max_formula_
 puntuación entre variantes. Tras añadir o ajustar una regla, `--evaluate-run` re-puntúa ejecuciones
 antiguas sin gastar tokens.
 
+### Comparar skills y modelos
+
+```bash
+make trainer-compare ARGS="--skill trainer --skill trainer-dev"
+make trainer-compare ARGS="--skill trainer --skill trainer-dev \
+  --model modelo-a --model modelo-b"
+```
+
+`trainer-compare` ejecuta el producto cartesiano de skills y modelos sobre todos los casos de
+`evals/trainer/cases`. Conserva los artefactos de cada ejecución y escribe `comparison.md`,
+`comparison.csv` y `comparison.json` con puntuación, errores, avisos, reparaciones, tokens y
+latencia por caso y agregados por variante. Una puntuación baja no hace fallar el comando — es el
+resultado que se quiere comparar—; el código de salida es 1 solo si alguna ejecución no pudo
+producir una respuesta validada.
+
 ## Componentes principales
 
 | Componente | Ubicación |

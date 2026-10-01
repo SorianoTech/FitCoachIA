@@ -205,16 +205,38 @@ make trainer-debug ARGS="--chat-id 123 --live-retrieval --save-catalogue evals/t
 | `--prompts-root` / `--skills-root` / `--skill` | Variante de `trainer/system_prompt.txt` y `<skill>/SKILL.md` |
 | `--model` / `--temperature` / `--max-tokens` | Sobrescriben `ia_model`, `ia_temperature`, `ia_trainer_max_tokens` |
 | `--render-only` | Escribe el prompt y los mensajes sin llamar al modelo |
+| `--evaluate-run DIR` | Vuelve a puntuar una ejecución guardada sin llamar al modelo |
 
 Cada ejecución crea `runs/trainer/<fecha>-<caso>-<variante>/` (ignorado por git) con:
 
 - `system_prompt.txt`: el prompt exacto enviado (skill y catálogo incluidos).
 - `calls/NN_request.json` y `calls/NN_response.txt`: cada llamada, incluida la reparación.
 - `plan.json` y `plan.md`: el turno validado y una vista legible por semanas y días.
-- `run.json`: estado, error, llamadas, tokens, latencia y huella (`prompt_fingerprint`) del prompt.
+- `evaluation.json` y `evaluation.md`: el resultado del evaluador (ver abajo).
+- `run.json`: estado, error, llamadas, tokens, latencia, `score`, `eval_errors`, `eval_warnings` y
+  huella (`prompt_fingerprint`) del prompt.
 - `profile.json` y `catalogue.json`: las entradas, para repetir la ejecución.
 
-El proceso termina con código 0 si se generó un plan y 1 en otro caso.
+El proceso termina con código 0 si se generó un plan y 1 en otro caso. Con `--evaluate-run`, 0 si el
+plan no tiene errores del evaluador y 1 si los tiene.
+
+### Evaluador determinista
+
+Pydantic garantiza la *forma* del plan; `service/agent/plan_evaluator.py` comprueba las reglas de la
+skill que el esquema no puede expresar y devuelve hallazgos en lugar de lanzar excepciones, para
+poder puntuar un plan y comparar variantes sobre los mismos casos. Puntuación: `100 − 15·errores −
+3·avisos` (mínimo 0); un plan *pasa* si no tiene errores.
+
+| Severidad | Reglas |
+| --- | --- |
+| `error` (incumple una regla explícita) | `profile_mismatch` (objetivo, entorno o días distintos del perfil), `unknown_exercise_id`, `name_mismatch`, `session_over_budget` (`estimated_minutes` > `minutes_per_session`), `duplicate_exercise_in_day`, `volume_over_ceiling` (series semanales por músculo `target` > `tolerable_volume_sets` en la semana 1, o en todas con banderas rojas), `deload_volume` (semana 4 ≥ semana 1), `rpe_over_cap` (S1 > 8, S3 > 9, S4 > 6), `injury_not_recorded`, `red_flags_maximal_effort` (RPE ≥ 9), `red_flags_no_referral`, `report_over_telegram_limit` (4096), `no_plan` |
+| `warning` (heurística, revisar a mano) | `session_time_formula_over_budget` (fórmula de la skill con 40 s por serie, +15 % de tolerancia), `no_progression` (S2 y S3 no suben volumen ni RPE), `deload_volume` fuera del 40-70 %, `reps_outside_goal_range` / `rest_outside_goal_range` (semana 1), `exercises_change_between_weeks` (< 50 % de ejercicios conservados), `group_not_trained` (pecho, espalda o piernas, si el catálogo los tiene), `phantom_injury_exclusion`, `possible_injury_conflict` (palabras clave por zona lesionada), `reply_too_long` (> 600) |
+| `info` (catálogo) | `catalogue_missing_group` y `group_not_trained` cuando el catálogo tampoco tiene el grupo: el problema es la recuperación, no el prompt |
+
+Las métricas (`weekly_sets`, `mean_rpe`, `week1_sets_per_target`, `max_formula_minutes`,
+`exercises_per_day`, `distinct_exercises`, grupos del catálogo...) ayudan a ver *por qué* cambia la
+puntuación entre variantes. Tras añadir o ajustar una regla, `--evaluate-run` re-puntúa ejecuciones
+antiguas sin gastar tokens.
 
 ## Componentes principales
 
@@ -227,6 +249,7 @@ El proceso termina con código 0 si se generó un plan y 1 en otro caso.
 | Repositorio PostgreSQL | `src/fitcoach/infrastructure/database/postgres_conversation_repository.py` |
 | Sesión de la BD vectorial | `src/fitcoach/infrastructure/vectordb/session.py` |
 | Depuración offline (CLI y runner) | `src/fitcoach/devtools/` |
+| Evaluador de reglas de la skill | `src/fitcoach/service/agent/plan_evaluator.py` |
 
 ## Configuración
 

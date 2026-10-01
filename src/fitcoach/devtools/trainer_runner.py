@@ -26,6 +26,7 @@ from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TrainerTurn
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.llm_chain import AsyncChatModel
+from fitcoach.service.agent.plan_evaluator import PlanEvaluation, Severity, evaluate_turn
 from fitcoach.service.agent.trainer_chain import TrainerChain
 
 _SLUG = re.compile(r"[^a-zA-Z0-9_.-]+")
@@ -57,6 +58,7 @@ class TrainerRun:
     token_usages: list[TokenUsage] = field(default_factory=list)
     error: str | None = None
     latency_ms: int = 0
+    evaluation: PlanEvaluation | None = None
 
     @property
     def status(self) -> str:
@@ -126,8 +128,46 @@ async def run_trainer_case(
     else:
         run.turn = reply.turn
         run.token_usages = reply.token_usages
+        run.evaluation = evaluate_turn(reply.turn, profile, exercises)
     run.latency_ms = int((time.perf_counter() - started) * 1000)
     return run
+
+
+def evaluate_run_dir(run_dir: Path) -> PlanEvaluation:
+    """Re-score a stored run, e.g. after adding a rule, without calling the model again."""
+    turn = TrainerTurn.model_validate_json((run_dir / "plan.json").read_text(encoding="utf-8"))
+    profile = load_profile(run_dir / "profile.json")
+    catalogue = load_catalogue(run_dir / "catalogue.json")
+    evaluation = evaluate_turn(turn, profile, catalogue)
+    write_evaluation(evaluation, run_dir)
+    return evaluation
+
+
+def write_evaluation(evaluation: PlanEvaluation, out_dir: Path) -> None:
+    _write_json(out_dir / "evaluation.json", evaluation.to_dict())
+    (out_dir / "evaluation.md").write_text(render_evaluation_markdown(evaluation), encoding="utf-8")
+
+
+def render_evaluation_markdown(evaluation: PlanEvaluation) -> str:
+    lines = [
+        f"# Evaluation: score {evaluation.score}/100 "
+        f"({'PASS' if evaluation.passed else 'FAIL'}) - "
+        f"{evaluation.errors} error(s), {evaluation.warnings} warning(s)",
+        "",
+    ]
+    for severity in Severity:
+        findings = [f for f in evaluation.findings if f.severity is severity]
+        if not findings:
+            continue
+        lines += [f"## {severity.value} ({len(findings)})", ""]
+        lines += [
+            f"- `{finding.rule}`{f' [{finding.where}]' if finding.where else ''}: {finding.message}"
+            for finding in findings
+        ]
+        lines.append("")
+    lines += ["## metrics", ""]
+    lines += [f"- {name}: {value}" for name, value in evaluation.metrics.items()]
+    return "\n".join(lines) + "\n"
 
 
 def load_profile(path: Path) -> InterviewerProfile:
@@ -151,6 +191,7 @@ def artifact_dir(root: Path, case: str, variant: str, now: datetime | None = Non
 
 
 def run_summary(run: TrainerRun) -> dict[str, Any]:
+    evaluation = run.evaluation
     return {
         "case": run.case,
         "variant": run.variant.name,
@@ -166,6 +207,9 @@ def run_summary(run: TrainerRun) -> dict[str, Any]:
         "total_tokens": run.total_tokens,
         "latency_ms": run.latency_ms,
         "exercises_in_catalogue": len(run.exercises),
+        "score": evaluation.score if evaluation else None,
+        "eval_errors": evaluation.errors if evaluation else None,
+        "eval_warnings": evaluation.warnings if evaluation else None,
         "token_usages": [asdict(usage) for usage in run.token_usages],
     }
 
@@ -176,7 +220,8 @@ def write_artifacts(run: TrainerRun, out_dir: Path) -> Path:
     - ``system_prompt.txt``: the assembled prompt exactly as sent (skill + catalogue).
     - ``calls/NN_request.json`` / ``NN_response.txt``: every LLM call, repair included.
     - ``plan.json`` / ``plan.md``: the validated turn and a human-readable rendering.
-    - ``run.json``: summary (status, tokens, latency, fingerprint...).
+    - ``evaluation.json`` / ``evaluation.md``: the skill-rule checks (``plan_evaluator``).
+    - ``run.json``: summary (status, score, tokens, latency, fingerprint...).
     - ``profile.json`` / ``catalogue.json``: inputs, so the run can be replayed.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -193,6 +238,8 @@ def write_artifacts(run: TrainerRun, out_dir: Path) -> Path:
     if run.turn is not None:
         _write_json(out_dir / "plan.json", run.turn.model_dump(mode="json"))
         (out_dir / "plan.md").write_text(render_turn_markdown(run.turn), encoding="utf-8")
+    if run.evaluation is not None:
+        write_evaluation(run.evaluation, out_dir)
     _write_json(out_dir / "profile.json", run.profile.model_dump(mode="json"))
     dump_catalogue(run.exercises, out_dir / "catalogue.json")
     _write_json(out_dir / "run.json", run_summary(run))

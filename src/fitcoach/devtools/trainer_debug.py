@@ -15,6 +15,9 @@ Examples (from the repository root)::
     # Reproduce a real user's case: profile from the DB, catalogue from pgVector
     uv run python -m fitcoach.devtools.trainer_debug --chat-id 123 --live-retrieval \\
         --save-catalogue evals/trainer/catalogue_123.json
+
+    # Re-score a stored run after changing the evaluator rules (no LLM call)
+    uv run python -m fitcoach.devtools.trainer_debug --evaluate-run runs/trainer/<run>
 """
 
 import argparse
@@ -30,6 +33,7 @@ from fitcoach.devtools.trainer_runner import (
     TrainerVariant,
     artifact_dir,
     dump_catalogue,
+    evaluate_run_dir,
     load_catalogue,
     load_profile,
     render_messages,
@@ -40,6 +44,7 @@ from fitcoach.devtools.trainer_runner import (
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
+from fitcoach.service.agent.plan_evaluator import PlanEvaluation, Severity
 from fitcoach.service.agent.trainer_chain import build_trainer_model
 
 DEFAULT_OUT = Path("runs/trainer")
@@ -76,6 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="Artifacts root directory")
     parser.add_argument(
         "--render-only", action="store_true", help="Write the prompt only; do not call the LLM"
+    )
+    parser.add_argument(
+        "--evaluate-run",
+        type=Path,
+        metavar="RUN_DIR",
+        help="Re-score a stored run (plan.json + profile.json + catalogue.json); no LLM call",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG logging")
     return parser
@@ -161,7 +172,21 @@ def print_run(run: TrainerRun, out_dir: Path) -> None:
     summary = run_summary(run)
     summary.pop("token_usages")
     echo(json.dumps(summary, ensure_ascii=False, indent=2))
+    if run.evaluation is not None:
+        print_findings(run.evaluation)
     echo(f"artifacts: {out_dir}")
+
+
+def print_findings(evaluation: PlanEvaluation) -> None:
+    echo(
+        f"evaluation: score {evaluation.score}/100, "
+        f"{evaluation.errors} error(s), {evaluation.warnings} warning(s)"
+    )
+    for finding in evaluation.findings:
+        if finding.severity is Severity.INFO:
+            continue
+        where = f" [{finding.where}]" if finding.where else ""
+        echo(f"  {finding.severity.value.upper():7} {finding.rule}{where}: {finding.message}")
 
 
 DEFAULT_TOP_K = 8
@@ -191,6 +216,11 @@ async def resolve_catalogue(
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    if args.evaluate_run is not None:
+        evaluation = evaluate_run_dir(args.evaluate_run)
+        print_findings(evaluation)
+        echo(f"written: {args.evaluate_run / 'evaluation.md'}")
+        return 0 if evaluation.passed else 1
     profile, case = await resolve_profile(args)
     settings = None if args.render_only else model_settings(args)
     exercises = await resolve_catalogue(args, profile, settings)

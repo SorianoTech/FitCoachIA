@@ -151,10 +151,16 @@ class TestArtifacts:
             "profile.json",
             "catalogue.json",
             "run.json",
+            "evaluation.json",
+            "evaluation.md",
         } <= names
         summary = json.loads((out / "run.json").read_text())
         assert summary["status"] == "plan"
         assert summary["total_tokens"] == 15
+        # The fixture plan repeats week 1 in the deload: an explicit skill violation.
+        assert summary["eval_errors"] >= 1
+        assert summary["score"] == json.loads((out / "evaluation.json").read_text())["score"]
+        assert "`deload_volume` [W4]" in (out / "evaluation.md").read_text()
         assert "### Week 4 (deload)" in (out / "plan.md").read_text()
         assert load_catalogue(out / "catalogue.json") == exercises
 
@@ -173,6 +179,8 @@ class TestArtifacts:
 
         assert "<error> TimeoutError" in (out / "calls" / "01_response.txt").read_text()
         assert not (out / "plan.json").exists()
+        assert not (out / "evaluation.json").exists()
+        assert json.loads((out / "run.json").read_text())["score"] is None
 
     def test_artifact_dir_is_timestamped_and_safe(self, tmp_path: Path) -> None:
         path = artifact_dir(tmp_path, "my case/1", "v 2")
@@ -324,3 +332,26 @@ class TestCli:
         assert (tmp_path / "saved.json").exists()
         [run_dir] = (tmp_path / "runs").iterdir()
         assert json.loads((run_dir / "run.json").read_text())["model"] == "other-model"
+
+    @pytest.mark.asyncio
+    async def test_evaluate_run_rescores_a_stored_run_without_the_llm(
+        self,
+        tmp_path: Path,
+        model: MagicMock,
+        profile: InterviewerProfile,
+        exercises: list[Exercise],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        run = await run_trainer_case("ana", profile, exercises, model, "m", TrainerVariant())
+        out = write_artifacts(run, tmp_path / "run")
+        (out / "evaluation.md").unlink()
+
+        code = await trainer_debug.main_async(
+            trainer_debug.build_parser().parse_args(["--evaluate-run", str(out)])
+        )
+
+        assert code == 1
+        assert (out / "evaluation.md").exists()
+        printed = capsys.readouterr().out
+        assert "ERROR   deload_volume [W4]" in printed
+        assert "catalogue_missing_group" not in printed

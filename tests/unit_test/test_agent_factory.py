@@ -69,3 +69,8 @@ class TestRealPromptAssets:
 
         assert "name: trainer-dev" in agent.system_prompt
         assert "{{skill_content}}" not in agent.system_prompt
+        assert "selected trainer skill" in agent.system_prompt
+        assert "skills/trainer/SKILL.md" not in agent.system_prompt
+        assert "When `flags.red` is non-empty" in agent.system_prompt
+        assert "total weekly sets** to 50-60%" in agent.system_prompt
+        assert "Never use RPE 9 or higher" in agent.system_prompt

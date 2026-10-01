@@ -16,18 +16,41 @@ in production.
 Design **week 1 properly** and derive the other three from it:
 
 1. Week 1 (`accumulation`): pick at most **3 exercises per day**, only from `<rag_context>`.
-2. Week 2 (`intensification`): the same exercises and sets, `rpe` raised by 0.5.
-3. Week 3 (`peak`): the same exercises, one extra set on the first exercise of each day.
-4. Week 4 (`deload`): the same exercises, half the sets (minimum 1), `rpe` capped at 6.
+   Give every exercise an `rpe` no higher than 8. For each catalogue `target`, the sum of weekly
+   sets must not exceed `initial_calculations.tolerable_volume_sets`.
+2. Week 2 (`intensification`): keep the same exercises and sets; raise each `rpe` by 0.5.
+3. Week 3 (`peak`): keep the same exercises and add one set to the first exercise of each day,
+   unless a safety, volume or time constraint forbids it. Cap every `rpe` at 9.
+4. Week 4 (`deload`): keep the safest core exercises and reduce **total weekly sets** to 50-60% of
+   week 1. Cap every `rpe` at 6. Drop an exercise when keeping one set of everything would leave too
+   much volume.
 
 Keep `days_per_week` equal to the profile's `commitment.days_per_week`, and keep every day's
-`estimated_minutes` under `commitment.minutes_per_session`.
+`estimated_minutes` under `commitment.minutes_per_session`. Check the estimate with:
+
+```
+8 + Σ(sets × (40 + rest_seconds)) / 60 + 5
+```
+
+If that estimate does not fit, remove sets or exercises before returning the plan.
+
+## Red flags
+
+When `flags.red` is non-empty, safety overrides the normal progression:
+
+- Keep every week's sets per catalogue `target` at or below
+  `initial_calculations.tolerable_volume_sets`.
+- Never use RPE 9 or higher. Progress weeks 2-3 only with a small RPE increase capped at 8 when
+  adding sets would exceed the ceiling.
+- Keep week 4 at 50-60% of week 1 and RPE no higher than 6.
+- State clearly in `report` that a qualified professional should clear the client before starting.
 
 ## Rules that still apply
 
 These are not relaxed in development — they are what the tests exercise:
 
 - Every `exercise_id` MUST come from `<rag_context>`; never invent one.
+- Use the exact catalogue `name` for each id and do not repeat an id within one day.
 - `weeks` has exactly 4 entries, numbered 1-4.
 - Each week has exactly `days_per_week` entries, with distinct `day` values.
 - Injuries in the profile are still excluded, and still recorded in `excluded_by_injury`.

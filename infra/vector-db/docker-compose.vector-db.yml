@@ -23,21 +23,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # fitcoach-db-loader:
-  #   build:
-  #     context: ./
-  #     dockerfile: Dockerfile-db-loader
-  #   container_name: fitcoach-db-loader
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - ./loader/resources:/media:ro
-  #   networks:
-  #     - fit-coach-net
-  #   depends_on:
-  #     pgvector:
-  #       condition: service_healthy
-
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin4
@@ -64,7 +49,7 @@ volumes:
   pgvector_volume:
 
 networks:
-  # proxy-network:
-  #   external: true
+  proxy-network:
+    external: true
   fit-coach-net:
     driver: bridge

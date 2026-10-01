@@ -26,3 +26,5 @@ __pycache__/
 .mypy*elop
 
 infra/vector-db/loader/resources/**
+.env.dev
+.env.prod

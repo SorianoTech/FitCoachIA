@@ -34,7 +34,7 @@ dependencies = [
     "pydantic-extra-types>=2.11.1",
     "python-dotenv>=1.2.2",
     "sentry-sdk>=2.58.0",
-    "sqlalchemy>=2.0.48",
+    "sqlalchemy[asyncio]>=2.0.48",
     "python-telegram-bot>=21.0",
     "regex>=2024.11.6"
 ]
@@ -53,7 +53,7 @@ test = [
 
 # Analisis estatico: linter y tipos.
 lint = [
-    "ruff>=0.15.12",
+    "ruff==0.15.12",
     "mypy>=1.10",
     "types-regex>=2026.7.19",  # stubs de `regex`: solo para mypy, no se instala en runtime
 ]

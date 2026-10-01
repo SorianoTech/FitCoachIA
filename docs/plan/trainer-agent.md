@@ -120,10 +120,11 @@ La app nunca escribe en esta base de datos.
 En `src/fitcoach/infrastructure/config/settings.py`:
 
 ```python
-class VectorDatabaseSettings(BaseSettings):   # env_prefix="vector_database_"
-    url: str        # postgresql+asyncpg://fitcoach_ro:...@pgvector:5432/fitcoach
+class VectorDatabaseSettings(BaseSettings):  # env_prefix="vector_database_"
+    url: str  # postgresql+asyncpg://fitcoach_ro:...@pgvector:5432/fitcoach
 
-class EmbedderSettings(BaseSettings):         # env_prefix="embedder_"
+
+class EmbedderSettings(BaseSettings):  # env_prefix="embedder_"
     url: str
     timeout_seconds: int = 10
 ```
@@ -160,34 +161,42 @@ Actualizar `.env.example` y `docs/how-to.md` con todas ellas.
 
 ```python
 class PlannedExercise(PlanModel):
-    exercise_id: int            # FK lógica a exercises.id de la BD vectorial
+    exercise_id: int  # FK lógica a exercises.id de la BD vectorial
     name: str
-    sets: int; reps: str; rest_seconds: int
-    rpe: float | None; notes: str | None
+    sets: int
+    reps: str
+    rest_seconds: int
+    rpe: float | None
+    notes: str | None
+
 
 class TrainingDay(PlanModel):
-    day: int; focus: str
+    day: int
+    focus: str
     exercises: list[PlannedExercise]
     estimated_minutes: int
 
+
 class TrainingWeek(PlanModel):
-    week: int                   # 1..4
+    week: int  # 1..4
     intensity: Literal["accumulation", "intensification", "peak", "deload"]
     days: list[TrainingDay]
+
 
 class TrainingPlan(PlanModel):
     goal: Literal["lose_fat", "gain_muscle", "performance"]
     days_per_week: int
     environment: Literal["gym", "home", "outdoors", "mixed"]
-    weeks: list[TrainingWeek]                 # exactamente 4
+    weeks: list[TrainingWeek]  # exactamente 4
     excluded_by_injury: list[str]
     progression_notes: str
 
+
 class TrainerTurn(PlanModel):
     status: Literal["plan", "answer"]
-    reply: str                   # siempre: mensaje listo para Telegram
-    report: str | None           # solo en "plan"
-    plan: TrainingPlan | None    # solo en "plan"
+    reply: str  # siempre: mensaje listo para Telegram
+    report: str | None  # solo en "plan"
+    plan: TrainingPlan | None  # solo en "plan"
 ```
 
 Validadores: `weeks` tiene 4 semanas numeradas 1-4 sin huecos;
@@ -276,28 +285,40 @@ Migración Alembic nueva (`down_revision` = el head vigente; comprobar con
 `alembic heads`):
 
 ```python
-op.add_column("conversation_messages",
-              sa.Column("agent", sa.String(32), nullable=False,
-                        server_default="interviewer"))
-op.create_index("ix_conversation_messages_chat_id_agent_id",
-                "conversation_messages", ["chat_id", "agent", "id"])
+op.add_column(
+    "conversation_messages",
+    sa.Column("agent", sa.String(32), nullable=False, server_default="interviewer"),
+)
+op.create_index(
+    "ix_conversation_messages_chat_id_agent_id", "conversation_messages", ["chat_id", "agent", "id"]
+)
 
-op.create_table("training_plans",
+op.create_table(
+    "training_plans",
     sa.Column("id", sa.Integer, primary_key=True),
     sa.Column("chat_id", sa.BigInteger, nullable=False),
     sa.Column("version", sa.Integer, nullable=False),
     sa.Column("plan", sa.JSON, nullable=False),
     sa.Column("report", sa.Text, nullable=False),
-    sa.Column("created_at", sa.DateTime(timezone=True),
-              server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-    sa.UniqueConstraint("chat_id", "version"))
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        server_default=sa.text("CURRENT_TIMESTAMP"),
+        nullable=False,
+    ),
+    sa.UniqueConstraint("chat_id", "version"),
+)
 
-op.create_table("training_sessions",
+op.create_table(
+    "training_sessions",
     sa.Column("chat_id", sa.BigInteger, primary_key=True),
-    sa.Column("status", sa.String(16), nullable=False),     # generating | active
-    sa.Column("current_plan_id", sa.Integer,
-              sa.ForeignKey("training_plans.id", ondelete="SET NULL")),
-    sa.Column("started_at", ...), sa.Column("updated_at", ...))
+    sa.Column("status", sa.String(16), nullable=False),  # generating | active
+    sa.Column(
+        "current_plan_id", sa.Integer, sa.ForeignKey("training_plans.id", ondelete="SET NULL")
+    ),
+    sa.Column("started_at", ...),
+    sa.Column("updated_at", ...),
+)
 ```
 
 Se versiona el plan en vez de sobrescribirlo: un `/train` repetido crea la

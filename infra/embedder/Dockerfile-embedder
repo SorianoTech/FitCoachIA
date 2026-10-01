@@ -11,6 +11,10 @@ ENV EMBEDDER_MODEL=sentence-transformers/all-MiniLM-L6-v2
 
 WORKDIR /app
 
+# torch solo CPU: el embedder no usa GPU y la build CUDA multiplica la imagen (~10 GB).
+# Se instala antes que requirements.txt para que sentence-transformers no arrastre la de CUDA.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

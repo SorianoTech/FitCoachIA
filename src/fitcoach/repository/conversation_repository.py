@@ -18,6 +18,8 @@ class StoredTrainingPlan:
 
 
 class ConversationRepository(Protocol):
+    async def claim_update(self, update_id: int) -> bool: ...
+
     async def get_recent(
         self,
         chat_id: int,

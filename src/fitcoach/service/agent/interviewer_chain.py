@@ -67,6 +67,7 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
         temperature=settings.temperature,
         max_tokens=settings.max_tokens or None,
         timeout=settings.timeout_seconds or None,
+        max_retries=settings.max_retries,
         model_kwargs={"response_format": {"type": "json_object"}},
     )
 

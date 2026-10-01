@@ -57,6 +57,11 @@ class IASettings(BaseSettings):
     model: str
     temperature: float
     timeout_seconds: int = 60
+    # Retries inside the OpenAI client multiply the worst-case latency
+    # (timeout x (1 + retries), twice with the JSON repair); past Telegram's
+    # webhook timeout the update is re-delivered. Keep it at 0 unless that budget
+    # still fits.
+    max_retries: int = 0
     max_tokens: int = 0
     history_window_messages: int = 20
     skill: str = "interviewer"

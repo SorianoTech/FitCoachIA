@@ -107,6 +107,21 @@ class TrainingSessionRecord(Base):
     )
 
 
+class ProcessedUpdateRecord(Base):
+    """Telegram ``update_id`` already taken by a worker.
+
+    Telegram re-delivers an update when the webhook does not answer in time, so
+    a slow ``/train`` would otherwise be processed (and billed) once per retry.
+    """
+
+    __tablename__ = "processed_updates"
+
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class ModelPriceRecord(Base):
     __tablename__ = "model_prices"
 

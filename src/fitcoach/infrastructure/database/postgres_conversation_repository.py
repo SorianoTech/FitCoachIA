@@ -5,6 +5,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fitcoach.domain.agents import AgentType
@@ -16,6 +17,7 @@ from fitcoach.infrastructure.database.models import (
     InterviewerProfileRecord,
     InterviewSessionRecord,
     ModelPriceRecord,
+    ProcessedUpdateRecord,
     TokenUsageRecord,
     TrainingPlanRecord,
     TrainingSessionRecord,
@@ -42,6 +44,22 @@ def _validate_stored(model: type[ModelT], stored: object) -> ModelT:
 class PostgresConversationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def claim_update(self, update_id: int) -> bool:
+        """Mark ``update_id`` as taken; False if another delivery already took it.
+
+        Atomic thanks to the primary key, so two concurrent re-deliveries cannot
+        both win.
+        """
+        statement = (
+            insert(ProcessedUpdateRecord)
+            .values(update_id=update_id)
+            .on_conflict_do_nothing(index_elements=[ProcessedUpdateRecord.update_id])
+            .returning(ProcessedUpdateRecord.update_id)
+        )
+        claimed = await self._session.scalar(statement)
+        await self._session.commit()
+        return claimed is not None
 
     async def get_recent(
         self,

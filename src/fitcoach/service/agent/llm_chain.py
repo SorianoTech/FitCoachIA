@@ -87,6 +87,7 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
         """
         validate = validator or (lambda raw: turn_type.model_validate_json(raw))
         result = await self._invoke(messages)
+        logger.debug("%s result: %s", turn_type.__name__, result.content)
         token_usages = [result.usage] if result.usage is not None else []
         try:
             return validate(result.content), token_usages

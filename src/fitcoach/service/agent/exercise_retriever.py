@@ -44,9 +44,13 @@ class ExerciseRetriever:
 
     async def retrieve(self, profile: InterviewerProfile) -> list[Exercise]:
         """Top-k exercises per muscle group, de-duplicated, order preserved."""
+        logger.debug("profile=%s", profile)
         queries = [build_query_text(profile, group) for group in self._muscle_groups]
+        logger.debug("queries=%s", queries)
         vectors = await self._embedder.embed(queries)
+        logger.debug("vectors=%s", vectors)
         equipment = equipment_filter(profile)
+        logger.debug("equipment=%s", equipment)
 
         retrieved: dict[int, Exercise] = {}
         for group, vector in zip(self._muscle_groups, vectors, strict=True):

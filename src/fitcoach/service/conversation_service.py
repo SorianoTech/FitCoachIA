@@ -105,6 +105,11 @@ class ConversationService:
         message: Message | None = update.effective_message
         ctx = self._build_context(update, message)
         try:
+            if not await self._conversation_repository.claim_update(update.update_id):
+                # Re-delivery of an update whose first attempt is still running
+                # (or already answered): processing it again is the retry loop.
+                logger.warning(f"{ctx} update duplicado, se ignora")
+                return
             await self._process(update, message, ctx)
         except Exception:
             logger.exception(f"{ctx} error inesperado procesando el update")

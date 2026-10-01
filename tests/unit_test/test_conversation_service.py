@@ -320,6 +320,24 @@ class TestPersistentConversation:
         )
 
 
+class TestDuplicateUpdates:
+    @pytest.mark.asyncio
+    async def test_redelivered_update_is_ignored(
+        self,
+        service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.claim_update.return_value = False
+
+        await service.handle_update(_text_update(456, "Hola"))
+
+        mock_conversation_repository.claim_update.assert_awaited_once_with(1)
+        mock_interviewer.respond.assert_not_awaited()
+        mock_bot.send_message.assert_not_awaited()
+
+
 class TestAgentErrorHandling:
     @pytest.mark.asyncio
     async def test_persists_failed_llm_call_without_conversation_message(

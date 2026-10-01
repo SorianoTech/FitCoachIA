@@ -66,8 +66,10 @@ async def test_repairs_an_invalid_result_once(model: MagicMock) -> None:
 
     assert reply.turn.reply == "¿Cuál es tu objetivo?"
     assert model.ainvoke.await_count == 2
-    repair_prompt = model.ainvoke.await_args_list[1].args[0][0].content
-    assert "JSON schema" in repair_prompt
+    repair_messages = model.ainvoke.await_args_list[1].args[0]
+    assert 'Interviewer ("Secretario")' in repair_messages[0].content
+    assert repair_messages[-2].content == "not json"
+    assert "JSON schema" in repair_messages[-1].content
 
 
 class TestTokenUsageCapture:

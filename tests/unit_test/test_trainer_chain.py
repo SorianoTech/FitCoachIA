@@ -94,8 +94,14 @@ class TestGeneratePlan:
 
         assert reply.turn.plan is not None
         assert reply.turn.plan.exercise_ids() == {102}
-        repair_prompt = model.ainvoke.await_args_list[1].args[0][0].content
-        assert "JSON schema" in repair_prompt
+        repair_messages = model.ainvoke.await_args_list[1].args[0]
+        # The repair keeps the original system prompt, so the catalogue is still there.
+        assert isinstance(repair_messages[0], SystemMessage)
+        assert "id: 102" in repair_messages[0].content
+        assert isinstance(repair_messages[-2], AIMessage)
+        assert '"exercise_id": 999' in repair_messages[-2].content
+        assert "JSON schema" in repair_messages[-1].content
+        assert "999" in repair_messages[-1].content
 
     @pytest.mark.asyncio
     async def test_repairs_malformed_json_once(

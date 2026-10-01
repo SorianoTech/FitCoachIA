@@ -18,7 +18,7 @@ from typing import Any, Protocol, TypeVar
 
 import httpx
 import openai
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from openai.lib._pydantic import to_strict_json_schema
 from pydantic import BaseModel, ValidationError
 
@@ -128,7 +128,7 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
         logger.debug("%s result was invalid; requesting a repair", turn_type.__name__)
         try:
             repair = await self._invoke(
-                self._repair_messages(result.content, turn_type, repair_hint)
+                self._repair_messages(messages, result.content, turn_type, repair_hint)
             )
         except AgentError as error:
             error.token_usages = [*token_usages, *error.token_usages]
@@ -145,19 +145,29 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
             raise InvalidModelOutputError(token_usages) from repair_error
 
     @staticmethod
-    def _repair_messages(raw_result: str, turn_type: type[TurnT], errors: str) -> list[BaseMessage]:
-        """El esquema solo no basta: sin los errores concretos el modelo tiene que
-        encontrar el fallo por su cuenta en un JSON grande, y suele repetirlo."""
+    def _repair_messages(
+        original: Sequence[BaseMessage], raw_result: str, turn_type: type[TurnT], errors: str
+    ) -> list[BaseMessage]:
+        """Repair as a continuation of the original conversation.
+
+        The original messages carry the system prompt, the skill and the
+        per-request context (for the Trainer, the exercise catalogue): without
+        them the model cannot know which ids are valid and repeats the mistake.
+        El esquema solo no basta: sin los errores concretos el modelo tiene que
+        encontrar el fallo por su cuenta en un JSON grande, y suele repetirlo.
+        """
         return [
-            SystemMessage(
+            *original,
+            AIMessage(content=raw_result),
+            HumanMessage(
                 content=(
-                    "Return only a valid JSON object matching this JSON schema. Do not return "
-                    f"Markdown or prose. Schema: {turn_type.model_json_schema()}. "
+                    "Your previous reply did not validate. Return only a valid JSON object "
+                    "matching this JSON schema. Do not return Markdown or prose. "
+                    f"Schema: {turn_type.model_json_schema()}. "
                     "Fix exactly these validation errors, leaving every valid field untouched:\n"
                     f"{errors}"
                 )
             ),
-            HumanMessage(content=raw_result),
         ]
 
     def _usage_from_exception(

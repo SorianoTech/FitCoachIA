@@ -102,6 +102,9 @@ esquema y aun así no sirve, así que se rechaza como error de validación y pas
 de reparación que un JSON malformado. Si tras la reparación sigue inventando, no se persiste nada y
 el usuario recibe un mensaje para reintentar.
 
+La reparación continúa la conversación original (system prompt con `<rag_context>`, perfil, la
+respuesta inválida y los errores concretos), así el modelo sigue viendo qué ids son válidos.
+
 El conjunto permitido se pasa por parámetro en cada petición, no se guarda en la cadena: las
 cadenas son *singletons* compartidos entre peticiones concurrentes.
 

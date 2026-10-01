@@ -49,7 +49,8 @@ class TrainingPlan(PlanModel):
     goal: Literal["lose_fat", "gain_muscle", "performance"]
     days_per_week: int = Field(ge=1, le=7)
     environment: Literal["gym", "home", "outdoors", "mixed"]
-    weeks: list[TrainingWeek]
+    # Also exported as minItems/maxItems, so strict structured outputs cannot cut it short.
+    weeks: list[TrainingWeek] = Field(min_length=MESOCYCLE_WEEKS, max_length=MESOCYCLE_WEEKS)
     excluded_by_injury: list[str]
     progression_notes: str = Field(min_length=1)
 
@@ -94,7 +95,9 @@ class TrainerAction(StrEnum):
 class TrainerTurn(PlanModel):
     """``plan`` delivers a new mesocycle; ``answer`` is a follow-up reply."""
 
-    status: TrainerAction
+    # strict=False only for the enum: in strict mode Pydantic rejects "plan"/"answer"
+    # from a dict (only JSON input coerces). The value set is still enforced.
+    status: TrainerAction = Field(strict=False)
     reply: str = Field(min_length=1)
     report: str | None = None
     plan: TrainingPlan | None = None

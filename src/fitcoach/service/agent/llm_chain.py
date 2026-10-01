@@ -14,11 +14,12 @@ import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import httpx
 import openai
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from openai.lib._pydantic import to_strict_json_schema
 from pydantic import BaseModel, ValidationError
 
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
@@ -28,6 +29,29 @@ from fitcoach.domain.token_usage import TokenUsage
 logger = logging.getLogger(__name__)
 
 TurnT = TypeVar("TurnT", bound=BaseModel)
+
+
+def strict_response_format(turn_type: type[BaseModel]) -> dict[str, Any]:
+    """OpenAI ``json_schema`` response format in strict mode for ``turn_type``.
+
+    ``json_object`` only guarantees syntactically valid JSON; strict structured
+    outputs make the provider decode against the schema itself, so misplaced
+    keys, missing fields or wrong types cannot be generated. Cross-field rules
+    (week order, ids in the catalogue...) still rely on Pydantic and the repair.
+
+    Passed as a dict, not as the Pydantic class: with a class the OpenAI client
+    would parse the reply itself and a validation failure would bypass the
+    repair path. ``to_strict_json_schema`` is the SDK's own conversion (every
+    property required, ``additionalProperties: false``, no ``None`` defaults).
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": turn_type.__name__,
+            "strict": True,
+            "schema": to_strict_json_schema(turn_type),
+        },
+    }
 
 
 class AsyncChatModel(Protocol):

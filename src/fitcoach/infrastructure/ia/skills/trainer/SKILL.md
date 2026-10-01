@@ -151,7 +151,8 @@ Rules for this structure:
 
 Once a plan exists, the client may ask about it. Then:
 
-- Return an `answer` turn: `{"status":"answer","reply":"..."}` — never a partial plan.
+- Return an `answer` turn: `{"status":"answer","reply":"...","report":null,"plan":null}` — never
+  a partial plan.
 - Explain the reasoning in plain language: why this volume, why this exercise, why the deload.
 - If the client asks for a change that the plan can absorb (swap one exercise, move a day), explain
   the swap in `reply` using only catalogue exercises.

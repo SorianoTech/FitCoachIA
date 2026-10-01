@@ -1,5 +1,5 @@
 ---
-name: fitness-trainer-dev
+name: trainer-dev
 description: Reduced mesocycle generation for testing the plan contract, retrieval grounding and persistence.
 version: 1.0
 ---
@@ -42,5 +42,6 @@ These are not relaxed in development — they are what the tests exercise:
 
 ## Follow-up questions
 
-Answer in one or two sentences, with `{"status":"answer","reply":"..."}`. Do not regenerate the
+Answer in one or two sentences, with
+`{"status":"answer","reply":"...","report":null,"plan":null}`. Do not regenerate the
 plan in an answer turn.

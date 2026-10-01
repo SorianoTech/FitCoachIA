@@ -67,5 +67,5 @@ class TestRealPromptAssets:
     def test_assembles_the_dev_trainer_skill_variant(self) -> None:
         agent = build_trainer_agent(skill_name="trainer-dev")
 
-        assert "fitness-trainer-dev" in agent.system_prompt
+        assert "name: trainer-dev" in agent.system_prompt
         assert "{{skill_content}}" not in agent.system_prompt

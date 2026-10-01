@@ -56,12 +56,12 @@ class TestTrainingPlan:
         assert all(len(week.days) == 3 for week in plan.weeks)
 
     def test_rejects_a_mesocycle_shorter_than_four_weeks(self) -> None:
-        with pytest.raises(ValidationError, match="weeks 1..4"):
+        # Caught by the list bound (also exported as minItems for strict outputs).
+        with pytest.raises(ValidationError, match="at least 4 items"):
             TrainingPlan.model_validate(_plan(weeks=3))
 
     def test_rejects_a_mesocycle_longer_than_four_weeks(self) -> None:
-        # Caught by the per-field bound (week <= 4) before the model validator runs.
-        with pytest.raises(ValidationError, match="less than or equal to 4"):
+        with pytest.raises(ValidationError, match="at most 4 items"):
             TrainingPlan.model_validate(_plan(weeks=5))
 
     def test_rejects_weeks_that_are_out_of_order(self) -> None:

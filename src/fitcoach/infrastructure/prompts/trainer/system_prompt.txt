@@ -74,7 +74,8 @@ STRICT JSON CONTRACT:
 - When you deliver a mesocycle, return exactly:
   `{"status":"plan","reply":"...","report":"...","plan":{...}}`.
 - When you answer a question about an existing plan, return exactly:
-  `{"status":"answer","reply":"..."}` — no `report`, no `plan`.
+  `{"status":"answer","reply":"...","report":null,"plan":null}` — `report` and `plan` must be
+  `null`, never a summary or a partial plan.
 - `reply` must be a single Telegram-ready message: short, no markdown, no bullet dumps of the whole
   plan, no extra JSON keys.
 - `report` must be a Telegram-ready summary of the mesocycle: goal, days per week, how the four

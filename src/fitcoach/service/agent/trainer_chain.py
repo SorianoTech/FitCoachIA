@@ -16,7 +16,11 @@ from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TrainerTurn, TrainingPlan
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
 from fitcoach.service.agent.agent_factory import build_trainer_agent
-from fitcoach.service.agent.llm_chain import AsyncChatModel, BaseLLMChain
+from fitcoach.service.agent.llm_chain import (
+    AsyncChatModel,
+    BaseLLMChain,
+    strict_response_format,
+)
 from fitcoach.service.agent.rag_context import allowed_exercise_ids, build_rag_context
 
 logger = logging.getLogger(__name__)
@@ -128,7 +132,7 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
         max_tokens=settings.trainer_max_tokens or None,
         timeout=settings.trainer_timeout or settings.timeout_seconds,
         max_retries=settings.max_retries,
-        model_kwargs={"response_format": {"type": "json_object"}},
+        model_kwargs={"response_format": strict_response_format(TrainerTurn)},
     )
 
 

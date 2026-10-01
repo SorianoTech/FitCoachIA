@@ -11,9 +11,10 @@ from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
-from fitcoach.domain.trainer_plan import TrainingPlan
-from fitcoach.service.agent.llm_chain import InvalidModelOutputError
-from fitcoach.service.agent.trainer_chain import TrainerChain
+from fitcoach.domain.trainer_plan import TrainerTurn, TrainingPlan
+from fitcoach.infrastructure.config.settings import IASettings
+from fitcoach.service.agent.llm_chain import InvalidModelOutputError, strict_response_format
+from fitcoach.service.agent.trainer_chain import TrainerChain, _build_model
 from tests.unit_test.conftest import build_plan_payload
 
 
@@ -231,3 +232,46 @@ class TestProviderErrors:
 
         with pytest.raises(InvalidModelOutputError):
             await TrainerChain(model).generate_plan(profile, exercises)
+
+
+class TestStrictResponseFormat:
+    def test_trainer_model_requests_strict_json_schema_outputs(self) -> None:
+        settings = IASettings(
+            base_url="http://llm",
+            token="test-token",  # noqa: S106
+            model="m",
+            temperature=0.2,
+            _env_file=None,  # type: ignore[call-arg]
+        )
+
+        response_format = _build_model(settings).model_kwargs["response_format"]
+
+        assert response_format["type"] == "json_schema"
+        assert response_format["json_schema"]["name"] == "TrainerTurn"
+        assert response_format["json_schema"]["strict"] is True
+
+    def test_schema_satisfies_the_strict_mode_rules(self) -> None:
+        schema = strict_response_format(TrainerTurn)["json_schema"]["schema"]
+        objects = [schema, *schema["$defs"].values()]
+
+        for obj in (o for o in objects if o.get("type") == "object"):
+            # Strict mode: every property required, nothing extra allowed.
+            assert obj["additionalProperties"] is False
+            assert set(obj["required"]) == set(obj["properties"])
+        assert "default" not in json.dumps(schema)
+
+    def test_schema_pins_the_mesocycle_to_four_weeks(self) -> None:
+        schema = strict_response_format(TrainerTurn)["json_schema"]["schema"]
+        weeks = schema["$defs"]["TrainingPlan"]["properties"]["weeks"]
+
+        assert weeks["minItems"] == 4
+        assert weeks["maxItems"] == 4
+
+    def test_answer_turn_with_explicit_nulls_validates(self) -> None:
+        # Strict outputs always emit every key, so answers arrive with nulls.
+        turn = TrainerTurn.model_validate_json(
+            '{"status": "answer", "reply": "Hola", "report": null, "plan": null}'
+        )
+
+        assert turn.report is None
+        assert turn.plan is None

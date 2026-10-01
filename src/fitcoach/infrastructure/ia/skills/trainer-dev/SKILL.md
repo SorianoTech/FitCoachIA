@@ -42,6 +42,5 @@ These are not relaxed in development — they are what the tests exercise:
 
 ## Follow-up questions
 
-Answer in one or two sentences, with
-`{"status":"answer","reply":"...","report":null,"plan":null}`. Do not regenerate the
+Answer in one or two sentences using the system prompt's `answer` contract. Do not regenerate the
 plan in an answer turn.

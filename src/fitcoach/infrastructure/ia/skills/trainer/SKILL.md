@@ -1,6 +1,6 @@
 ---
 name: fitness-trainer
-description: Mesocycle design module for a fitness application. Turns a structured client profile into a safe, progressive 4-week training plan built exclusively from a provided exercise catalogue. Allocates weekly volume, splits sessions by available days and time, and substitutes movements around injuries.
+description: Mesocycle design method for a fitness application. Turns a structured client profile into a safe, progressive 4-week training plan built exclusively from a provided exercise catalogue. Allocates weekly volume, splits sessions by available days and time, and substitutes movements around injuries.
 version: 1.0
 keywords: mesocycle, periodization, training plan, volume allocation, deload, injury substitution, exercise selection
 ---
@@ -104,55 +104,11 @@ professional should clear the client before starting.
 - Keep the same core exercises across weeks 1-3 so progression is measurable; the deload may drop
   the most demanding ones.
 
-## Plan Structure (authoritative output shape)
-
-```json
-{
-  "goal": "gain_muscle",
-  "days_per_week": 3,
-  "environment": "gym",
-  "weeks": [
-    {
-      "week": 1,
-      "intensity": "accumulation",
-      "days": [
-        {
-          "day": 1,
-          "focus": "Push",
-          "estimated_minutes": 55,
-          "exercises": [
-            {
-              "exercise_id": 1234,
-              "name": "barbell bench press",
-              "sets": 4,
-              "reps": "8-10",
-              "rest_seconds": 120,
-              "rpe": 7.5,
-              "notes": "Deja una repetición en recámara"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "excluded_by_injury": ["hombro derecho: excluidos press por encima de la cabeza"],
-  "progression_notes": "Sube 2,5 kg cuando completes todas las series en el rango alto."
-}
-```
-
-Rules for this structure:
-
-- `weeks` has exactly 4 entries, numbered 1-4 in order.
-- Each week has exactly `days_per_week` entries with distinct `day` values.
-- `excluded_by_injury` is an empty list when the profile reports no injuries.
-- `progression_notes` explains, in the client's language, how to progress load week to week.
-
 ## Answering follow-up questions
 
 Once a plan exists, the client may ask about it. Then:
 
-- Return an `answer` turn: `{"status":"answer","reply":"...","report":null,"plan":null}` — never
-  a partial plan.
+- Follow the system prompt's `answer` contract — never return a partial plan.
 - Explain the reasoning in plain language: why this volume, why this exercise, why the deload.
 - If the client asks for a change that the plan can absorb (swap one exercise, move a day), explain
   the swap in `reply` using only catalogue exercises.

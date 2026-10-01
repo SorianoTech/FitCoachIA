@@ -51,8 +51,8 @@ El comportamiento se define en dos recursos que se ensamblan al crear el agente:
 
 | Recurso | Responsabilidad |
 | --- | --- |
-| `src/fitcoach/infrastructure/prompts/trainer/system_prompt.txt` | Rol, tono, límites de seguridad, contrato de integración y reglas del catálogo. |
-| `src/fitcoach/infrastructure/ia/skills/trainer/SKILL.md` | Periodización, volumen, splits, sustituciones por lesión y estructura del plan. |
+| `src/fitcoach/infrastructure/prompts/trainer/system_prompt.txt` | Rol, tono, límites de seguridad, contrato JSON y reglas del catálogo. |
+| `src/fitcoach/infrastructure/ia/skills/trainer/SKILL.md` | Periodización, volumen, splits y sustituciones por lesión. No define el contrato JSON. |
 
 La periodización es de cuatro semanas:
 

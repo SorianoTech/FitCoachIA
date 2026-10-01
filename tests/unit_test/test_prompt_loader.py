@@ -32,6 +32,16 @@ class TestPromptLoader:
         assert "fitness-interviewer" in result
         assert "{{rag_context}}" in result
 
+    def test_trainer_contract_lives_in_the_prompt_not_the_skill(self) -> None:
+        loader = PromptLoader()
+        prompt = loader.load_assembled_system_prompt("trainer")
+        skill = (loader._skills_root / "trainer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "PLAN STRUCTURE:" in prompt
+        assert '"exercise_id": 1234' in prompt
+        assert "Plan Structure" not in skill
+        assert '"exercise_id": 1234' not in skill
+
     def test_load_assembled_system_prompt_injects_skill_and_keeps_rag_placeholder(
         self, loader: PromptLoader
     ) -> None:

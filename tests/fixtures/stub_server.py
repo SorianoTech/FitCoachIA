@@ -5,7 +5,7 @@ servidor con rutas distintas basta y evita levantar tres contenedores. Solo usa
 la libreria estandar: la imagen es `python:3.11-slim` sin build ni dependencias.
 
 Rutas:
-  POST /bot<token>/getMe|setMyCommands|sendMessage   -> Telegram
+  POST /bot<token>/<method>                           -> Telegram y registro de webhook
   POST /v1/chat/completions                          -> proveedor LLM
   POST /embed                                        -> servicio de embeddings
   GET  /health                                       -> sonda del compose
@@ -27,6 +27,7 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 # Mensajes enviados por la app, para que el test pueda inspeccionarlos.
 SENT_MESSAGES: list[dict[str, object]] = []
 REQUEST_COUNTS = {"embed": 0}
+REGISTERED_WEBHOOK_URL = ""
 
 _INTERVIEW_PROFILE = {
     "user": {"name_or_username": "Ana", "registration_date": "2026-01-01T00:00:00Z"},
@@ -229,6 +230,19 @@ class StubHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _telegram(method: str, body: dict[str, object]) -> dict[str, object]:
+        global REGISTERED_WEBHOOK_URL
+        if method == "setWebhook":
+            REGISTERED_WEBHOOK_URL = str(body["url"])
+            return {"ok": True, "result": True}
+        if method == "getWebhookInfo":
+            return {
+                "ok": True,
+                "result": {
+                    "url": REGISTERED_WEBHOOK_URL,
+                    "has_custom_certificate": False,
+                    "pending_update_count": 0,
+                },
+            }
         if method == "getMe":
             return {
                 "ok": True,

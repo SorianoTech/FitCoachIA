@@ -10,7 +10,7 @@ services:
       # Dummy values: just enough for the fail-fast startup check to pass.
       # PTB concatena <bot_telegram_url><token>, de ahi el "/bot" final.
       - bot_telegram_token=test-token
-      - bot_telegram_url=http://telegram-mock:9999/bot
+      - bot_telegram_url=http://test-stubs:9999/bot
       - bot_telegram_commands=start:Inicia FitCoach
       - log_level=INFO
       - ia_base_url=http://test-stubs:9999/v1
@@ -42,18 +42,6 @@ services:
         condition: service_healthy
       test-stubs:
         condition: service_healthy
-      telegram-mock:
-        condition: service_started
-
-  # La app aborta el arranque si no puede registrar el webhook, asi que el
-  # contenedor necesita un Telegram alcanzable. Ver tests/telegram_mock.py.
-  telegram-mock:
-    image: python:3.12-alpine
-    container_name: telegram-mock-test
-    volumes:
-      - ./telegram_mock.py:/srv/telegram_mock.py:ro
-    command: [ "python", "/srv/telegram_mock.py" ]
-
   postgres:
     image: postgres:16-alpine
     container_name: postgres-test

@@ -76,6 +76,14 @@ Si el entorno de integración ya está levantado, pueden ejecutarse directamente
 uv run pytest tests/it --no-cov
 ```
 
+El cliente compartido de `tests/it/conftest.py` envía la cabecera
+`X-Telegram-Bot-Api-Secret-Token` con el token de prueba configurado en
+`tests/docker-compose-test.yml`. Las llamadas al webhook sin esta cabecera, o con un valor
+distinto, reciben `403 Forbidden`. No se necesitan credenciales reales de Telegram.
+
+El servicio `test-stubs` simula Telegram, el LLM y el embedder. La app debe enviar sus mensajes
+a ese mismo servicio: los tests consultan `/__sent` para comprobar las respuestas entregadas.
+
 ## Cobertura
 
 Para comprobar explícitamente el umbral global del 80 %:

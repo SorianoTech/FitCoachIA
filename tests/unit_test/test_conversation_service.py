@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Bot, Message, Update
-from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
@@ -12,6 +11,7 @@ from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile, InterviewerTurn
+from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import (
     TRAINING_STATUS_ACTIVE,
@@ -62,7 +62,7 @@ def service(
         bot=mock_bot,
         interviewer=mock_interviewer,
         conversation_repository=mock_conversation_repository,
-         usage_limits=mock_usage_limits,
+        usage_limits=mock_usage_limits,
     )
 
 

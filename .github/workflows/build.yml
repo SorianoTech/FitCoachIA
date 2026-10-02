@@ -104,7 +104,7 @@ jobs:
   # ════════════════════════════════════════════
   test-gate:
     runs-on: ubuntu-latest
-    needs: quality-security-gate
+    needs: semgrep-analysis
     permissions:
       contents: read
       checks: write
@@ -121,6 +121,6 @@ jobs:
 
       # Levanta el contenedor de integración, ejecuta unitarios + integración con cobertura,
       # y lo detiene. Mismo comando que en local, para que no puedan divergir.
-      # Usa la .venv preparada desde requirements-ci.txt sin resolver otras dependencias.
+      # PYTEST=pytest: en CI no hay venv (deps instaladas --system), a diferencia de local.
       - name: Run app && execute tests
-        run: make tests PYTEST="uv run --no-sync pytest"
+        run: make tests PYTEST=pytest

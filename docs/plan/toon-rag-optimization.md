@@ -190,13 +190,15 @@ class RAGContextFormat(StrEnum):
     TOON = "toon"
 
 
-def normalize_exercises(exercises: Sequence[Exercise]) -> list[dict[str, object]]: ...
+def normalize_exercises(exercises: Sequence[Exercise]) -> list[dict[str, object]]:
+    ...
 
 
 def build_rag_context(
     exercises: Sequence[Exercise],
     format: RAGContextFormat = RAGContextFormat.TOON,
-) -> str: ...
+) -> str:
+    ...
 ```
 
 La normalización debe ser independiente del encoder para poder comparar ambos formatos usando

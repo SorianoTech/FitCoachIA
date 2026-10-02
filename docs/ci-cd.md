@@ -49,9 +49,8 @@ en minutos en CI).
 ### 2.2 Continuous Integration — `build.yml`
 
 **Dispara**: `push` y `pull_request` sobre `feature/**`, `feat/**`, `fix/**`, `bugfix/**` (se
-ignoran cambios que solo tocan documentación). Tras `quality-security-gate`, los jobs
-`semgrep-analysis` y `test-gate` se ejecutan en paralelo. Los tests no dependen del análisis
-informativo de Semgrep ni de la subida de su informe SARIF.
+ignoran cambios que solo tocan documentación). Tres jobs encadenados por `needs`:
+`quality-security-gate` → `semgrep-analysis` → `test-gate`.
 
 > ⚠️ El filtro de `pull_request` se evalúa sobre la rama **base**: un PR `feature/x → develop` no
 > vuelve a disparar este workflow, porque esos commits ya se validaron en el `push` a la rama de
@@ -65,7 +64,6 @@ dependencias:
 |---|---|
 | `pip-audit` (antes de instalar) | Corta el pipeline si una dependencia a instalar tiene una vulnerabilidad `HIGH`/`CRITICAL`, antes de traer código potencialmente vulnerable al runner. |
 | `ruff` | Lint bloqueante para todo el equipo. |
-| `ruff format --check .` | Formato bloqueante, sin modificar los ficheros. |
 | `mypy` | Seguridad de tipos estática; detecta errores que los tests no siempre cubren. |
 | `gitleaks` | Segunda barrera anti-secretos, por si el hook local se saltó (`--no-verify`). |
 | `pip-audit` (tras instalar) | Segunda pasada, ya sobre el entorno realmente instalado. |
@@ -84,11 +82,6 @@ Valida comportamiento funcional real (unitarios + integración) contra el mismo 
 en local (app + Postgres vía Docker), para que el resultado en CI nunca diverja del de desarrollo.
 Esa equivalencia no es una coincidencia: el job ejecuta **`make tests`**, el mismo target que se
 usa en local. Gate: cobertura mínima del 80 % como proxy de calidad.
-
-Los jobs de calidad y tests preparan su propia `.venv` con Python 3.12 e instalan exactamente
-`.github/requirements-ci.txt` mediante `uv pip sync`. Todos los comandos posteriores usan
-`uv run --no-sync` para no resolver ni modificar las dependencias instaladas. El gate ejecuta
-`make tests PYTEST="uv run --no-sync pytest"` sobre ese mismo entorno.
 
 ### 2.4 Continuous Delivery — `release.yml`
 

@@ -53,6 +53,4 @@ runs:
       shell: bash
       env:
         REQ_FILE: ${{ env.REQUIREMENTS_FILE }}
-      run: |
-        uv venv --python "$PYTHON_VERSION" .venv
-        uv pip sync --python .venv/bin/python -q "$REQ_FILE"
+      run: uv pip install --system -q -r $REQ_FILE

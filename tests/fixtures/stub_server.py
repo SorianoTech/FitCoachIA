@@ -6,6 +6,7 @@ la libreria estandar: la imagen es `python:3.11-slim` sin build ni dependencias.
 
 Rutas:
   POST /bot<token>/getMe|setMyCommands|sendMessage   -> Telegram
+  POST /bot<token>/setWebhook|getWebhookInfo         -> registro del webhook al arrancar
   POST /v1/chat/completions                          -> proveedor LLM
   POST /embed                                        -> servicio de embeddings
   GET  /health                                       -> sonda del compose
@@ -27,6 +28,9 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 # Mensajes enviados por la app, para que el test pueda inspeccionarlos.
 SENT_MESSAGES: list[dict[str, object]] = []
 REQUEST_COUNTS = {"embed": 0}
+# `getWebhookInfo` tiene que devolver la URL que registro `setWebhook`: la app
+# compara ambas al arrancar y aborta si no coinciden.
+REGISTERED_WEBHOOK = {"url": ""}
 
 _INTERVIEW_PROFILE = {
     "user": {"name_or_username": "Ana", "registration_date": "2026-01-01T00:00:00Z"},
@@ -237,6 +241,18 @@ class StubHandler(BaseHTTPRequestHandler):
                     "is_bot": True,
                     "first_name": "stub",
                     "username": "stub_bot",
+                },
+            }
+        if method == "setWebhook":
+            REGISTERED_WEBHOOK["url"] = str(body.get("url", ""))
+            return {"ok": True, "result": True}
+        if method == "getWebhookInfo":
+            return {
+                "ok": True,
+                "result": {
+                    "url": REGISTERED_WEBHOOK["url"],
+                    "has_custom_certificate": False,
+                    "pending_update_count": 0,
                 },
             }
         if method == "sendMessage":

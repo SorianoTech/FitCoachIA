@@ -179,7 +179,7 @@ primero y se pueda terminar lo empezado:
 | Entrada | Nivel | Se corta en | Respuesta |
 |---|---|---|---|
 | `/interview` | `SOFT` | `soft` | «No puedes iniciar una entrevista nueva por hoy, pero puedes seguir con la conversación actual.» |
-| Texto libre | `HARD` | `límite` | «Has alcanzado el límite de uso por hoy. Vuelve a intentarlo más tarde.» |
+| `/train`, texto libre | `HARD` | `límite` | «Has alcanzado el límite de uso por hoy. Vuelve a intentarlo más tarde.» |
 | `/start`, `/doubts`, `/progress` | `UNLIMITED` | nunca | — |
 
 Los comandos `UNLIMITED` **ni siquiera consultan el consumo**: hoy no invocan al modelo, así que la

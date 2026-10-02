@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,6 +12,7 @@ from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile, InterviewerTurn
+from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import (
     TRAINING_STATUS_ACTIVE,
@@ -47,9 +48,18 @@ def mock_interviewer() -> AsyncMock:
     return AsyncMock(spec=InterviewerChain)
 
 
+# Cuota holgada: estos tests no ejercitan el limite y no deben chocar con el.
+_NO_QUOTA_PRESSURE = UsageLimits(
+    hard_tokens=1_000_000, soft_tokens=900_000, window=timedelta(hours=24)
+)
+
+
 @pytest.fixture
 def mock_conversation_repository() -> AsyncMock:
-    return AsyncMock(spec=ConversationRepository)
+    repository = AsyncMock(spec=ConversationRepository)
+    # Sin esto el mock devuelve otro AsyncMock y la comparacion con el umbral falla.
+    repository.tokens_used_since.return_value = 0
+    return repository
 
 
 @pytest.fixture
@@ -62,6 +72,7 @@ def service(
         bot=mock_bot,
         interviewer=mock_interviewer,
         conversation_repository=mock_conversation_repository,
+        usage_limits=_NO_QUOTA_PRESSURE,
     )
 
 
@@ -248,6 +259,7 @@ class TestPersistentConversation:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
             history_window_messages=12,
         )
 
@@ -280,6 +292,7 @@ class TestPersistentConversation:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Mi respuesta final"))
@@ -309,6 +322,7 @@ class TestPersistentConversation:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Quiero cambiar mi objetivo"))
@@ -351,6 +365,7 @@ class TestAgentErrorHandling:
             bot=AsyncMock(spec=Bot),
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Hola"))
@@ -386,6 +401,7 @@ class TestAgentErrorHandling:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
         )
 
         await service.handle_update(_text_update(456, "Hola"))
@@ -459,6 +475,7 @@ class TestTrainerFlow:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
             trainer=mock_trainer,
             exercise_retriever=mock_retriever,
         )
@@ -673,6 +690,7 @@ class TestFreeMessageRouting:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
             trainer=mock_trainer,
             exercise_retriever=retriever,
         )
@@ -781,6 +799,7 @@ class TestFreeMessageRouting:
             bot=mock_bot,
             interviewer=mock_interviewer,
             conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
             trainer=mock_trainer,
         )
         mock_conversation_repository.get_interview_status.return_value = "completed"

@@ -23,6 +23,10 @@ class TestCommandTiers:
         assert _LIMITS.tier_for(Commands.INTERVIEW) is UsageTier.SOFT
         assert _LIMITS.limit_for(Commands.INTERVIEW) == 900
 
+    def test_generating_a_plan_is_cut_at_the_hard_threshold(self) -> None:
+        assert _LIMITS.tier_for(Commands.TRAIN) is UsageTier.HARD
+        assert _LIMITS.limit_for(Commands.TRAIN) == 1_000
+
     def test_free_text_is_cut_at_the_hard_threshold(self) -> None:
         assert _LIMITS.tier_for(None) is UsageTier.HARD
         assert _LIMITS.limit_for(None) == 1_000

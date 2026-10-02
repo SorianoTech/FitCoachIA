@@ -37,7 +37,7 @@ class TestPromptLoader:
         result = PromptLoader().load_assembled_system_prompt("interviewer")
 
         assert "{{skill_content}}" not in result
-        assert "fitness-interviewer" in result
+        assert "name: interviewer\n" in result
         assert "rag_context" not in result
 
     @pytest.mark.parametrize("skill_name", ["interviewer", "interviewer-dev"])

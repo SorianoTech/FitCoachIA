@@ -13,7 +13,7 @@ name = "fitcoach"
 version = "0.1.0"
 description = "FitCoachIA — coaching assistant con backend FastAPI e interfaz de bot de Telegram"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",

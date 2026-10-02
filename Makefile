@@ -158,7 +158,12 @@ trainer-refresh-catalogues:
 	done
 
 tests:
-	@$(COMPOSE_UP); \
+	@if ! $(COMPOSE_UP); then \
+		echo "ERROR: el entorno de test no ha arrancado; revisa los logs de arriba"; \
+		$(DOCKER) compose -f $(COMPOSE_IT) logs --tail 40 fitcoach-ia; \
+		$(COMPOSE_DOWN); \
+		exit 1; \
+	fi; \
 	$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \

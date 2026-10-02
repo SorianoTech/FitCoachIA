@@ -33,7 +33,8 @@ flowchart LR
     ALLOY -- "push de logs" --> LOKI
     API -- "trazas OTLP" --> OTEL
     OTEL -- "trazas OTLP" --> TEMPO
-    PROM -. "scrape :8888/:8889" .-> OTEL
+    OTEL -- "metricas OTLP\nremote-write" --> PROM
+    PROM -. "scrape :8888\n(telemetria del Collector)" .-> OTEL
     TEMPO -- "remote-write\nspan-metrics/service-graphs" --> PROM
     GRAF --> LOKI
     GRAF --> TEMPO
@@ -47,10 +48,10 @@ flowchart LR
 | Componente | Imagen | Puerto interno | Rol |
 |---|---|---|---|
 | **Grafana** | `grafana/grafana:11.3.0` | 3000 | Visualización: dashboards, datasources, alertas. Único servicio expuesto (vía `proxy-network` a nginx proxy manager, sin publicar el puerto al host). |
-| **Prometheus** | `prom/prometheus:v3.0.1` | 9090 | Almacena métricas (scrape del propio stack + métricas de trazas generadas por Tempo). Retención 30 días. |
+| **Prometheus** | `prom/prometheus:v3.0.1` | 9090 | Almacena métricas. Tres orígenes: scrape del propio stack, remote-write de Tempo (`traces_spanmetrics_*`) y remote-write del Collector (métricas OTLP de la app). Retención 30 días. Arranca con `--enable-feature=exemplar-storage`: sin ese flag aceptaría el write y descartaría los exemplars en silencio. |
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
 | **Tempo** | `grafana/tempo:2.6.1` | 3200 (+ OTLP 4317/4318) | Almacena trazas. Retención 7 días. Su `metrics_generator` produce métricas RED (`traces_spanmetrics_*`) a partir de las trazas y las envía a Prometheus por remote-write. |
-| **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`, y persiste las colas de exportación antes de reenviar a Loki/Tempo/Prometheus. |
+| **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`. Reenvía logs a Loki, trazas a Tempo y métricas a Prometheus por remote-write. Las colas de Loki y Tempo se persisten en disco; la de métricas es en memoria (ver sección 9). |
 | **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
 Todos los servicios están en la red interna `observability`, excepto Grafana y
@@ -101,12 +102,19 @@ está configurada en la app; si no lo está, `configure_telemetry` es un no-op
 
 ### 3.3 Métricas (Tempo → Prometheus)
 
-No hay un exportador de métricas propio en la app; las métricas provienen del
-`metrics_generator` de Tempo, que deriva de las trazas recibidas:
+**La app todavía no emite métricas propias**: `telemetry.py` solo crea un
+`TracerProvider`, no un `MeterProvider`. Las métricas actuales provienen del
+`metrics_generator` de Tempo, que las deriva de las trazas recibidas:
 
 - `traces_spanmetrics_calls_total` (volumen de llamadas por servicio/span/código de estado).
 - `traces_spanmetrics_latency_bucket` (histograma de latencias, para p50/p95/p99).
 - Métricas de servicio-a-servicio (`service-graph`).
+
+El pipeline `metrics` del Collector ya está montado y escribe a Prometheus por
+remote-write, pero de momento no recibe nada. Se activará cuando la app cree su
+`MeterProvider` (ver [plan/plan-metricas-custom.md](plan/plan-metricas-custom.md)).
+Ese plan también decide apagar el `span-metrics` de Tempo para no medir lo mismo
+dos veces, así que esta sección cambiará cuando se ejecute.
 
 ### 3.4 Tokens y coste del LLM (Postgres, tabla `token_usage`)
 
@@ -284,6 +292,19 @@ telemetría separa dev de prod de una forma distinta:
   (`PostgreSQL Dev` → `postgres-dev:5432`, `PostgreSQL Prod` →
   `postgres-prod:5432`), seleccionables en el dashboard con la variable
   `$datasource`.
+- **La misma regla vale para el servicio de la app**, y no es teórica: durante
+  un tiempo los dos Compose llamaron `fitcoach-ia` a su servicio, ambos
+  conectados a `proxy-network`. Como Compose registra el **nombre del servicio**
+  como alias de red, ese nombre resolvía a dos contenedores y el DNS los
+  alternaba, así que parte del tráfico del dominio de producción aterrizaba en
+  el contenedor de desarrollo: los mensajes al bot de producción los contestaba
+  el bot de desarrollo, con su base de datos y su skill recortada. Hoy los
+  servicios se llaman `fitcoach-ia-dev` y `fitcoach-ia-prod`.
+
+> **Regla general**: todo servicio conectado a `proxy-network` debe tener un
+> **nombre de servicio** único por entorno. El `container_name` no basta —
+> desambigua el contenedor, pero el alias de red sale del nombre del servicio, y
+> un `alias` declarado tampoco lo sustituye: se suma al implícito.
 - **Alertas**: duplicadas por entorno (`[dev]`/`[prod]` en el título), cada
   una apuntando a su propio datasource Postgres.
 
@@ -307,11 +328,26 @@ Si vas a desplegar producción por primera vez en este host, solo hace falta:
 | Contraseñas / entorno del stack | `infra/observability/.env` (no versionado; plantilla en `.env.example`) |
 | Qué exporta la app (endpoint OTLP, nivel de log) | variables de entorno de la app: `otel_exporter_otlp_endpoint`, `log_level`, `APP_VERSION` |
 
-El Collector persiste las colas de Loki y Tempo en
-`/var/lib/otelcol/queue`, respaldado por el volumen
-`fitcoach-observability-otel-collector`. Los exportadores reintentan durante
-un máximo de 5 minutos; si el backend sigue caído o la cola se llena, el
-Collector descarta datos para proteger la disponibilidad del proceso.
+El Collector persiste las colas de **Loki y Tempo** en `/var/lib/otelcol/queue`,
+respaldado por el volumen `fitcoach-observability-otel-collector` (el servicio
+`otel-collector-init` crea ese directorio antes de arrancar). Esos dos
+exportadores reintentan durante un máximo de 5 minutos; si el backend sigue
+caído o la cola se llena, el Collector descarta datos para proteger la
+disponibilidad del proceso.
+
+**Las métricas son la excepción**: el exportador `prometheusremotewrite` no
+admite cola persistente —rechaza la clave `sending_queue`—, solo su propio
+`remote_write_queue` en memoria. Un reinicio del Collector pierde lo que haya
+encolado. El impacto es menor de lo que parece: logs y trazas son *eventos* y el
+que se pierde no vuelve, mientras que las métricas OTLP son **acumulativas** y
+cada exportación lleva el total desde el arranque del proceso, así que la
+siguiente vuelve a declararlo y `rate()` interpola el hueco. Lo único que se
+pierde de forma irrecuperable son los *exemplars* de esa exportación.
+
+Un efecto secundario a tener presente: `remote_write_queue` tiene `queue_size:
+5000` y el `memory_limiter` actúa a nivel de **todo el Collector**. Si Prometheus
+estuviera caído mucho tiempo, esa cola podría presionar al limitador y degradar
+también la ingesta de logs y trazas.
 
 Tras cambiar cualquier archivo de configuración de un servicio, basta con
 recrearlo:

@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from decimal import Decimal
 from typing import TypeVar
 
@@ -338,3 +339,12 @@ class PostgresConversationRepository:
             )
         )
         await self._session.commit()
+
+    async def tokens_used_since(self, chat_id: int, since: datetime) -> int:
+        total = await self._session.scalar(
+            select(func.coalesce(func.sum(TokenUsageRecord.total_tokens), 0)).where(
+                TokenUsageRecord.chat_id == chat_id,
+                TokenUsageRecord.created_at >= since,
+            )
+        )
+        return int(total or 0)

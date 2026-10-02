@@ -25,8 +25,9 @@ on:
       - 'fix/**'
       - 'bugfix/**'
 env:
+  # Unica fuente de la version de Python en CI; debe ir alineada con
+  # requires-python (pyproject.toml) y con la imagen base de src/Dockerfile.
   PYTHON_VERSION: "3.12"
-  RUFF_PYTHON_VERSION: py312
   ENVIRONMENT: development
   REQUIREMENTS_FILE_PATH: "./.github/requirements-ci.txt"
   SOURCECODE_PATH: ./src/fitcoach/
@@ -54,7 +55,6 @@ jobs:
       - name: Python setup
         uses: ./.github/actions/python-setup
         env:
-          PYTHON_VERSION: "3.11"
           REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
 
       - name: Quality assurance
@@ -117,7 +117,6 @@ jobs:
       - name: Python setup
         uses: ./.github/actions/python-setup
         env:
-          PYTHON_VERSION: "3.11"
           REQUIREMENTS_FILE: ${{ env.REQUIREMENTS_FILE_PATH }}
 
       # Levanta el contenedor de integración, ejecuta unitarios + integración con cobertura,

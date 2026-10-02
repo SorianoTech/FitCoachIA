@@ -63,8 +63,6 @@ exporters:
       initial_interval: 1s
       max_interval: 30s
       max_elapsed_time: 300s
-  prometheus:
-    endpoint: 0.0.0.0:8889
 
 service:
   extensions: [file_storage/queue]
@@ -77,10 +75,6 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, resource, attributes/redact, filter/health, batch]
       exporters: [otlp/tempo]
-    metrics:
-      receivers: [otlp]
-      processors: [memory_limiter, resource, batch]
-      exporters: [prometheus]
   telemetry:
     metrics:
       readers:

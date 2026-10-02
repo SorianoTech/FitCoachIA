@@ -56,7 +56,22 @@ Tu nueva vida te espera, ¡Adelante!
     )
     SERVER_ERROR_MESSAGE: Final = "Ops, our server has an error. Try again past 5 minutes"
     INTERVIEW_COMPLETED_MESSAGE: Final = (
-        "Tu entrevista ya está completada. Envía /interview si quieres actualizar tu perfil."
+        "Tu entrevista ya está completada. Envía /train para generar tu plan de entrenamiento, "
+        "o /interview si quieres actualizar tu perfil."
+    )
+
+    # --- Mensajes del agente entrenador ---
+    NO_PROFILE_MESSAGE: Final = (
+        "Todavía no tengo tu perfil. Envía /interview para hacer la entrevista inicial y "
+        "después podré prepararte el plan."
+    )
+    PLAN_GENERATING_MESSAGE: Final = "Estoy diseñando tu plan de 4 semanas. Dame unos segundos ..."
+    NO_PLAN_MESSAGE: Final = (
+        "Aún no tienes un plan de entrenamiento. Envía /train y te preparo uno."
+    )
+    TRAINER_UNAVAILABLE_MESSAGE: Final = (
+        "No he podido consultar el catálogo de ejercicios ahora mismo. "
+        "Inténtalo de nuevo en unos minutos."
     )
 
     # --- Mensaje con el que se siembra la conversacion del modelo ---

@@ -4,6 +4,7 @@ from enum import Enum
 class Commands(Enum):
     START = ("/start", "")
     INTERVIEW = ("/interview", "Se inicia una nueva entrevista")
+    TRAIN = ("/train", "Genera tu plan de entrenamiento de 4 semanas")
     DOUBTS = ("/doubts", "Consultar cualquier duda acerca de tu perfil")
     PROGRESS = ("/progress", "Comprobar tu progreso en base a tu perfil y los logros conseguidos")
 

@@ -21,6 +21,7 @@ COMMAND_TIERS: Final[dict[Commands | None, UsageTier]] = {
     Commands.DOUBTS: UsageTier.UNLIMITED,
     Commands.PROGRESS: UsageTier.UNLIMITED,
     Commands.INTERVIEW: UsageTier.SOFT,
+    Commands.TRAIN: UsageTier.SOFT,
     None: UsageTier.HARD,  # texto libre
 }
 

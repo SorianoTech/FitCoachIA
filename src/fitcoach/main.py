@@ -11,11 +11,14 @@ from fitcoach.infrastructure.config.logging_config import configure_logging
 from fitcoach.infrastructure.config.settings import (
     Settings,
     get_database_settings,
+    get_embedder_settings,
     get_ia_settings,
     get_settings,
+    get_vector_database_settings,
 )
 from fitcoach.infrastructure.database.session import close_database
 from fitcoach.infrastructure.observability.telemetry import configure_telemetry, shutdown_telemetry
+from fitcoach.infrastructure.vectordb.session import close_vector_database
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for raw in settings.bot_telegram_commands:
         to_bot_command(raw)  # ValueError if a pair is malformed
     get_database_settings()  # ValidationError if the PostgreSQL URL is missing
+    get_vector_database_settings()  # ValidationError if the pgVector URL is missing
+    get_embedder_settings()  # ValidationError if the embedder URL is missing
     configure_telemetry(app)  # no-op unless otel_exporter_otlp_endpoint is set
     await _register_webhook(app, settings)
     try:
@@ -36,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         shutdown_telemetry()
         await close_database()
+        await close_vector_database()
 
 
 app = FastAPI(title="FitCoach IA - API de Prueba", lifespan=lifespan)

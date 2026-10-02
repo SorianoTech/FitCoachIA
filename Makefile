@@ -30,7 +30,11 @@ PROD_ENV_FILE ?= $(ENV_ROOT)/prod/.env.prod
 DEV_ENV_FALLBACK=.env.dev
 
 COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
+DEV_APP_SERVICE=fitcoach-ia-dev
 COMPOSE_PROD=$(DOCKER) compose
+# La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
+# cargan una sola vez y sobreviven a los despliegues de la app.
+COMPOSE_VECTOR=$(DOCKER) compose -f infra/vector-db/docker-compose.vector-db.yml
 
 define resolve_dev_env
 if [ -f "$(DEV_ENV_FILE)" ]; then \
@@ -54,7 +58,7 @@ echo ">> entorno prod: $(PROD_ENV_FILE)"; \
 export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-down dev-logs prod-up prod-down prod-logs
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-app dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -72,11 +76,18 @@ help:
 	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
 	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado. Usa $(DEV_ENV_FILE) si existe, si no $(DEV_ENV_FALLBACK)"
+	@echo "  make dev-app                        - Reconstruye y reinicia solo la app de desarrollo (sin embedder ni postgres)"
 	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
 	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
 	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
 	@echo "  make prod-down                      - Detiene el entorno de produccion"
 	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
+	@echo "  make vector-up                      - Levanta pgVector y pgAdmin con el catalogo de ejercicios"
+	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
+	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
+	@echo "  make trainer-debug ARGS=\"...\"       - Ejecuta el entrenador offline y guarda artefactos en runs/trainer (ver docs/trainer-agent.md)"
+	@echo "  make trainer-compare ARGS=\"...\"     - Compara skills/modelos sobre el golden set"
+	@echo "  make trainer-refresh-catalogues     - Regenera los catalogos congelados de evals/trainer/cases con la recuperacion real"
 
 container:
 	@$(DOCKER) ps -a
@@ -93,6 +104,12 @@ build:
 dev-up:
 	@$(resolve_dev_env); \
 	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build
+
+# Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y postgres,
+# que deben estar ya levantados con `make dev-up`.
+dev-app:
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(DEV_APP_SERVICE)
 
 dev-down:
 	@$(resolve_dev_env); \
@@ -113,6 +130,32 @@ prod-down:
 prod-logs:
 	@$(resolve_prod_env); \
 	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
+
+vector-up:
+	@$(COMPOSE_VECTOR) up -d --build
+
+# Sin -v a proposito: el volumen guarda la carga inicial de 283 MB y volver a
+# crearlo tarda varios minutos. Para borrarlo de verdad, hazlo explicitamente.
+vector-down:
+	@$(COMPOSE_VECTOR) down --remove-orphans
+
+vector-logs:
+	@$(COMPOSE_VECTOR) logs -f
+
+# Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
+trainer-debug:
+	@uv run python -m fitcoach.devtools.trainer_debug $(ARGS)
+
+trainer-compare:
+	@uv run python -m fitcoach.devtools.trainer_compare $(ARGS)
+
+TRAINER_CASES=evals/trainer/cases
+
+trainer-refresh-catalogues:
+	@for case in $(TRAINER_CASES)/*/; do \
+		uv run python -m fitcoach.devtools.trainer_debug --case-dir "$$case" --live-retrieval \
+			--save-catalogue "$$case/catalogue.json" --render-only --out /tmp/fitcoach-trainer-render || exit 1; \
+	done
 
 tests:
 	@if ! $(COMPOSE_UP); then \

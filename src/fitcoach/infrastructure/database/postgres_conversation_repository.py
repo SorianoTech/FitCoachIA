@@ -1,28 +1,83 @@
+import json
+import logging
 from datetime import datetime
 from decimal import Decimal
+from typing import TypeVar
 
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fitcoach.domain.agents import AgentType
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.interviewer_profile import InterviewerProfile
+from fitcoach.domain.trainer_plan import (
+    TRAINING_STATUS_ACTIVE,
+    TrainerGenerationTrace,
+    TrainingPlan,
+)
 from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
     InterviewSessionRecord,
     ModelPriceRecord,
+    ProcessedUpdateRecord,
     TokenUsageRecord,
+    TrainingPlanRecord,
+    TrainingSessionRecord,
 )
+from fitcoach.repository.conversation_repository import StoredTrainingPlan
+
+logger = logging.getLogger(__name__)
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+def _validate_stored(model: type[ModelT], stored: object) -> ModelT:
+    """Re-validate a JSON column through JSON, not through Python objects.
+
+    The domain models are ``strict=True``. In Python mode that rejects the ISO
+    strings a ``model_dump(mode="json")`` round-trip produces for datetimes;
+    in JSON mode Pydantic applies its documented string coercions. Going back
+    through ``json.dumps`` keeps the models strict without making storage
+    round-trips fail.
+    """
+    return model.model_validate_json(json.dumps(stored))
 
 
 class PostgresConversationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get_recent(self, chat_id: int, limit: int) -> list[ConversationMessage]:
+    async def claim_update(self, update_id: int) -> bool:
+        """Mark ``update_id`` as taken; False if another delivery already took it.
+
+        Atomic thanks to the primary key, so two concurrent re-deliveries cannot
+        both win.
+        """
+        statement = (
+            insert(ProcessedUpdateRecord)
+            .values(update_id=update_id)
+            .on_conflict_do_nothing(index_elements=[ProcessedUpdateRecord.update_id])
+            .returning(ProcessedUpdateRecord.update_id)
+        )
+        claimed = await self._session.scalar(statement)
+        await self._session.commit()
+        return claimed is not None
+
+    async def get_recent(
+        self,
+        chat_id: int,
+        limit: int,
+        agent: str = AgentType.INTERVIEWER.value,
+    ) -> list[ConversationMessage]:
         statement = (
             select(ConversationMessageRecord)
-            .where(ConversationMessageRecord.chat_id == chat_id)
+            .where(
+                ConversationMessageRecord.chat_id == chat_id,
+                ConversationMessageRecord.agent == agent,
+            )
             .order_by(ConversationMessageRecord.id.desc())
             .limit(limit)
         )
@@ -42,14 +97,18 @@ class PostgresConversationRepository:
         chat_id: int,
         user_content: str,
         assistant_content: str,
+        agent: str = AgentType.INTERVIEWER.value,
     ) -> int:
         assistant_message = ConversationMessageRecord(
             chat_id=chat_id,
+            agent=agent,
             role="assistant",
             content=assistant_content,
         )
         self._session.add_all([
-            ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
+            ConversationMessageRecord(
+                chat_id=chat_id, agent=agent, role="user", content=user_content
+            ),
             assistant_message,
         ])
         await self._session.commit()
@@ -62,8 +121,20 @@ class PostgresConversationRepository:
         return status if isinstance(status, str) else None
 
     async def restart_interview(self, chat_id: int) -> None:
+        """Wipe the chat's history, profile and plan, then open a new session.
+
+        The plan goes too: it was derived from the profile being replaced, so
+        leaving it behind would hand the user a mesocycle built for someone they
+        no longer are.
+        """
         await self._session.execute(
             delete(ConversationMessageRecord).where(ConversationMessageRecord.chat_id == chat_id)
+        )
+        await self._session.execute(
+            delete(TrainingSessionRecord).where(TrainingSessionRecord.chat_id == chat_id)
+        )
+        await self._session.execute(
+            delete(TrainingPlanRecord).where(TrainingPlanRecord.chat_id == chat_id)
         )
         await self._session.execute(
             delete(InterviewerProfileRecord).where(InterviewerProfileRecord.chat_id == chat_id)
@@ -83,10 +154,18 @@ class PostgresConversationRepository:
         report: str,
     ) -> int:
         assistant_message = ConversationMessageRecord(
-            chat_id=chat_id, role="assistant", content=assistant_content
+            chat_id=chat_id,
+            agent=AgentType.INTERVIEWER.value,
+            role="assistant",
+            content=assistant_content,
         )
         self._session.add_all([
-            ConversationMessageRecord(chat_id=chat_id, role="user", content=user_content),
+            ConversationMessageRecord(
+                chat_id=chat_id,
+                agent=AgentType.INTERVIEWER.value,
+                role="user",
+                content=user_content,
+            ),
             assistant_message,
             InterviewerProfileRecord(
                 chat_id=chat_id,
@@ -101,6 +180,125 @@ class PostgresConversationRepository:
         else:
             session.status = "completed"
         session.completed_at = func.now()
+        await self._session.commit()
+        return assistant_message.id
+
+    async def get_interviewer_profile(self, chat_id: int) -> InterviewerProfile | None:
+        record = await self._session.get(InterviewerProfileRecord, chat_id)
+        if record is None:
+            return None
+        try:
+            return _validate_stored(InterviewerProfile, record.profile)
+        except ValidationError:
+            # A stored profile that no longer satisfies the model means the
+            # schema moved on. Treat it as absent -- the user is told to redo
+            # the interview rather than getting a plan built on garbage -- but
+            # log it: this is a data problem, not a normal "no profile yet".
+            logger.exception("Stored profile for chat %s no longer validates", chat_id)
+            return None
+
+    async def get_training_status(self, chat_id: int) -> str | None:
+        status = await self._session.scalar(
+            select(TrainingSessionRecord.status).where(TrainingSessionRecord.chat_id == chat_id)
+        )
+        return status if isinstance(status, str) else None
+
+    async def get_current_plan(self, chat_id: int) -> StoredTrainingPlan | None:
+        statement = (
+            select(TrainingPlanRecord)
+            .where(TrainingPlanRecord.chat_id == chat_id)
+            .order_by(TrainingPlanRecord.version.desc())
+            .limit(1)
+        )
+        record = (await self._session.scalars(statement)).first()
+        if record is None:
+            return None
+        try:
+            plan = _validate_stored(TrainingPlan, record.plan)
+        except ValidationError:
+            logger.exception("Stored plan %s for chat %s no longer validates", record.id, chat_id)
+            return None
+        trace = None
+        if (
+            record.model is not None
+            and record.skill_name is not None
+            and record.prompt_hash is not None
+            and record.skill_hash is not None
+            and record.retrieved_exercise_ids is not None
+        ):
+            trace = TrainerGenerationTrace(
+                model=record.model,
+                skill_name=record.skill_name,
+                prompt_hash=record.prompt_hash,
+                skill_hash=record.skill_hash,
+                retrieved_exercise_ids=tuple(record.retrieved_exercise_ids),
+            )
+        return StoredTrainingPlan(
+            id=record.id,
+            version=record.version,
+            plan=plan,
+            report=record.report,
+            trace=trace,
+        )
+
+    async def save_training_plan(
+        self,
+        chat_id: int,
+        plan: TrainingPlan,
+        report: str,
+        user_content: str,
+        assistant_content: str,
+        trace: TrainerGenerationTrace | None,
+    ) -> int:
+        """Append version N+1 and point the session at it. Older plans are kept."""
+        await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
+        current_version = await self._session.scalar(
+            select(func.max(TrainingPlanRecord.version)).where(
+                TrainingPlanRecord.chat_id == chat_id
+            )
+        )
+        plan_record = TrainingPlanRecord(
+            chat_id=chat_id,
+            version=(current_version or 0) + 1,
+            plan=plan.model_dump(mode="json"),
+            report=report,
+            model=trace.model if trace else None,
+            skill_name=trace.skill_name if trace else None,
+            prompt_hash=trace.prompt_hash if trace else None,
+            skill_hash=trace.skill_hash if trace else None,
+            retrieved_exercise_ids=list(trace.retrieved_exercise_ids) if trace else None,
+        )
+        assistant_message = ConversationMessageRecord(
+            chat_id=chat_id,
+            agent=AgentType.TRAINER.value,
+            role="assistant",
+            content=assistant_content,
+        )
+        self._session.add_all([
+            ConversationMessageRecord(
+                chat_id=chat_id,
+                agent=AgentType.TRAINER.value,
+                role="user",
+                content=user_content,
+            ),
+            assistant_message,
+            plan_record,
+        ])
+        # The session row needs the plan's id, which only exists after a flush.
+        await self._session.flush()
+
+        training_session = await self._session.get(TrainingSessionRecord, chat_id)
+        if training_session is None:
+            training_session = TrainingSessionRecord(
+                chat_id=chat_id,
+                status=TRAINING_STATUS_ACTIVE,
+                current_plan_id=plan_record.id,
+            )
+            self._session.add(training_session)
+        else:
+            training_session.status = TRAINING_STATUS_ACTIVE
+            training_session.current_plan_id = plan_record.id
+        training_session.updated_at = func.now()
         await self._session.commit()
         return assistant_message.id
 

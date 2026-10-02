@@ -100,7 +100,9 @@ class Flags(ProfileModel):
 class InitialCalculations(ProfileModel):
     bmr: float = Field(gt=0)
     estimated_tdee: float = Field(gt=0)
-    tolerable_volume_sets: int = Field(ge=0)
+    tolerable_volume_sets: int = Field(
+        ge=0, description="Weekly working-set ceiling per muscle group, not total full-body sets"
+    )
 
 
 class InterviewerProfile(ProfileModel):

@@ -6,15 +6,30 @@ import pytest
 from telegram import Bot, Message, Update
 from telegram.error import RetryAfter
 
+from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
+from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.entities import IAInput, IAMessage
-from fitcoach.domain.interviewer_errors import InterviewerError, InterviewerErrorCode
-from fitcoach.domain.interviewer_profile import InterviewerTurn
+from fitcoach.domain.exercise import Exercise
+from fitcoach.domain.interviewer_profile import InterviewerProfile, InterviewerTurn
 from fitcoach.domain.rate_limiter import UsageLimits
-from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.domain.token_usage import TokenUsage
+from fitcoach.domain.trainer_plan import (
+    TRAINING_STATUS_ACTIVE,
+    TrainerAction,
+    TrainerGenerationTrace,
+    TrainerTurn,
+    TrainingPlan,
+)
+from fitcoach.repository.conversation_repository import (
+    ConversationRepository,
+    StoredTrainingPlan,
+)
 from fitcoach.service import conversation_service
+from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
+from fitcoach.service.agent.trainer_chain import TrainerChain, TrainerReply
 from fitcoach.service.conversation_service import (
     ConversationService,
     format_llm_input,
@@ -22,6 +37,7 @@ from fitcoach.service.conversation_service import (
     truncate,
     user_label,
 )
+from tests.unit_test.conftest import build_plan_payload
 
 
 @pytest.fixture
@@ -34,18 +50,15 @@ def mock_interviewer() -> AsyncMock:
     return AsyncMock(spec=InterviewerChain)
 
 
-# Cuota holgada: la mayoria de tests no ejercitan el limite y no deben chocar con el.
 _NO_QUOTA_PRESSURE = UsageLimits(
     hard_tokens=1_000_000, soft_tokens=900_000, window=timedelta(hours=24)
 )
-# Cuota estrecha para los tests del propio limite: /interview corta en 900, texto libre en 1000.
 _TIGHT_QUOTA = UsageLimits(hard_tokens=1_000, soft_tokens=900, window=timedelta(hours=24))
 
 
 @pytest.fixture
 def mock_conversation_repository() -> AsyncMock:
     repository = AsyncMock(spec=ConversationRepository)
-    # Sin esto el mock devuelve otro AsyncMock y la comparacion con el umbral falla.
     repository.tokens_used_since.return_value = 0
     return repository
 
@@ -323,16 +336,32 @@ class TestPersistentConversation:
         )
 
 
-class TestInterviewerErrorHandling:
+class TestDuplicateUpdates:
+    @pytest.mark.asyncio
+    async def test_redelivered_update_is_ignored(
+        self,
+        service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.claim_update.return_value = False
+
+        await service.handle_update(_text_update(456, "Hola"))
+
+        mock_conversation_repository.claim_update.assert_awaited_once_with(1)
+        mock_interviewer.respond.assert_not_awaited()
+        mock_bot.send_message.assert_not_awaited()
+
+
+class TestAgentErrorHandling:
     @pytest.mark.asyncio
     async def test_persists_failed_llm_call_without_conversation_message(
         self,
         mock_interviewer: AsyncMock,
         mock_conversation_repository: AsyncMock,
     ) -> None:
-        mock_interviewer.respond.side_effect = InterviewerError(
-            InterviewerErrorCode.TIMEOUT, retryable=True
-        )
+        mock_interviewer.respond.side_effect = AgentError(AgentErrorCode.TIMEOUT, retryable=True)
         service = ConversationService(
             bot=AsyncMock(spec=Bot),
             interviewer=mock_interviewer,
@@ -343,21 +372,21 @@ class TestInterviewerErrorHandling:
         await service.handle_update(_text_update(456, "Hola"))
 
         usage = mock_conversation_repository.record_token_usage.await_args.kwargs
-        assert usage["status"] == InterviewerErrorCode.TIMEOUT.value
+        assert usage["status"] == AgentErrorCode.TIMEOUT.value
         assert usage["conversation_message_id"] is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("code", "expected_message"),
         [
-            (InterviewerErrorCode.AUTHENTICATION, Constants.LLM_AUTHENTICATION_ERROR_MESSAGE),
-            (InterviewerErrorCode.QUOTA, Constants.LLM_QUOTA_ERROR_MESSAGE),
-            (InterviewerErrorCode.RATE_LIMITED, Constants.LLM_RATE_LIMIT_ERROR_MESSAGE),
-            (InterviewerErrorCode.INVALID_REQUEST, Constants.LLM_INVALID_REQUEST_ERROR_MESSAGE),
-            (InterviewerErrorCode.OUTPUT_LIMIT, Constants.LLM_OUTPUT_LIMIT_ERROR_MESSAGE),
-            (InterviewerErrorCode.TIMEOUT, Constants.LLM_TIMEOUT_ERROR_MESSAGE),
-            (InterviewerErrorCode.UNAVAILABLE, Constants.LLM_UNAVAILABLE_ERROR_MESSAGE),
-            (InterviewerErrorCode.INVALID_OUTPUT, Constants.LLM_INVALID_OUTPUT_ERROR_MESSAGE),
+            (AgentErrorCode.AUTHENTICATION, Constants.LLM_AUTHENTICATION_ERROR_MESSAGE),
+            (AgentErrorCode.QUOTA, Constants.LLM_QUOTA_ERROR_MESSAGE),
+            (AgentErrorCode.RATE_LIMITED, Constants.LLM_RATE_LIMIT_ERROR_MESSAGE),
+            (AgentErrorCode.INVALID_REQUEST, Constants.LLM_INVALID_REQUEST_ERROR_MESSAGE),
+            (AgentErrorCode.OUTPUT_LIMIT, Constants.LLM_OUTPUT_LIMIT_ERROR_MESSAGE),
+            (AgentErrorCode.TIMEOUT, Constants.LLM_TIMEOUT_ERROR_MESSAGE),
+            (AgentErrorCode.UNAVAILABLE, Constants.LLM_UNAVAILABLE_ERROR_MESSAGE),
+            (AgentErrorCode.INVALID_OUTPUT, Constants.LLM_INVALID_OUTPUT_ERROR_MESSAGE),
         ],
     )
     async def test_sends_a_safe_message_for_each_interviewer_error(
@@ -365,10 +394,10 @@ class TestInterviewerErrorHandling:
         mock_bot: AsyncMock,
         mock_interviewer: AsyncMock,
         mock_conversation_repository: AsyncMock,
-        code: InterviewerErrorCode,
+        code: AgentErrorCode,
         expected_message: str,
     ) -> None:
-        mock_interviewer.respond.side_effect = InterviewerError(code, retryable=True)
+        mock_interviewer.respond.side_effect = AgentError(code, retryable=True)
         service = ConversationService(
             bot=mock_bot,
             interviewer=mock_interviewer,
@@ -450,15 +479,14 @@ class TestTelegramFloodControl:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Esperar mas bloquearia la peticion y Telegram reenviaria el update."""
         slept: list[float] = []
 
         async def _fake_sleep(seconds: float) -> None:
             slept.append(seconds)
 
         monkeypatch.setattr(conversation_service.asyncio, "sleep", _fake_sleep)
-        espera = Constants.MAX_TELEGRAM_RETRY_SECONDS + 1
-        mock_bot.send_message.side_effect = RetryAfter(espera)
+        wait = Constants.MAX_TELEGRAM_RETRY_SECONDS + 1
+        mock_bot.send_message.side_effect = RetryAfter(wait)
         caplog.set_level(logging.WARNING, logger="fitcoach.service.conversation_service")
 
         await service.handle_update(_text_update(123, "/start"))
@@ -474,7 +502,6 @@ def _quota_service(
     mock_conversation_repository: AsyncMock,
     consumed_tokens: int,
 ) -> ConversationService:
-    """Servicio con cuota estrecha y un consumo previo dado para el chat."""
     mock_conversation_repository.tokens_used_since.return_value = consumed_tokens
     return ConversationService(
         bot=mock_bot,
@@ -531,8 +558,6 @@ class TestUsageQuota:
 
         await service.handle_update(_text_update(456, "/interview"))
 
-        # Critico: `restart_interview` borra historial y perfil. Cortar despues de
-        # llamarlo destruiria los datos del usuario y ademas le negaria el servicio.
         mock_conversation_repository.restart_interview.assert_not_awaited()
         mock_interviewer.respond.assert_not_awaited()
         mock_bot.send_message.assert_awaited_once_with(
@@ -548,7 +573,6 @@ class TestUsageQuota:
         mock_interviewer: AsyncMock,
         mock_conversation_repository: AsyncMock,
     ) -> None:
-        """El mensaje blando ofrece seguir conversando: solo vale por debajo del limite duro."""
         service = _quota_service(mock_bot, mock_interviewer, mock_conversation_repository, 1_500)
 
         await service.handle_update(_text_update(456, "/interview"))
@@ -566,7 +590,6 @@ class TestUsageQuota:
         mock_interviewer: AsyncMock,
         mock_conversation_repository: AsyncMock,
     ) -> None:
-        """Degradacion escalonada: se corta lo caro y se deja terminar lo empezado."""
         mock_interviewer.respond.return_value = InterviewerReply(
             turn=InterviewerTurn(status="in_progress", reply="Casi terminamos"),
             token_usages=[],
@@ -590,11 +613,11 @@ class TestUsageQuota:
 
         await service.handle_update(_text_update(456, "Quiero ganar musculo"))
 
-        blocked = [r for r in caplog.records if "cuota superada" in r.message]
+        blocked = [record for record in caplog.records if "cuota superada" in record.message]
         assert len(blocked) == 1
         assert "consumido=1500" in blocked[0].message
         assert "limite=1000" in blocked[0].message
-        assert "456" in blocked[0].message  # el chat_id llega en el contexto
+        assert "456" in blocked[0].message
 
     @pytest.mark.asyncio
     async def test_does_not_query_consumption_for_commands_that_never_call_the_model(
@@ -627,6 +650,416 @@ class TestUsageQuota:
 
         chat_id, since = mock_conversation_repository.tokens_used_since.await_args.args
         assert chat_id == 456
-        # Debe ser tz-aware: `created_at` es TIMESTAMPTZ y asyncpg no compara naive.
         assert since.tzinfo is not None
         assert abs((datetime.now(UTC) - since) - _TIGHT_QUOTA.window) < timedelta(seconds=5)
+
+
+class TestTrainerFlow:
+    """`/train` y las preguntas posteriores sobre el plan."""
+
+    @pytest.fixture
+    def mock_trainer(self) -> AsyncMock:
+        return AsyncMock(spec=TrainerChain)
+
+    @pytest.fixture
+    def mock_retriever(self, exercises: list[Exercise]) -> AsyncMock:
+        retriever = AsyncMock(spec=ExerciseRetriever)
+        retriever.retrieve.return_value = exercises
+        return retriever
+
+    @pytest.fixture
+    def trainer_service(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        mock_retriever: AsyncMock,
+    ) -> ConversationService:
+        return ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
+            trainer=mock_trainer,
+            exercise_retriever=mock_retriever,
+        )
+
+    @staticmethod
+    def _plan_reply() -> TrainerReply:
+        return TrainerReply(
+            turn=TrainerTurn(
+                status=TrainerAction.GENERATE_PLAN,
+                reply="Listo",
+                report="Tu plan de 4 semanas",
+                plan=TrainingPlan.model_validate(build_plan_payload()),
+            ),
+            token_usages=[],
+            trace=TrainerGenerationTrace(
+                model="trace-model",
+                skill_name="trainer",
+                prompt_hash="p" * 64,
+                skill_hash="s" * 64,
+                retrieved_exercise_ids=(101, 102),
+            ),
+        )
+
+    @staticmethod
+    def _sent_texts(mock_bot: AsyncMock) -> list[str]:
+        return [call.kwargs["text"] for call in mock_bot.send_message.await_args_list]
+
+    @pytest.mark.asyncio
+    async def test_train_without_a_profile_asks_for_the_interview_first(
+        self,
+        trainer_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.get_interviewer_profile.return_value = None
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        assert Constants.NO_PROFILE_MESSAGE in self._sent_texts(mock_bot)
+        mock_trainer.generate_plan.assert_not_awaited()
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_train_generates_sends_and_persists_the_plan(
+        self,
+        trainer_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+        exercises: list[Exercise],
+    ) -> None:
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_trainer.generate_plan.return_value = self._plan_reply()
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        texts = self._sent_texts(mock_bot)
+        assert Constants.PLAN_GENERATING_MESSAGE in texts
+        assert "Tu plan de 4 semanas" in texts
+        mock_trainer.generate_plan.assert_awaited_once_with(profile, exercises)
+        mock_conversation_repository.save_training_plan.assert_awaited_once()
+        assert (
+            mock_conversation_repository.save_training_plan.await_args.args[-1]
+            == self._plan_reply().trace
+        )
+
+    @pytest.mark.asyncio
+    async def test_train_refuses_when_the_catalogue_cannot_be_reached(
+        self,
+        trainer_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_retriever: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        # Un mesociclo sin catalogo es justo lo que este agente existe para evitar.
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_retriever.retrieve.side_effect = AgentError(AgentErrorCode.UNAVAILABLE, retryable=True)
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        assert Constants.TRAINER_UNAVAILABLE_MESSAGE in self._sent_texts(mock_bot)
+        mock_trainer.generate_plan.assert_not_awaited()
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_train_refuses_when_the_catalogue_is_empty(
+        self,
+        trainer_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_retriever: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_retriever.retrieve.return_value = []
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        assert Constants.TRAINER_UNAVAILABLE_MESSAGE in self._sent_texts(mock_bot)
+        mock_trainer.generate_plan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_train_records_token_usage_under_the_trainer_agent(
+        self,
+        trainer_service: ConversationService,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_conversation_repository.save_training_plan.return_value = 77
+        mock_trainer.generate_plan.return_value = TrainerReply(
+            turn=self._plan_reply().turn,
+            token_usages=[
+                TokenUsage(
+                    model="gpt-test",
+                    prompt_tokens=900,
+                    completion_tokens=700,
+                    total_tokens=1600,
+                )
+            ],
+        )
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        call = mock_conversation_repository.record_token_usage.await_args
+        assert call.kwargs["agent"] == AgentType.TRAINER.value
+        assert call.kwargs["total_tokens"] == 1600
+        assert call.kwargs["conversation_message_id"] == 77
+
+    @pytest.mark.asyncio
+    async def test_train_relays_an_answer_turn_without_persisting_a_plan(
+        self,
+        trainer_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_trainer.generate_plan.return_value = TrainerReply(
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="No puedo con este catalogo"),
+            token_usages=[],
+        )
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        assert "No puedo con este catalogo" in self._sent_texts(mock_bot)
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_train_sends_a_safe_message_when_the_model_fails(
+        self,
+        trainer_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_trainer.generate_plan.side_effect = AgentError(
+            AgentErrorCode.RATE_LIMITED, retryable=True
+        )
+
+        await trainer_service.handle_update(_text_update(456, "/train"))
+
+        assert Constants.LLM_RATE_LIMIT_ERROR_MESSAGE in self._sent_texts(mock_bot)
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
+        assert (
+            mock_conversation_repository.record_token_usage.await_args.kwargs["agent"]
+            == AgentType.TRAINER.value
+        )
+
+    @pytest.mark.asyncio
+    async def test_train_reports_unavailable_when_no_trainer_is_configured(
+        self,
+        service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+    ) -> None:
+        # El servicio sin entrenador (despliegue sin BD vectorial) no debe romper.
+        await service.handle_update(_text_update(456, "/train"))
+
+        assert Constants.TRAINER_UNAVAILABLE_MESSAGE in self._sent_texts(mock_bot)
+        mock_conversation_repository.get_interviewer_profile.assert_not_awaited()
+
+
+class TestFreeMessageRouting:
+    """Tabla de enrutado: que agente atiende un mensaje sin comando."""
+
+    @pytest.fixture
+    def mock_trainer(self) -> AsyncMock:
+        return AsyncMock(spec=TrainerChain)
+
+    @pytest.fixture
+    def routed_service(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        exercises: list[Exercise],
+    ) -> ConversationService:
+        retriever = AsyncMock(spec=ExerciseRetriever)
+        retriever.retrieve.return_value = exercises
+        return ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
+            trainer=mock_trainer,
+            exercise_retriever=retriever,
+        )
+
+    @staticmethod
+    def _stored_plan() -> StoredTrainingPlan:
+        return StoredTrainingPlan(
+            id=1,
+            version=1,
+            plan=TrainingPlan.model_validate(build_plan_payload()),
+            report="informe",
+        )
+
+    @pytest.mark.asyncio
+    async def test_interview_completed_without_a_plan_points_at_train(
+        self,
+        routed_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_trainer: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.get_interview_status.return_value = "completed"
+        mock_conversation_repository.get_training_status.return_value = None
+
+        await routed_service.handle_update(_text_update(456, "hola"))
+
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456,
+            message_thread_id=None,
+            text=Constants.INTERVIEW_COMPLETED_MESSAGE,
+        )
+        mock_interviewer.respond.assert_not_awaited()
+        mock_trainer.answer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_active_plan_routes_the_message_to_the_trainer(
+        self,
+        routed_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        mock_conversation_repository.get_interview_status.return_value = "completed"
+        mock_conversation_repository.get_training_status.return_value = TRAINING_STATUS_ACTIVE
+        mock_conversation_repository.get_current_plan.return_value = self._stored_plan()
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_conversation_repository.get_recent.return_value = []
+        mock_trainer.answer.return_value = TrainerReply(
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Porque progresas mejor"),
+            token_usages=[],
+        )
+
+        await routed_service.handle_update(_text_update(456, "por que 3 dias?"))
+
+        mock_trainer.answer.assert_awaited_once()
+        mock_interviewer.respond.assert_not_awaited()
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456, message_thread_id=None, text="Porque progresas mejor"
+        )
+        # El historial que se pide es el del entrenador, no el de la entrevista.
+        assert mock_conversation_repository.get_recent.await_args.args[2] == AgentType.TRAINER.value
+        mock_trainer.answer.assert_awaited_once_with(
+            "por que 3 dias?", self._stored_plan().plan, [], profile
+        )
+        assert routed_service._exercise_retriever is not None
+        routed_service._exercise_retriever.retrieve.assert_not_awaited()
+        mock_conversation_repository.get_current_plan.assert_awaited_once_with(456)
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_trainer_turn_is_persisted_under_the_trainer_agent(
+        self,
+        routed_service: ConversationService,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+    ) -> None:
+        mock_conversation_repository.get_interview_status.return_value = "completed"
+        mock_conversation_repository.get_training_status.return_value = TRAINING_STATUS_ACTIVE
+        mock_conversation_repository.get_current_plan.return_value = self._stored_plan()
+        mock_conversation_repository.get_interviewer_profile.return_value = profile
+        mock_conversation_repository.get_recent.return_value = []
+        mock_trainer.answer.return_value = TrainerReply(
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Claro"), token_usages=[]
+        )
+
+        await routed_service.handle_update(_text_update(456, "duda"))
+
+        assert mock_conversation_repository.add_turn.await_args.args[3] == AgentType.TRAINER.value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("has_profile", [True, False])
+    async def test_answers_without_a_retriever(
+        self,
+        mock_bot: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+        profile: InterviewerProfile,
+        has_profile: bool,
+    ) -> None:
+        service = ConversationService(
+            bot=mock_bot,
+            interviewer=mock_interviewer,
+            conversation_repository=mock_conversation_repository,
+            usage_limits=_NO_QUOTA_PRESSURE,
+            trainer=mock_trainer,
+        )
+        mock_conversation_repository.get_interview_status.return_value = "completed"
+        mock_conversation_repository.get_training_status.return_value = TRAINING_STATUS_ACTIVE
+        mock_conversation_repository.get_current_plan.return_value = (
+            TestFreeMessageRouting._stored_plan()
+        )
+        stored_profile = profile if has_profile else None
+        mock_conversation_repository.get_interviewer_profile.return_value = stored_profile
+        mock_conversation_repository.get_recent.return_value = []
+        mock_trainer.answer.return_value = TrainerReply(
+            turn=TrainerTurn(status=TrainerAction.ANSWER_PLAN, reply="Te respondo igualmente"),
+            token_usages=[],
+        )
+
+        await service.handle_update(_text_update(456, "duda"))
+
+        mock_trainer.answer.assert_awaited_once()
+        assert mock_trainer.answer.await_args.args[3] == stored_profile
+        mock_conversation_repository.save_training_plan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_active_session_without_a_stored_plan_asks_for_train(
+        self,
+        routed_service: ConversationService,
+        mock_bot: AsyncMock,
+        mock_conversation_repository: AsyncMock,
+        mock_trainer: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.get_interview_status.return_value = "completed"
+        mock_conversation_repository.get_training_status.return_value = TRAINING_STATUS_ACTIVE
+        mock_conversation_repository.get_current_plan.return_value = None
+
+        await routed_service.handle_update(_text_update(456, "duda"))
+
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=456, message_thread_id=None, text=Constants.NO_PLAN_MESSAGE
+        )
+        mock_trainer.answer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_in_progress_interview_still_goes_to_the_interviewer(
+        self,
+        routed_service: ConversationService,
+        mock_conversation_repository: AsyncMock,
+        mock_interviewer: AsyncMock,
+        mock_trainer: AsyncMock,
+    ) -> None:
+        mock_conversation_repository.get_interview_status.return_value = "in_progress"
+        mock_interviewer.respond.return_value = InterviewerReply(
+            turn=InterviewerTurn(status="in_progress", reply="Cuantos anos tienes?"),
+            token_usages=[],
+        )
+
+        await routed_service.handle_update(_text_update(456, "hola"))
+
+        mock_interviewer.respond.assert_awaited_once()
+        mock_trainer.answer.assert_not_awaited()

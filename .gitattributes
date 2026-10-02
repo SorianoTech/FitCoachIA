@@ -1,0 +1,4 @@
+# Los dumps de Postgres deben conservar finales de linea LF: el repo se clona en
+# Windows con core.autocrlf=true y los ficheros de ddl/ se copian tal cual dentro
+# de la imagen (docker-entrypoint-initdb.d), donde los consume psql en Linux.
+*.sql text eol=lf

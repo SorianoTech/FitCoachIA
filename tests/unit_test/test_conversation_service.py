@@ -62,6 +62,7 @@ def service(
         bot=mock_bot,
         interviewer=mock_interviewer,
         conversation_repository=mock_conversation_repository,
+        usage_limits parameter,
     )
 
 

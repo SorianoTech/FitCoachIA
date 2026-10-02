@@ -10,10 +10,8 @@ BASE_TEST_PACKAGE=tests
 UNIT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/unit_test
 IT_TEST_PACKAGE=$(BASE_TEST_PACKAGE)/it
 
-# Usa siempre el pytest del venv del proyecto, evitando depender de cuál
-# pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
-# --system) se sobreescribe con `make tests PYTEST=pytest`.
-VENV=venv
+# Prefiere .venv (layout por defecto de uv) y cae a venv si no existe.
+VENV:=$(if $(wildcard .venv),.venv,venv)
 PYTEST=$(VENV)/Scripts/pytest.exe
 
 COMPOSE_IT=tests/docker-compose-test.yml
@@ -25,7 +23,45 @@ export IT_BASE_URL
 COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
 COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
 
-.PHONY: container build run stop clean all help tag images clean-images logs tests unit_tests it_tests
+# Ficheros de entorno fuera del repositorio; dev cae al fichero local si no existen, prod no
+ENV_ROOT ?= /etc/fitcoachia
+DEV_ENV_FILE ?= $(ENV_ROOT)/dev/.env.dev
+PROD_ENV_FILE ?= $(ENV_ROOT)/prod/.env.prod
+DEV_ENV_FALLBACK=.env.dev
+
+COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
+DEV_APP_SERVICE=fitcoach-ia-dev
+COMPOSE_PROD=$(DOCKER) compose
+# La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
+# cargan una sola vez y sobreviven a los despliegues de la app.
+COMPOSE_VECTOR=$(DOCKER) compose -f infra/vector-db/docker-compose.vector-db.yml
+
+define resolve_dev_env
+if [ -f "$(DEV_ENV_FILE)" ]; then \
+	ENV_FILE="$(DEV_ENV_FILE)"; \
+else \
+	ENV_FILE="$(DEV_ENV_FALLBACK)"; \
+	echo ">> $(DEV_ENV_FILE) no encontrado -> usando $(DEV_ENV_FALLBACK)"; \
+fi; \
+[ -f "$$ENV_FILE" ] || { echo "ERROR: no existe ningun fichero de entorno de desarrollo"; exit 1; }; \
+echo ">> entorno dev: $$ENV_FILE"; \
+export FITCOACH_ENV_FILE="$$ENV_FILE"
+endef
+
+define resolve_prod_env
+if [ ! -r "$(PROD_ENV_FILE)" ]; then \
+	echo "ERROR: $(PROD_ENV_FILE) no existe o no tiene permisos de acceso"; \
+	echo "       crea el fichero, o ejecuta el target con sudo"; \
+	exit 1; \
+fi; \
+echo ">> entorno prod: $(PROD_ENV_FILE)"; \
+export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
+endef
+
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-app dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
+# Usa siempre el pytest del venv del proyecto, evitando depender de cuál
+# pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
+# --system) se sobreescribe con `make tests PYTEST=pytest`.
 
 help:
 	@echo "Comandos disponibles Docker"
@@ -36,18 +72,28 @@ help:
 	@echo "  make logs                           - Muestra los logs del contenedor"
 	@echo "  make clean                          - Detiene el contenedor y elimina todas las imagenes $(IMAGE_BASE)"
 	@echo "  make all                            - Construye y ejecuta todo (limpiando primero)"
-	@echo "  make images                         - Consulta las imagenes en local"
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
-	@echo "  make tag version=x.y.z              - Versiona la imagen local latest a la version deseada"
-	@echo "  make tests                          - execute all tests (unit test and it tests). Levanta el contenedor de integracion, analiza cobertura y falla si cobertura < 80%"
-	@echo "  make unit_tests                     - execute unit tests (sin cobertura, sin Docker)"
-	@echo "  make it_tests                       - levanta el contenedor de integracion, ejecuta los tests de integracion (sin cobertura) y lo detiene"
+	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
+	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
+	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado. Usa $(DEV_ENV_FILE) si existe, si no $(DEV_ENV_FALLBACK)"
+	@echo "  make dev-app                        - Reconstruye y reinicia solo la app de desarrollo (sin embedder ni postgres)"
+	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
+	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
+	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
+	@echo "  make prod-down                      - Detiene el entorno de produccion"
+	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
+	@echo "  make vector-up                      - Levanta pgVector y pgAdmin con el catalogo de ejercicios"
+	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
+	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
+	@echo "  make trainer-debug ARGS=\"...\"       - Ejecuta el entrenador offline y guarda artefactos en runs/trainer (ver docs/trainer-agent.md)"
+	@echo "  make trainer-compare ARGS=\"...\"     - Compara skills/modelos sobre el golden set"
+	@echo "  make trainer-refresh-catalogues     - Regenera los catalogos congelados de evals/trainer/cases con la recuperacion real"
 
 container:
 	@$(DOCKER) ps -a
 
 build:
-	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile ./src
+	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile .
 	@if [ "$(version)" != "latest" ]; then \
 		$(DOCKER) tag $(IMAGE_BASE):$(version) $(IMAGE_LATEST); \
 		echo "Imagen construida: $(IMAGE_BASE):$(version) (también etiquetada como latest)"; \
@@ -55,26 +101,78 @@ build:
 		echo "Imagen construida: $(IMAGE_LATEST)"; \
 	fi
 
-unit_tests:
-	$(PYTEST) --no-cov -o testpaths=$(UNIT_TEST_PACKAGE)
+dev-up:
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build
 
-it_tests:
-	@$(COMPOSE_UP)
-	@$(PYTEST) --no-cov -o testpaths=$(IT_TEST_PACKAGE); \
-	STATUS=$$?; \
-	$(COMPOSE_DOWN); \
-	exit $$STATUS
+# Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y postgres,
+# que deben estar ya levantados con `make dev-up`.
+dev-app:
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(DEV_APP_SERVICE)
+
+dev-down:
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
+
+dev-logs:
+	@$(resolve_dev_env); \
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" logs -f
+
+prod-up:
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d
+
+prod-down:
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
+
+prod-logs:
+	@$(resolve_prod_env); \
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
+
+vector-up:
+	@$(COMPOSE_VECTOR) up -d --build
+
+# Sin -v a proposito: el volumen guarda la carga inicial de 283 MB y volver a
+# crearlo tarda varios minutos. Para borrarlo de verdad, hazlo explicitamente.
+vector-down:
+	@$(COMPOSE_VECTOR) down --remove-orphans
+
+vector-logs:
+	@$(COMPOSE_VECTOR) logs -f
+
+# Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
+trainer-debug:
+	@uv run python -m fitcoach.devtools.trainer_debug $(ARGS)
+
+trainer-compare:
+	@uv run python -m fitcoach.devtools.trainer_compare $(ARGS)
+
+TRAINER_CASES=evals/trainer/cases
+
+trainer-refresh-catalogues:
+	@for case in $(TRAINER_CASES)/*/; do \
+		uv run python -m fitcoach.devtools.trainer_debug --case-dir "$$case" --live-retrieval \
+			--save-catalogue "$$case/catalogue.json" --render-only --out /tmp/fitcoach-trainer-render || exit 1; \
+	done
 
 tests:
-	@$(COMPOSE_UP)
-	@$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
+	@if ! $(COMPOSE_UP); then \
+		echo "ERROR: el entorno de test no ha arrancado; revisa los logs de arriba"; \
+		$(DOCKER) compose -f $(COMPOSE_IT) logs --tail 40 fitcoach-ia; \
+		$(COMPOSE_DOWN); \
+		exit 1; \
+	fi; \
+	$(PYTEST) --cov=$(BASE_PACKAGE)/fitcoach --cov-fail-under=80 -o testpaths="$(UNIT_TEST_PACKAGE) $(IT_TEST_PACKAGE)"; \
 	STATUS=$$?; \
 	$(COMPOSE_DOWN); \
 	exit $$STATUS
 
 run:
 	$(eval TARGET_IMAGE := $(IMAGE_BASE):$(version))
-	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) $(TARGET_IMAGE)
+	@$(DOCKER) run -d --name $(CONTAINER_NAME) -p $(PORT):$(PORT) --env-file .env \
+		$(if $(log_level),-e log_level=$(log_level),) $(TARGET_IMAGE)
 	@echo "Aplicación corriendo en http://localhost:$(PORT)"
 
 stop:
@@ -88,8 +186,15 @@ clean: stop clean-images
 
 all: clean build run
 
-images:
-	@$(DOCKER) images
+# Borra unicamente la imagen de la version indicada, respetando el resto de tags
+clean-image:
+	@IMAGE=$$($(DOCKER) images --filter "reference=$(IMAGE_BASE):$(version)" -q); \
+	if [ -z "$$IMAGE" ]; then \
+		echo "No se encontro la imagen $(IMAGE_BASE):$(version). Nada que eliminar."; \
+		exit 0; \
+	fi; \
+	echo "Eliminando $(IMAGE_BASE):$(version)..."; \
+	$(DOCKER) rmi $(IMAGE_BASE):$(version)
 
 # Borra todas las imagenes que contengan el nombre fitcoachia/fitcoach-app. Busca los IDs, elimina duplicados y borra las imagenes
 clean-images:
@@ -101,18 +206,3 @@ clean-images:
 		$(DOCKER) rmi -f $$IMAGES; \
 		echo "Imágenes eliminadas correctamente."; \
 	fi
-
-tag:
-	@if [ -z "$(version)" ]; then \
-		echo "Error: debes indicar la versión. Uso: make tag version=1.0.0"; \
-		exit 1; \
-	fi; \
-	echo "Buscando imagen local $(IMAGE_LATEST)..."; \
-	if ! $(DOCKER) image inspect $(IMAGE_LATEST) > /dev/null 2>&1; then \
-		echo "Error: no se encontró la imagen $(IMAGE_LATEST) en local. Ejecuta 'make build' primero."; \
-		exit 1; \
-	fi; \
-	echo "Imagen encontrada. Aplicando tag $(IMAGE_BASE):$(version)..."; \
-	$(DOCKER) tag $(IMAGE_LATEST) $(IMAGE_BASE):$(version); \
-	echo "Tag aplicado. Imágenes disponibles para $(IMAGE_BASE):"; \
-	$(DOCKER) images $(IMAGE_BASE)

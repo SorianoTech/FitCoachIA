@@ -1,0 +1,101 @@
+name: fitcoach-dev
+
+# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
+services:
+  fitcoach-ia-dev:
+    container_name: dev-fitcoach-ia
+    restart: unless-stopped
+    # Etiqueta "dev" para no pisar las imagenes de produccion (latest / x.y.z).
+    image: fitcoachia/fitcoach-app:dev
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    ports:
+      - "${APP_PORT}:8000"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)" ]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      # Sondeo rapido solo durante el arranque; en regimen estable basta cada 5 min.
+      start_interval: 5s
+    env_file:
+      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
+      - path: .env.dev
+        required: false
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
+        required: false
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      embedder-dev:
+        condition: service_healthy
+    networks:
+      - default
+      - proxy-network
+
+  postgres-dev:
+    container_name: dev-fitcoach-postgres
+    image: postgres:16-alpine
+    env_file:
+      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
+      - path: .env.dev
+        required: false
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
+        required: false
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - fitcoach-dev-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - default
+      - proxy-network
+
+  embedder-dev:
+    container_name: dev-fitcoach-embedder
+    image: fitcoachia/embedder:dev
+    build:
+      context: infra/embedder
+      dockerfile: Dockerfile-embedder
+    restart: unless-stopped
+    env_file:
+      - path: infra/embedder/.env
+    ports:
+      - "${embedder_port}:8100"
+    healthcheck:
+      # /health solo responde 200 cuando el modelo esta cargado en memoria.
+      test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+    networks:
+      - default
+      - proxy-network
+
+  adminer-dev:
+    container_name: dev-fitcoach-adminer
+    image: adminer:4.8.1-standalone
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-dev
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+    networks:
+      - default
+      - proxy-network
+
+volumes:
+  fitcoach-dev-postgres:
+
+networks:
+  proxy-network:
+    external: true

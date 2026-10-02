@@ -1,0 +1,59 @@
+// Recolector de logs de contenedores Docker -> Loki.
+//
+// Alcance deliberadamente acotado: aunque el socket de Docker permite ver todos
+// los contenedores del host, el "keep" de discovery.relabel descarta cualquiera
+// que no sea fitcoach-ia/dev-fitcoach-ia antes de leer ni un solo log suyo.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "fitcoach" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "^/(dev-)?fitcoach-ia$"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "^/(dev-)?fitcoach-ia$"
+		target_label  = "service_name"
+		replacement   = "fitcoach-ia"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "^/dev-.*"
+		target_label  = "environment"
+		replacement   = "dev"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "^/fitcoach-ia$"
+		target_label  = "environment"
+		replacement   = "prod"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "^/(.*)"
+		target_label  = "container"
+		replacement   = "$1"
+	}
+}
+
+loki.source.docker "fitcoach" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.fitcoach.output
+	forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

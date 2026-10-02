@@ -2,6 +2,7 @@
 venv**/
 .env
 .venv
+env-*/
 
 #initial files
 **/.gitkeep
@@ -20,4 +21,13 @@ venv**/
 #Binary
 __pycache__/
 
-uv.lock
+*.lock
+
+.mypy*elop
+
+infra/vector-db/loader/resources/**
+.env.dev
+.env.prod
+
+# Artefactos de las ejecuciones offline de los agentes (make trainer-debug)
+runs/

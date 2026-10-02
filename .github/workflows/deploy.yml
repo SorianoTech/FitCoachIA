@@ -24,6 +24,8 @@ on:
         required: true
       DOCKER_IMAGE_NAME:
         required: true
+      ENV_FILE_PATH:
+        required: true
 
 env:
   PYTHON_VERSION: "3.12"
@@ -32,6 +34,7 @@ env:
   APP_PORT: "8000"
   DEPLOY_TARGET_DIR: "/home/${{ secrets.SERVER_USER }}"
   SSH_PORT: 22
+  ENV_FILE: "${{ secrets.ENV_FILE_PATH }}/.env.prod"
 
 jobs:
   Deploy:
@@ -62,7 +65,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_PKEY }}
           REMOTE_USER: ${{ secrets.SERVER_USER }}
           REMOTE_PORT: ${{ env.SSH_PORT }}
-          SOURCE: docker-compose.yml
+          SOURCE: docker-compose.yml Makefile
           TARGET: ${{ env.DEPLOY_TARGET_DIR }}/
           SCRIPT_BEFORE_REQUIRED: true
           SCRIPT_BEFORE: |
@@ -70,6 +73,8 @@ jobs:
             CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
             NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
+            ENV_FILE="${{ env.ENV_FILE }}"
+            ENV_DIR="$(dirname "$ENV_FILE")"
 
             step() { echo ""; echo "=== $* ==="; }
             log()  { echo "    $*"; }
@@ -78,9 +83,23 @@ jobs:
             log "Servidor:           $(hostname)"
             log "Imagen a desplegar: $NEW_IMAGE"
             log "Contenedor:         $CONTAINER_NAME"
+            log "Fichero de entorno: $ENV_FILE"
             log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
 
-            step "1/4 Estado actual del contenedor"
+            step "1/4 Verificar acceso al fichero de entorno"
+            if ! sudo -n true 2>/dev/null; then
+              log "ERROR: el usuario de despliegue no puede usar 'sudo -n' (falta regla NOPASSWD)"
+              exit 1
+            fi
+            if ! sudo -n test -r "$ENV_FILE"; then
+              log "ERROR: $ENV_FILE no existe o no es legible ni con sudo"
+              log "Contenido de $ENV_DIR:"
+              sudo -n ls -la "$ENV_DIR" 2>/dev/null | sed 's/^/      /' || log "      (no accesible)"
+              exit 1
+            fi
+            log "Fichero de entorno accesible con sudo: $ENV_FILE"
+
+            step "2/4 Estado actual del contenedor"
             CURRENT_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
             if [ -z "$CURRENT_IMAGE" ]; then
               log "No existe ningún contenedor '$CONTAINER_NAME'"
@@ -88,18 +107,6 @@ jobs:
               log "Contenedor '$CONTAINER_NAME' encontrado"
               log "  imagen actual: $CURRENT_IMAGE"
               log "  estado:        $(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")"
-            fi
-
-            step "2/4 Decisión sobre el contenedor actual"
-            if [ "$CURRENT_IMAGE" = "$NEW_IMAGE" ]; then
-              log "La imagen actual coincide con la solicitada -> recreación forzada"
-              docker rm -f "$CONTAINER_NAME"
-              log "Contenedor $CONTAINER_NAME eliminado"
-            elif [ -n "$CURRENT_IMAGE" ]; then
-              log "Versión distinta en ejecución: $CURRENT_IMAGE"
-              log "Se CONSERVA (contenedor e imagen) hasta verificar $NEW_IMAGE"
-            else
-              log "Nada que conservar ni eliminar"
             fi
 
             step "3/4 Imágenes locales de la aplicación (antes del pull)"
@@ -118,49 +125,91 @@ jobs:
             IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
             NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
             VERSION="${{ steps.image_version.outputs.VERSION }}"
-            COMPOSE_FILE="${{ env.DEPLOY_TARGET_DIR }}/docker-compose.yml"
+            DEPLOY_DIR="${{ env.DEPLOY_TARGET_DIR }}"
+            ENV_FILE="${{ env.ENV_FILE }}"
             DEPLOY_OK=false
 
             step() { echo ""; echo "=== $* ==="; }
             log()  { echo "    $*"; }
 
-            step "1/4 Levantar la nueva versión"
+            step "1/6 Capturar la versión en servicio (artefacto de rollback)"
+            PREV_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
+            PREV_VERSION=""
+            if [ -z "$PREV_IMAGE" ]; then
+              log "No hay contenedor en servicio: primer despliegue, sin rollback posible"
+            else
+              log "En servicio: $PREV_IMAGE"
+              CANDIDATE="${PREV_IMAGE##*:}"
+              # Exige tag de nuestro repo y presente en local; si no, no hay rollback.
+              if [ "$PREV_IMAGE" = "$IMAGE_BASE:$CANDIDATE" ] && docker image inspect "$PREV_IMAGE" >/dev/null 2>&1; then
+                PREV_VERSION="$CANDIDATE"
+                log "Rollback disponible con VERSION=$PREV_VERSION"
+              else
+                log "AVISO: $PREV_IMAGE no es una imagen local etiquetada de $IMAGE_BASE -> sin rollback"
+              fi
+            fi
+
+            step "2/6 Retirar el contenedor en servicio (la imagen se conserva)"
+            if [ -n "$PREV_IMAGE" ]; then
+              docker rm -f "$CONTAINER_NAME"
+              log "Contenedor eliminado; imagen $PREV_IMAGE intacta"
+            else
+              log "Nada que retirar"
+            fi
+
+            step "3/6 Levantar la nueva versión"
+            cd "$DEPLOY_DIR"
+
             log "Imagen:  $NEW_IMAGE"
-            log "Comando: VERSION=$VERSION docker compose -f $COMPOSE_FILE up -d"
-            if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" up -d; then
+            log "Comando: sudo -n env VERSION=$VERSION PROD_ENV_FILE=$ENV_FILE make prod-up"
+            # sudo solo aquí: es el único comando de la cadena que lee el fichero de secretos.
+            if sudo -n env VERSION="$VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-up; then
+
               log "compose up completado"
               log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
 
-              step "2/4 Verificar arranque (espera inicial 5s + 5 intentos x 5s)"
+              step "4/6 Verificar arranque (espera inicial 5s + 10 intentos x 5s)"
               sleep 5
-              for i in $(seq 1 5); do
+              for i in $(seq 1 10); do
                 STATUS=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo missing)
+                HEALTH=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo none)
                 RESTARTS=$(docker inspect -f '{{.RestartCount}}' "$CONTAINER_NAME" 2>/dev/null || echo "?")
-                log "intento $i/5 -> estado=$STATUS reinicios=$RESTARTS"
-                if [ "$STATUS" = "running" ] && docker exec "$CONTAINER_NAME" python -c \
-                    "import urllib.request;urllib.request.urlopen('http://localhost:${{ env.APP_PORT }}/health',timeout=2)" >/dev/null 2>&1; then
-                  log "Health check OK en /health -> nueva versión operativa"
+                log "intento $i/10 -> estado=$STATUS salud=$HEALTH reinicios=$RESTARTS"
+                if [ "$HEALTH" = "healthy" ]; then
+                  log "Health check OK -> nueva versión operativa"
                   DEPLOY_OK=true
+                  break
+                fi
+                if [ "$HEALTH" = "unhealthy" ]; then
+                  log "Docker ha declarado el contenedor unhealthy -> no se sigue esperando"
                   break
                 fi
                 sleep 5
               done
             else
-              log "ERROR: 'docker compose up -d' ha fallado"
+              log "ERROR: 'make prod-up' ha fallado"
             fi
 
             if [ "$DEPLOY_OK" != true ]; then
-              step "FALLO: $NEW_IMAGE no ha arrancado"
-              log "Últimas 50 líneas del contenedor:"
-              docker logs "$CONTAINER_NAME" --tail 50 || true
-              log "Se va a eliminar el contenedor $CONTAINER_NAME y la imagen $NEW_IMAGE"
-              docker rm -f "$CONTAINER_NAME" || true
+              step "FALLO: $NEW_IMAGE no ha arrancado -> rollback"
+              docker logs "$CONTAINER_NAME" --tail 50 2>/dev/null || log "(sin logs: el contenedor no llegó a crearse)"
+              docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
               docker rmi "$NEW_IMAGE" || true
-              log "Eliminación completada correctamente"
+              log "Contenedor e imagen nuevos eliminados"
+              if [ -z "$PREV_VERSION" ]; then
+                log "ERROR: no hay versión anterior que restaurar. El servicio queda caído."
+                exit 1
+              fi
+              log "Restaurando $IMAGE_BASE:$PREV_VERSION"
+              if sudo -n env VERSION="$PREV_VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-up; then
+                log "ROLLBACK OK: $IMAGE_BASE:$PREV_VERSION de nuevo en servicio"
+              else
+                log "ERROR CRÍTICO: el rollback también ha fallado. Servicio caído."
+              fi
               exit 1
             fi
 
-            step "3/4 Limpiar contenedores huérfanos de '$CONTAINER_NAME'"
+            step "5/6 Limpiar contenedores huérfanos de '$CONTAINER_NAME'"
             NEW_ID=$(docker inspect -f '{{.Id}}' "$CONTAINER_NAME")
             log "Contenedor en servicio: ${NEW_ID%${NEW_ID#????????????}}"
             ORPHANS=$(docker ps -a --filter "name=^${CONTAINER_NAME}" --format '{{.ID}}|{{.Names}}|{{.Image}}' \
@@ -174,7 +223,7 @@ jobs:
               done
             fi
 
-            step "4/4 Limpiar imágenes antiguas"
+            step "6/6 Limpiar imágenes antiguas"
             log "Criterio: repositorio de la app + tag semver X.Y.Z + distinto de $VERSION"
             CANDIDATES=""
             for img in $(docker images --format '{{.Repository}}:{{.Tag}}'); do

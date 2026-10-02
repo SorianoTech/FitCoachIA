@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Validar que el PR sea desde una rama feature/** o fix/**
         run: |
-          if [[ "${{ github.head_ref }}" != feature/* && "${{ github.head_ref }}" != fix/* ]]; then
+          if [[ "${{ github.head_ref }}" != feature/* && "${{ github.head_ref }}" != feat/* && "${{ github.head_ref }}" != fix/* ]]; then
             echo "Solo se permiten merges desde ramas 'feature/**' o 'fix/**' a 'develop'"
             echo "Tu rama: ${{ github.head_ref }}"
             exit 1

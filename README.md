@@ -9,7 +9,7 @@ El sistema es capaz de transformar una entrevista inicial en un **Plan Personali
 El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquestar cuatro agentes especializados:
 
 *   **Agente 1 (Secretario):** Transcribe entrevistas y genera informes estructurados del cliente.
-*   **Agente 2 (Entrenador):** Diseña planes de entrenamiento optimizados en mesociclos.
+*   **Agente 2 (Entrenador):** Diseña planes de entrenamiento optimizados en mesociclos, anclados a una base de datos vectorial de ejercicios. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
 
@@ -42,18 +42,27 @@ FitCoachIA/
 │   │   ├── infrastructure/
 │   │   │   ├── config/           # Configuración de la aplicación
 │   │   │   ├── database/         # Conexión y setup de base de datos
-│   │   │   ├── ia/               # Clientes y adaptadores de LLMs
-│   │   │   └── prompts/          # Plantillas de prompts por agente
+│   │   │   ├── ia/               # Clientes LLM, skills y cliente de embeddings
+│   │   │   ├── prompts/          # Plantillas de prompts por agente
+│   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
 │   │   ├── repository/           # Acceso a datos (patrón Repository)
 │   │   ├── service/              # Casos de uso y lógica de negocio
 │   │   └── main.py               # Punto de entrada de la aplicación
 │   ├── Dockerfile                # Dockerización de la aplicación
-│   └── requirements.txt          # Dependencias del contenedor
+│   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
+├── infra/
+│   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
+│   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
+│   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
 ├── tests/
-│   ├── unit_test/                     # Tests unitarios
-│   └── it/                       # Tests de integración
+│   ├── unit_test/                # Tests unitarios
+│   ├── it/                       # Tests de integración
+│   └── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
 ├── docs/                         # Documentación técnica
 │   ├── AUTHORS.md
+│   ├── interviewer-agent.md      # Agente 1 (Secretario)
+│   ├── trainer-agent.md          # Agente 2 (Entrenador)
+│   ├── vector-db.md              # Base de datos vectorial y embeddings
 │   ├── Dockerfile-guide.md
 │   └── Makefile.md
 ├── .github/
@@ -63,12 +72,13 @@ FitCoachIA/
 │   │   ├── build.yml             # Pipeline de calidad, seguridad y tests (feature branches)
 │   │   ├── release.yml           # Publicación de imagen Docker y release en GitHub (main)
 │   │   └── validate-merge-source.yml  # Valida que los PRs a main vengan de develop
-│   └── requirements-ci.txt       # Dependencias del entorno CI (herramientas + src/requirements.txt)
+│   └── requirements-ci.txt       # Dependencias del entorno CI: runtime + dev + ci (generado desde pyproject.toml)
 ├── scripts/                      # Scripts de utilidad
 ├── .env.development              # Variables de entorno para desarrollo
 ├── .env.example                  # Plantilla de variables de entorno
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit)
 ├── docker-compose.yml            # Configuración de Docker Compose
+├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
 ├── pyproject.toml                # Configuración de ruff, mypy y pytest
 ├── LICENSE.md
 ├── Makefile                      # Automatización de tareas
@@ -89,11 +99,10 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make all` | Secuencia completa: limpia, construye y arranca |
 | `make container` | Lista todos los contenedores (activos y detenidos) |
 | `make images` | Lista todas las imágenes Docker locales |
+| `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tag version=x.y.z` | Aplica un tag de versión a la imagen `latest` local |
 | `make tests` | Todos los tests con cobertura (falla si < 80%) |
-| `make unit_tests` | Solo tests unitarios (sin cobertura) |
-| `make it_tests` | Solo tests de integración (sin cobertura) |
 
 
 ## Instalación y Despliegue
@@ -166,12 +175,6 @@ Los tests de integración (`tests/it`) atacan por HTTP el contenedor construido 
 ```bash
 # Todos los tests: unitarios con cobertura (falla si < 80%) + integración contra el contenedor
 make tests
-
-# Solo tests unitarios (sin cobertura, sin Docker)
-make unit_tests
-
-# Solo tests de integración (levanta el contenedor, ejecuta, lo detiene)
-make it_tests
 ```
 
 La configuración por defecto de pytest (paths, formato de logs, verbosidad) vive en `pyproject.toml` bajo `[tool.pytest.ini_options]`.

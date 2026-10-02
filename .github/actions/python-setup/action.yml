@@ -55,4 +55,4 @@ runs:
         REQ_FILE: ${{ env.REQUIREMENTS_FILE }}
       run: |
         uv venv --python "$PYTHON_VERSION" .venv
-        uv pip sync --python .venv/bin/python -q -r "$REQ_FILE"
+        uv pip sync --python .venv/bin/python -q "$REQ_FILE"

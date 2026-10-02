@@ -88,10 +88,11 @@ contenedor. Detalle en [entornos-y-despliegue.md](entornos-y-despliegue.md#2-los
 |---|---|
 | `make tests` | Levanta el stack de test, ejecuta unitarios e integración, exige 80 % de cobertura |
 
-Usa el `pytest` del `.venv` del proyecto, no el del `PATH`. En CI, donde no hay venv, se sobrescribe:
+En CI se usa la `.venv` preparada desde `.github/requirements-ci.txt`, sin volver a resolver
+dependencias:
 
 ```bash
-make tests PYTEST=pytest
+make tests PYTEST="uv run --no-sync pytest"
 ```
 
 Levanta y tumba su propio Compose (`tests/docker-compose-test.yml`), y **devuelve el código de salida

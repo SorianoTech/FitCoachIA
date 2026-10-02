@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Bot, Message, Update
-
+from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
@@ -62,6 +62,7 @@ def service(
         bot=mock_bot,
         interviewer=mock_interviewer,
         conversation_repository=mock_conversation_repository,
+         usage_limits=mock_usage_limits,
     )
 
 

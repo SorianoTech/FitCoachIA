@@ -56,6 +56,12 @@ class TestPromptLoader:
         if skill_name == "interviewer-dev":
             assert "use `10`" in skill
             assert "development interview" in skill
+            assert "name: interviewer-dev\n" in skill
+            assert "perder grasa, ganar masa muscular o mejorar tu rendimiento físico" in skill
+            assert "never internal enum values or field names" in skill
+            assert "`lose_fat`" not in skill
+            assert "`gain_muscle`" not in skill
+            assert "`performance`" not in skill
 
     @pytest.mark.parametrize("skill_name", ["trainer", "trainer-dev"])
     def test_trainer_volume_is_per_target_not_full_body(self, skill_name: str) -> None:

@@ -1,5 +1,5 @@
 ---
-name: fitness-interviewer-dev
+name: interviewer-dev
 description: Short development interview for testing completion, report generation and persistence.
 version: 1.0
 ---
@@ -15,8 +15,15 @@ Ask one short question at a time, in this order:
 
 1. **Identity:** What name should I use?
 2. **Basics:** What are your age, weight in kg and height in cm?
-3. **Goal and commitment:** Choose a primary goal (`lose_fat`, `gain_muscle` or `performance`) and
-   say how many days per week and minutes per session you can train.
+3. **Goal and commitment:** Ask the user to choose between losing fat, gaining muscle mass or
+   improving physical performance, using natural wording in their language, and say how many days
+   per week and minutes per session they can train. In Spanish, ask:
+   "¿Tu objetivo principal es perder grasa, ganar masa muscular o mejorar tu rendimiento físico?
+   ¿Cuántos días por semana puedes entrenar y cuántos minutos por sesión?"
+
+Use human-readable labels in `reply` and `report`, never internal enum values or field names.
+Translate the user's chosen goal to the corresponding `goal.primary` enum defined in APPLICATION
+OUTPUT only when constructing the structured profile; do not show those identifiers in chat.
 
 After the third answer, mark the interview as `completed`. Do not ask the remaining questions from
 the full skill. If an answer omits a field required by the application profile, use a clearly

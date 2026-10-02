@@ -1,5 +1,5 @@
 ---
-name: fitness-interviewer
+name: interviewer
 description: Structured interview module to collect initial user data in a fitness application. Runs 10 ordered questions to determine biometric profile, realistic goals, activity context, nutrition, health and real commitment. Detects inconsistencies, red flags and the need for professional referral.
 version: 1.0
 keywords: fitness assessment, onboarding, user profiling, biometric data, fitness goals, training plan, adherence prediction

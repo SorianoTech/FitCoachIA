@@ -88,13 +88,24 @@ La periodización es de cuatro semanas:
 
 | Semana | `intensity` | Volumen respecto a la semana 1 |
 | --- | --- | --- |
-| 1 | `accumulation` | 100 % de `initial_calculations.tolerable_volume_sets` |
+| 1 | `accumulation` | Base, como máximo `tolerable_volume_sets` por grupo muscular |
 | 2 | `intensification` | ~110 %, o mismas series con más RPE |
 | 3 | `peak` | ~120 %, RPE más alto del bloque |
 | 4 | `deload` | ~50-60 %, RPE máximo 6 |
 
 `commitment.days_per_week` y `minutes_per_session` son límites duros: el plan debe caber en el
 tiempo que el usuario declaró tener.
+
+`tolerable_volume_sets` es un techo de series de trabajo **por grupo muscular y por semana**.
+Se suman las series de todos los días por separado para cada `target` del catálogo; no se divide
+el valor entre grupos musculares ni se aplica como un total de cuerpo completo. No incluye series
+de calentamiento ni obliga a alcanzar el techo. Por ejemplo, un techo de 5 permite hasta 5 series
+de pecho y hasta 5 de espalda en la semana 1, no solo 5 series entre ambos. Las semanas 2-3 siguen
+la progresión de la skill; con banderas rojas, el techo por grupo se mantiene las cuatro semanas.
+
+Este significado se comparte con ambas skills del entrevistador y del entrenador. Cambiar los
+prompts no recalcula perfiles ni planes ya guardados; una nueva entrevista y generación aplican
+las instrucciones nuevas.
 
 ## Contrato entre el modelo y la aplicación
 

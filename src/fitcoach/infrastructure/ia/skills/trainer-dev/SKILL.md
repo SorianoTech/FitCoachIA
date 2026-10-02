@@ -15,6 +15,11 @@ in production.
 
 Design **week 1 properly** and derive the other three from it:
 
+`tolerable_volume_sets` is a weekly working-set ceiling PER MUSCLE GROUP (catalogue `target`),
+not the total for the whole body or a daily budget. Sum sets over all sessions separately for each
+target. Do not divide the ceiling among unrelated targets; total full-body sets may exceed it.
+Warm-up sets do not count and the ceiling is not a mandatory quota.
+
 1. Week 1 (`accumulation`): pick at most **3 exercises per day**, only from `<rag_context>`.
    Give every exercise an `rpe` no higher than 8. For each catalogue `target`, the sum of weekly
    sets must not exceed `initial_calculations.tolerable_volume_sets`.

@@ -24,7 +24,7 @@ Use this skill when:
 | `goal.primary` | profile | Rep ranges, rest, cardio share |
 | `commitment.days_per_week` | profile | Number of sessions per week (hard limit) |
 | `commitment.minutes_per_session` | profile | `estimated_minutes` ceiling (hard limit) |
-| `initial_calculations.tolerable_volume_sets` | profile | Week 1 weekly set ceiling |
+| `initial_calculations.tolerable_volume_sets` | profile | Week 1 weekly working-set ceiling per muscle group (`target`) |
 | `training.environment` / `training.equipment` | profile | Which exercises are realistic |
 | `injuries[]` | profile | What must be excluded or substituted |
 | `flags.red` | profile | Whether to stay conservative and refer out |
@@ -36,12 +36,17 @@ A mesocycle is four weeks. Volume rises for three weeks, then drops:
 
 | Week | `intensity` | Volume vs. week 1 | Intent |
 |---|---|---|---|
-| 1 | `accumulation` | 100% (= `tolerable_volume_sets`) | Establish technique and baseline |
+| 1 | `accumulation` | Baseline, at most `tolerable_volume_sets` per muscle group | Establish technique and baseline |
 | 2 | `intensification` | ~110%, or same sets at higher RPE | Add stimulus |
 | 3 | `peak` | ~120%, highest RPE of the block | Peak stimulus |
 | 4 | `deload` | ~50-60%, RPE capped at 6 | Recover and consolidate |
 
-Never exceed `tolerable_volume_sets` in week 1. If the profile's number is very low
+Never exceed `tolerable_volume_sets` for any muscle group in week 1. Sum working sets across all
+sessions separately for each exercise catalogue `target`. Do not sum unrelated targets into one
+budget, divide the ceiling among muscle groups, or treat it as a per-session limit. Warm-up sets
+do not count. Total full-body weekly sets may exceed the ceiling because each target has its own
+budget. The ceiling is not a mandatory quota for every target.
+If the profile's number is very low
 (a beginner, poor sleep, red flags), start below it rather than at it.
 
 ## Rep ranges and rest by goal
@@ -89,7 +94,8 @@ For every entry in `injuries[]`:
 
 When in doubt, exclude. A missing exercise costs progress; a wrong one costs an injury.
 
-If `flags.red` is non-empty: keep total volume at or below `tolerable_volume_sets` for all four
+If `flags.red` is non-empty: keep weekly volume per muscle group at or below
+`tolerable_volume_sets` for all four
 weeks, avoid maximal loads entirely, and state clearly in the `report` that a qualified
 professional should clear the client before starting.
 

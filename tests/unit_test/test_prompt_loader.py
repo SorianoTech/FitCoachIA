@@ -38,6 +38,32 @@ class TestPromptLoader:
 
         assert "{{skill_content}}" not in result
         assert "fitness-interviewer" in result
+        assert "rag_context" not in result
+
+    @pytest.mark.parametrize("skill_name", ["interviewer", "interviewer-dev"])
+    def test_interviewer_variants_share_contract_without_rag(self, skill_name: str) -> None:
+        loader = PromptLoader()
+        result = loader.load_assembled_system_prompt("interviewer", skill_name)
+        skill = loader.load_skill(skill_name)
+
+        assert "selected interviewer skill" in result
+        assert "COLLECTED DATA STRUCTURE:" in result
+        assert "PER MUSCLE GROUP" in result
+        assert "rag_context" not in result
+        assert "RAG" not in result
+        assert '"status":' not in skill
+        assert "Collected Data Structure:" not in skill
+        if skill_name == "interviewer-dev":
+            assert "use `10`" in skill
+            assert "development interview" in skill
+
+    @pytest.mark.parametrize("skill_name", ["trainer", "trainer-dev"])
+    def test_trainer_volume_is_per_target_not_full_body(self, skill_name: str) -> None:
+        result = PromptLoader().load_assembled_system_prompt("trainer", skill_name)
+
+        assert "PER MUSCLE GROUP" in result
+        assert "full-body" in result
+        assert "separately for each" in result
         assert "{{rag_context}}" in result
 
     def test_trainer_contract_lives_in_the_prompt_not_the_skill(self) -> None:

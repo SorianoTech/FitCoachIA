@@ -35,6 +35,8 @@ async def test_responds_with_composed_prompt_history_and_user_message(model: Mag
     messages = model.ainvoke.await_args.args[0]
     assert isinstance(messages[0], SystemMessage)
     assert 'Interviewer ("Secretario")' in messages[0].content
+    assert "rag_context" not in messages[0].content
+    assert "COLLECTED DATA STRUCTURE:" in messages[0].content
     assert isinstance(messages[1], HumanMessage)
     assert messages[1].content == "Me llamo Ana"
     assert isinstance(messages[2], AIMessage)

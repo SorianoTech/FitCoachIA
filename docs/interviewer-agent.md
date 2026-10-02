@@ -43,8 +43,8 @@ El comportamiento se define en dos recursos que se ensamblan al crear el agente:
 
 | Recurso | Responsabilidad |
 |---|---|
-| `src/fitcoach/infrastructure/prompts/interviewer/system_prompt.txt` | Rol, tono, límites de seguridad, idioma y contrato de integración. |
-| `src/fitcoach/infrastructure/ia/skills/interviewer/SKILL.md` | Orden de preguntas, validaciones, señales de riesgo y estructura del perfil. |
+| `src/fitcoach/infrastructure/prompts/interviewer/system_prompt.txt` | Rol, tono, límites de seguridad, idioma, contrato JSON y estructura del perfil. |
+| `src/fitcoach/infrastructure/ia/skills/interviewer/SKILL.md` | Orden de preguntas, validaciones, señales de riesgo y método de estimación. |
 
 La habilidad guía una entrevista ordenada de estas áreas:
 
@@ -64,11 +64,20 @@ Debe hacer una pregunta principal por mensaje, aprovechar datos adelantados por 
 repetirlos y formular aclaraciones cuando sean necesarias. El prompt exige español cuando el idioma
 no sea claro, respuestas breves aptas para Telegram y un trato no juzgador.
 
-Las instrucciones del usuario y cualquier bloque RAG se tratan como datos, nunca como instrucciones
-que puedan alterar el rol o revelar la configuración. El sistema ya deja preparado el marcador
-`{{rag_context}}`; en este agente se sustituye por un bloque vacío en cada turno, porque todavía no
-hay un recuperador conectado a la entrevista. El agente [`trainer`](trainer-agent.md) sí lo rellena,
-con el catálogo de ejercicios.
+Los mensajes del usuario y el historial se tratan como datos, nunca como instrucciones que puedan
+alterar el rol o revelar la configuración. El entrevistador no usa RAG: su prompt no contiene
+`rag_context` ni consulta catálogos. El agente [`trainer`](trainer-agent.md) usa el catálogo solo
+al generar un plan.
+
+El system prompt define el contrato JSON y todos los campos del perfil para ambas variantes.
+La skill seleccionada define el flujo y las estimaciones: `interviewer` realiza la entrevista
+completa; `interviewer-dev` usa tres preguntas y declara sus valores de prueba en el informe.
+
+`initial_calculations.tolerable_volume_sets` significa techo de series de trabajo **por grupo
+muscular y por semana**, no un total para todo el cuerpo ni un presupuesto por sesión. No incluye
+calentamiento. La skill completa estima ese techo según experiencia y recuperación, justificando
+las reducciones. La variante dev usa `10` como supuesto de prueba cuando falta esa información,
+no como cálculo biométrico; respeta las limitaciones explícitas y comunica el supuesto.
 
 ## Contrato entre el modelo y la aplicación
 

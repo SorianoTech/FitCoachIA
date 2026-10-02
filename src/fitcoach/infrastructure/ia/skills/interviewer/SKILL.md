@@ -198,7 +198,7 @@ Use this skill when:
 
 **Expected fields:**
 - Sleep hours (validate 4-12)
-- Subjective quality (none/little/enough/excellent)
+- Subjective quality (`poor` / `fair` / `good` / `excellent`)
 - Specific problems (initial insomnia, fragmented sleep, early waking)
 - Factors (stress, blue light, noise, temperature)
 
@@ -303,7 +303,7 @@ Use this skill when:
 
 ---
 
-## Execution Instructions for Claude
+## Execution Instructions
 
 ### FLOW TO FOLLOW:
 
@@ -341,84 +341,19 @@ Use this skill when:
 
 ## Expected Output
 
-### Collected Data Structure:
+Follow APPLICATION OUTPUT in the system prompt for the JSON envelope and profile fields.
+This skill defines the interview and estimation method, not a separate output schema.
 
-```json
-{
-  "user": {
-    "name_or_username": "string",
-    "registration_date": "ISO-8601"
-  },
-  "biometrics": {
-    "age": int,
-    "weight_kg": float,
-    "height_cm": int,
-    "bmi": float,
-    "perceived_composition": "string",
-    "estimated_composition": "string (based on photo if applicable)"
-  },
-  "goal": {
-    "primary": "lose_fat | gain_muscle | performance",
-    "secondary": "optional",
-    "timeframe_weeks": int,
-    "realistic_expectation": bool
-  },
-  "activity": {
-    "occupation": "string",
-    "neat_level": "sedentary | active | very_physical",
-    "description": "string"
-  },
-  "nutrition": {
-    "meals_per_day": int,
-    "critical_foods": [{"name": "string", "frequency": "string", "context": "string"}],
-    "general_pattern": "string"
-  },
-  "digestive_energy": {
-    "bloating_frequency": "never | sometimes | always",
-    "energy_crash": bool,
-    "triggers": ["string"]
-  },
-  "injuries": [
-    {
-      "location": "string",
-      "type": "string",
-      "age": "string",
-      "restriction": "string",
-      "diagnosis": "string | null"
-    }
-  ],
-  "training": {
-    "consistent_years": float,
-    "environment": "gym | home | outdoors | mixed",
-    "equipment": ["string"]
-  },
-  "sleep": {
-    "average_hours": float,
-    "quality": "poor | fair | good | excellent",
-    "problems": ["string"]
-  },
-  "supplementation": {
-    "current": [{"name": "string", "dose": "string", "frequency": "string"}],
-    "monthly_budget_usd": float | null,
-    "restrictions": ["string"]
-  },
-  "commitment": {
-    "days_per_week": int,
-    "minutes_per_session": int,
-    "flexibility": "fixed | flexible",
-    "dropout_history": "string | null"
-  },
-  "flags": {
-    "red": ["string"],
-    "yellow": ["string"]
-  },
-  "initial_calculations": {
-    "bmr": float,
-    "estimated_tdee": float,
-    "tolerable_volume_sets": int
-  }
-}
-```
+### Training volume estimate
+
+`initial_calculations.tolerable_volume_sets` is a weekly working-set ceiling **per muscle group**.
+It is not total full-body sets, sets per exercise or a daily budget. Warm-up sets do not count.
+Use training experience and recovery to choose a conservative estimate within the base ranges
+above; reduce it when reported constraints justify doing so and explain the reduction in `report`.
+It is a ceiling, not a requirement to train every group at that volume.
+Limited available time constrains the Trainer's session design; do not divide this value by the
+number of days or muscle groups. The Trainer sums the sets of exercises sharing a catalogue
+`target` across the week, separately for each target.
 
 ---
 
@@ -435,7 +370,7 @@ Before ending the interview, verify:
 
 ---
 
-## Keywords and Triggers for Claude
+## Keywords and Triggers
 
 `fitness onboarding`, `user profiling`, `biometric intake`, `goal assessment`, `training readiness`, `new user questionnaire`, `fitness interview`, `TDEE calculation`, `adherence prediction`, `injury screening`
 

@@ -51,7 +51,7 @@ class InterviewerChain(BaseLLMChain):
         self, user_message: str, history: Sequence[ConversationMessage]
     ) -> InterviewerReply:
         messages = [
-            SystemMessage(content=self._agent.insert_context()),
+            SystemMessage(content=self._agent.system_prompt),
             *self._to_langchain_messages(history),
             HumanMessage(content=user_message),
         ]

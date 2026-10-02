@@ -40,24 +40,15 @@ For development tests, use these safe defaults only when needed:
 - flexibility: `"flexible"`
 - dropout history: `null`
 - flags: empty red and yellow lists
-- initial calculations: positive conservative test values derived from the supplied biometrics
+- initial calculations: positive conservative test estimates for BMR and TDEE based on supplied
+  biometrics, with assumptions disclosed. For `tolerable_volume_sets`, use `10` as the development
+  default WEEKLY working-set ceiling PER MUSCLE GROUP, not a full-body total. This is a test
+  assumption, not a biometric calculation; disclose it in the report. Honour explicit training
+  experience, recovery limitations and safety concerns instead of overriding them with defaults.
 
 ## Completion output
 
-Follow the application JSON contract exactly:
-
-```json
-{"status":"in_progress","reply":"..."}
-```
-
-Use this shape until the three questions are answered. Then return:
-
-```json
-{"status":"completed","reply":"...","report":"...","profile":{...}}
-```
-
-The `profile` must contain every field required by the `InterviewerProfile` schema, including
-`user`, `biometrics`, `goal`, `activity`, `nutrition`, `digestive_energy`, `injuries`, `training`,
-`sleep`, `supplementation`, `commitment`, `flags` and `initial_calculations`. The `report` must be
+Follow APPLICATION OUTPUT in the system prompt for the JSON envelope and all profile fields.
+Use `in_progress` until the three questions are answered, then `completed`. The `report` must be
 short, in the user's language, suitable for Telegram, and explicitly say that this is a reduced
 development interview when defaults were used.

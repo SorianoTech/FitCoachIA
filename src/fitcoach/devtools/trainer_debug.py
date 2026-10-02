@@ -248,7 +248,8 @@ async def main_async(args: argparse.Namespace) -> int:
         echo(f"artifacts: {out_dir}")
         return 0
 
-    assert settings is not None  # noqa: S101 - narrowed above: not render-only
+    if settings is None:
+        raise RuntimeError("LLM settings are required unless --render-only is used")
     run = await run_trainer_case(
         case, profile, exercises, build_trainer_model(settings), settings.model, variant
     )

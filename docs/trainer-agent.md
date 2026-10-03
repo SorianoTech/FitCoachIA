@@ -284,6 +284,9 @@ plan no tiene errores del evaluador y 1 si los tiene.
 
 ### Evaluador determinista
 
+La [guía del evaluador de planes](plan-evaluator.md) detalla su flujo, reglas y umbrales, métricas,
+limitaciones y uso para volver a evaluar ejecuciones guardadas sin llamar al LLM.
+
 Pydantic garantiza la *forma* del plan; `service/agent/plan_evaluator.py` comprueba las reglas de la
 skill que el esquema no puede expresar y devuelve hallazgos en lugar de lanzar excepciones, para
 poder puntuar un plan y comparar variantes sobre los mismos casos. Puntuación: `100 − 15·errores −

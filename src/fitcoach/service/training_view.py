@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, WebAppInfo
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.training_lifecycle import Mesocycle
@@ -114,7 +114,9 @@ def view_plan(
     return ["\n".join(lines)]
 
 
-def view_keyboard(plan_id: int, *, pending: bool = False) -> InlineKeyboardMarkup:
+def view_keyboard(
+    plan_id: int, *, pending: bool = False, miniapp_url: str | None = None
+) -> InlineKeyboardMarkup:
     def button(key: str, action: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(_TEXT[key], callback_data=f"tv:{plan_id}:{action}")
 
@@ -133,6 +135,10 @@ def view_keyboard(plan_id: int, *, pending: bool = False) -> InlineKeyboardMarku
     ]
     if pending:
         rows.append([button("resume", "resume")])
+    if miniapp_url:
+        rows.insert(
+            0, [InlineKeyboardButton(_TEXT["miniapp"], web_app=WebAppInfo(url=miniapp_url))]
+        )
     return InlineKeyboardMarkup(rows)
 
 

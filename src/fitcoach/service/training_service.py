@@ -54,6 +54,8 @@ class TrainingService:
         limits: UsageLimits,
         clock: Callable[[], datetime] = utc_now,
         reminder_max_attempts: int = 5,
+        miniapp_url: str | None = None,
+        performance_summary: Callable[[int, int], Awaitable[dict[str, object]]] | None = None,
     ) -> None:
         self._repository = repository
         self._conversation = conversation
@@ -63,6 +65,8 @@ class TrainingService:
         self._limits = limits
         self._clock = clock
         self._reminder_max_attempts = reminder_max_attempts
+        self._miniapp_url = miniapp_url
+        self._performance_summary = performance_summary
 
     async def profile(self, chat_id: int) -> InterviewerProfile | None:
         return await self._repository.effective_profile(
@@ -79,7 +83,11 @@ class TrainingService:
         )):
             stored = await self._conversation.get_current_plan(chat_id)
             pending = await self._repository.get_workflow(chat_id)
-            return view_keyboard(stored.id, pending=pending is not None) if stored else None
+            return (
+                view_keyboard(stored.id, pending=pending is not None, miniapp_url=self._miniapp_url)
+                if stored
+                else None
+            )
         workflow = await self._repository.get_workflow(chat_id)
         if workflow is None:
             return None
@@ -232,8 +240,10 @@ class TrainingService:
         action = parts[2]
         if len(parts) == 3 and action == "notes":
             return [
-                Constants.TRAINING_NAVIGATION["week_title"] + "\n\n"
-                + Constants.TRAINING_PREVIEW["progression_notes"] + "\n"
+                Constants.TRAINING_NAVIGATION["week_title"]
+                + "\n\n"
+                + Constants.TRAINING_PREVIEW["progression_notes"]
+                + "\n"
                 + stored.plan.progression_notes
             ]
         if len(parts) == 3 and action == "resume":
@@ -670,12 +680,19 @@ class TrainingService:
                 raise TrainingInputError(Constants.TRAINER_UNAVAILABLE_MESSAGE)
             if workflow.review is None:
                 raise TrainingConflictError("Validated review disappeared during generation")
+            cycle = await self._repository.get_cycle(chat_id)
+            recorded = (
+                await self._performance_summary(chat_id, cycle.id)
+                if self._performance_summary is not None and cycle is not None
+                else {}
+            )
             context = TrainingAdaptationContext(
                 profile=effective,
                 previous_plan=stored.plan,
                 previous_version=stored.version,
                 review=workflow.review,
                 prescribed_summary=prescribed_summary(stored.plan, previous),
+                recorded_performance=recorded,
             )
             reply = await self._trainer.generate_next_plan(context, list(catalogue.values()))
             await self._account(chat_id, reply.token_usages)

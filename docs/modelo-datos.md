@@ -77,11 +77,13 @@ Línea discontinua = relación lógica que solo existe en el código.
 | `training_mesocycles` | `id` | N ciclos por chat, con fechas y cierre declarado | `a41bc08d732e` |
 | `training_workflows` | `id` | N propuestas históricas, máximo una abierta por chat | `a41bc08d732e` |
 | `training_notifications` | `id` | Eventos únicos por ciclo y ocasión | `a41bc08d732e` |
+| `workout_sessions` | `id` | Diario por slot semana/día/ciclo y prescripción congelada | `b82ac09d743f` |
+| `workout_requests` | `(chat_id, request_id)` | Alias UUID de inicio/reanudación idempotentes por chat | `b82ac09d743f` |
 | `alembic_version` | `version_num` | 1 fila | la crea Alembic, no la modela la app |
 
 Cadena de migraciones:
 `c5ae33575d94` → `6ca1174fc623` → `7287a3dffce8` → `9d4e6b7a1c2f` → `ab12cd34ef56`
-→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e`.
+→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e` → `b82ac09d743f`.
 La revisión intermedia [`9d4e6b7a1c2f`](../alembic/versions/9d4e6b7a1c2f_set_null_token_usage_message_fk.py)
 no crea tablas: solo recrea la FK de `token_usage` con `ON DELETE SET NULL`.
 
@@ -113,6 +115,18 @@ sin inventar fechas. `training_notifications` guarda ocasión, estado, vencimien
 y lease. Su FK al ciclo y la del flujo al plan base usan borrado en cascada;
 el reset de entrevista elimina los ciclos después de eliminar planes y sesión.
 La base vectorial sigue separada y de solo lectura: Alembic no modifica su catálogo.
+
+**El diario no es el estado conversacional.** `workout_sessions` guarda sesiones
+iniciadas/finalizadas, referencia a la versión del plan y mesociclo, semana/día,
+prescripción congelada y series autodeclaradas. Una sustitución no reescribe una
+sesión iniciada. Los índices únicos permiten un registro por slot de mesociclo
+(para legacy sin ciclo, por plan). La revisión optimista evita sobrescrituras
+concurrentes. Las sesiones finalizadas son de solo lectura.
+`workout_requests` conserva los UUID de cada inicio/reanudación para que los
+reintentos sean idempotentes aunque cambie la versión del plan.
+Las referencias usan CASCADE: el reset de `/interview` elimina también el diario
+de los planes borrados. Consultas de progreso separan repeticiones, duración,
+carga desconocida y carga explícita cero; no modifican planes ni cierran ciclos.
 
 **`model_prices` se resuelve en código, no con un JOIN obligatorio.** El precio
 se busca en `record_token_usage()`

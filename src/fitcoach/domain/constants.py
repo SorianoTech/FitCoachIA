@@ -100,6 +100,7 @@ Tu nueva vida te espera, ¡Adelante!
     TRAINING_REVIEW_UNKNOWN: Final = "No informado; no inferir resultados ni ejecución."
     TRAINING_SWAP_PICKER: Final = "¿Qué ejercicio quieres cambiar? Elige abajo."
     TRAINING_NAVIGATION: Final = {
+        "miniapp": "Abrir entrenamiento",
         "week": "Ver semana actual",
         "plan": "Ver plan completo",
         "swap": "Cambiar un ejercicio",

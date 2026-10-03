@@ -14,6 +14,7 @@ import re
 from datetime import timedelta
 from functools import lru_cache
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -40,6 +41,26 @@ class Settings(BaseSettings):
     bot_telegram_token: SecretStr
     bot_telegram_secret_token: SecretStr
     bot_telegram_webhook_base_url: str
+    miniapp_url: str | None = None
+    miniapp_auth_max_age_seconds: int = Field(default=86400, ge=60, le=86400)
+
+    @field_validator("miniapp_url")
+    @classmethod
+    def _check_miniapp_url(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != "/miniapp/"
+        ):
+            raise ValueError("miniapp_url debe ser HTTPS y terminar en /miniapp/")
+        return value
 
     @field_validator("bot_telegram_commands", mode="before")
     @classmethod

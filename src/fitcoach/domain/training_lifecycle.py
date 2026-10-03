@@ -140,6 +140,7 @@ class TrainingAdaptationContext(PlanModel):
     previous_version: int
     review: TrainingReview
     prescribed_summary: dict[str, dict[str, int]]
+    recorded_performance: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def no_unsafe_generation(self) -> "TrainingAdaptationContext":

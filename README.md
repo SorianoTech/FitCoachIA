@@ -30,11 +30,15 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 ### Interfaces de Usuario
 - **Web Panel:** Interfaz visual para que el usuario consulte sus datos, rutinas y nutrición.
 - **Chatbot (Telegram):** Canal de comunicación directo para actualizar progresos e interactuar con el entrenador en tiempo real.
+- **Telegram Mini App:** Consulta de semanas, registro de series, descansos, historial y
+  progreso sin LLM. Cambios de ejercicio y renovación continúan en el chat con confirmación.
+  Configuración y límites en [docs/telegram-miniapp.md](docs/telegram-miniapp.md).
 
 ## Estructura del Proyecto
 
 ```
 FitCoachIA/
+├── frontend/                     # Telegram Mini App: React, TypeScript y Vite
 ├── src/
 │   ├── fitcoach/
 │   │   ├── api/                  # Controladores y endpoints REST
@@ -114,13 +118,14 @@ git clone https://github.com/usuario/proyecto-jupiter.git
 
 ## 🐳 Docker — Construcción manual de la imagen
 
-El `Dockerfile` se encuentra en `src/` y requiere que el contexto de construcción sea ese mismo directorio, ya que copia la carpeta `fitcoach/` y el fichero `requirements.txt` desde allí.
+El `Dockerfile` se encuentra en `src/`, pero el contexto de construcción es la raíz
+del repositorio: necesita `frontend/`, `src/` y las migraciones de `alembic/`.
 
 ### 1. Construir la imagen
 
 ```bash
 # Desde la raíz del repositorio
-docker build -t fitcoach-ia:latest ./src
+docker build -t fitcoach-ia:latest -f src/Dockerfile .
 ```
 
 > **Nota:** La etiqueta `fitcoach-ia:latest` puede sustituirse por cualquier nombre y versión que prefieras (p. ej. `fitcoach-ia:1.0.0`).
@@ -150,7 +155,7 @@ Una vez en marcha, la API estará disponible en `http://localhost:8000`.
 | Opción | Descripción |
 |--------|-------------|
 | `-t fitcoach-ia:latest` | Nombre y etiqueta de la imagen resultante |
-| `./src` | Contexto de construcción (directorio donde está el `Dockerfile`) |
+| `-f src/Dockerfile .` | Dockerfile en `src/` y contexto en la raíz del repositorio |
 | `--no-cache` | Fuerza la reconstrucción de todas las capas sin caché |
 | `--platform linux/amd64` | Construye para una plataforma específica (útil en Apple Silicon) |
 

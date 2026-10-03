@@ -63,8 +63,9 @@ se admite que otra persona confirme una propuesta desde un grupo o un mensaje re
 
 El ciclo dura cuatro semanas desde el inicio confirmado, no desde la creación del borrador.
 Al alcanzar la fecha prevista, el bot propone revisar el bloque sin asumir que se realizaron
-las sesiones. También se puede declarar su finalización antes. No hay diario de ejecución:
-el cierre y los resultados son autodeclarados, y lo desconocido sigue siendo desconocido.
+las sesiones. También se puede declarar su finalización antes. La Mini App permite
+registrar sesiones y series; estos registros, el cierre y los resultados siguen siendo
+autodeclarados, y lo desconocido sigue siendo desconocido.
 
 `/train revisar` o «Terminé el mesociclo» ofrece un cierre rápido. «Terminé y todo bien» confirma el
 cierre y genera directamente un borrador conservando el perfil y las restricciones,
@@ -82,7 +83,10 @@ restricciones y objetivo se guardan como perfil efectivo; no se reinicia `/inter
 reescribe el informe original del entrevistador.
 
 La renovación recibe el perfil efectivo, el plan previo, sus series prescritas por target/semana
-y la revisión. Con buena adherencia y recuperación conserva ejercicios útiles y progresa
+y la revisión. También recibe un resumen acotado de sesiones finalizadas registradas
+en la Mini App para el mismo mesociclo, incluyendo versiones por sustitución. Los registros
+se separan de las series prescritas; ausencia de registro no prueba inasistencia, ni
+una carga máxima aislada demuestra mejora. Con buena adherencia y recuperación conserva ejercicios útiles y progresa
 gradualmente; con baja adherencia simplifica, y con fatiga reduce o mantiene estímulo.
 El estancamiento no implica subir siempre el volumen. La descarga no es la base del nuevo bloque.
 No se inventan cargas realizadas ni se garantiza mejoría. Nuevos síntomas preocupantes bloquean
@@ -99,6 +103,11 @@ dos versiones. Si cambió el plan base, la propuesta no puede activarse.
 ## Sustituir un ejercicio
 
 ### Ver el plan sin LLM
+
+Con `miniapp_url` configurada, «Abrir entrenamiento» abre la interfaz visual dentro
+de Telegram. Permite consultar semanas, registrar lo realizado y revisar historial;
+no cambia el plan ni consume LLM. Sustituciones y revisión se abren en el chat,
+conservando RAG y confirmación. Ver [telegram-miniapp.md](telegram-miniapp.md).
 
 Con un plan activo, `/train` abre ahora el menú del entrenamiento, **no inicia una
 renovación**. `/train ver` muestra el resumen del bloque y `/train semana` despliega

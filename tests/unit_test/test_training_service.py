@@ -59,6 +59,38 @@ async def test_quick_review_generates_in_one_interaction_without_extraction(
 
 
 @pytest.mark.asyncio
+async def test_renewal_includes_real_performance_from_same_cycle(collaborators: tuple) -> None:
+    service, repository, _, trainer, _ = collaborators
+    recorded = {"completed_sessions": 2, "source": "self_recorded"}
+    summary = AsyncMock(return_value=recorded)
+    service._performance_summary = summary
+    repository.get_workflow.return_value = repository.start.return_value
+    await service.callback(7, "tr:good:1:0")
+    summary.assert_awaited_once_with(7, 1)
+    context = trainer.generate_next_plan.await_args.args[0]
+    assert context.recorded_performance == recorded
+    assert "no informado" in context.review.adherence
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_missing_cycle_does_not_invent_recorded_performance(collaborators: tuple) -> None:
+    service, repository, _, trainer, _ = collaborators
+    summary = AsyncMock()
+    service._performance_summary = summary
+    repository.get_cycle.return_value = None
+    flow = repository.start.return_value
+    flow.answers = {
+        "closed": "confirmed",
+        **dict.fromkeys(Constants.TRAINING_REVIEW_QUESTIONS, "sin cambios"),
+    }
+    repository.get_workflow.return_value = flow
+    await service.handle(7, "generar")
+    summary.assert_not_awaited()
+    assert trainer.generate_next_plan.await_args.args[0].recorded_performance == {}
+
+
+@pytest.mark.asyncio
 async def test_open_review_needs_only_one_answer_and_retains_raw_feedback(
     collaborators: tuple,
 ) -> None:

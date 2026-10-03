@@ -13,6 +13,7 @@ from fitcoach.infrastructure.config.settings import (
     IASettings,
     UsageSettings,
     get_ia_settings,
+    get_settings,
     get_training_settings,
     get_usage_settings,
 )
@@ -21,6 +22,7 @@ from fitcoach.infrastructure.database.postgres_conversation_repository import (
     PostgresConversationRepository,
 )
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
+from fitcoach.infrastructure.database.postgres_workout_repository import PostgresWorkoutRepository
 from fitcoach.infrastructure.database.session import get_session
 from fitcoach.infrastructure.ia.embedder_client import EmbedderClient, get_embedder_client
 from fitcoach.infrastructure.vectordb.pgvector_exercise_repository import (
@@ -102,15 +104,29 @@ def get_conversation_service(
         trainer=trainer_deps.chain,
         exercise_retriever=trainer_deps.retriever,
         trainer_history_window_messages=ia_settings.trainer_history_window_messages,
-        training_service=TrainingService(
-            PostgresTrainingRepository(session),
-            repository,
-            trainer_deps.chain,
-            trainer_deps.retriever,
-            adaptation,
-            usage_settings.to_limits(),
-            reminder_max_attempts=get_training_settings().reminder_max_attempts,
+        training_service=get_training_service(
+            repository, trainer_deps, usage_settings, session, adaptation
         ),
+    )
+
+
+def get_training_service(
+    repository: PostgresConversationRepository = Depends(get_conversation_repository),
+    trainer_deps: TrainerDeps = Depends(get_trainer_deps),
+    usage_settings: UsageSettings = Depends(get_usage_settings),
+    session: AsyncSession = Depends(get_session),
+    adaptation: TrainingAdaptationChain = Depends(get_training_adaptation_chain),
+) -> TrainingService:
+    return TrainingService(
+        PostgresTrainingRepository(session),
+        repository,
+        trainer_deps.chain,
+        trainer_deps.retriever,
+        adaptation,
+        usage_settings.to_limits(),
+        reminder_max_attempts=get_training_settings().reminder_max_attempts,
+        miniapp_url=get_settings().miniapp_url,
+        performance_summary=PostgresWorkoutRepository(session).performance_summary,
     )
 
 

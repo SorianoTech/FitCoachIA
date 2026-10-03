@@ -229,3 +229,66 @@ class TokenUsageRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class WorkoutSessionRecord(Base):
+    __tablename__ = "workout_sessions"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "request_id", name="uq_workout_sessions_request"),
+        Index(
+            "uq_workout_sessions_cycle_slot",
+            "chat_id",
+            "mesocycle_id",
+            "week",
+            "day",
+            unique=True,
+            postgresql_where=text("mesocycle_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_workout_sessions_legacy_slot",
+            "chat_id",
+            "plan_id",
+            "week",
+            "day",
+            unique=True,
+            postgresql_where=text("mesocycle_id IS NULL"),
+        ),
+        Index("ix_workout_sessions_chat_id_id", "chat_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    mesocycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="CASCADE")
+    )
+    week: Mapped[int] = mapped_column(nullable=False)
+    day: Mapped[int] = mapped_column(nullable=False)
+    revision: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="in_progress", server_default="in_progress"
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    prescription: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    exercises: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+
+
+class WorkoutRequestRecord(Base):
+    """Every start/resume UUID retains its original payload, including after swaps."""
+
+    __tablename__ = "workout_requests"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("workout_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False
+    )

@@ -161,6 +161,17 @@ tiempo» del dashboard.
 
 ## 4. Qué se puede visualizar en Grafana
 
+Además de la vista general, se provisionan cinco dashboards independientes:
+**Negocio y activación**, **Entrevistas**, **Telegram y backend**, **Agentes y LLM**
+y **RAG y catálogo**. Cada uno tiene selector único `environment=dev|prod` que
+selecciona el datasource SQL y los logs del mismo entorno. Los paneles explican
+su denominador, cobertura y limitaciones; los KPIs sin datos fiables quedan
+pendientes, no se sustituyen por cifras engañosas.
+Detalle y matriz de métricas:
+[metricas-negogio-y-tecnicas.md](plan/metricas-negogio-y-tecnicas.md).
+Los nuevos paneles Loki usan exclusivamente la etiqueta `environment` de Alloy
+para evitar doble recuento con OTLP; no muestran texto de usuarios.
+
 Dashboard provisionado: **FitCoachIA - Conversaciones**
 (`infra/observability/config/grafana/provisioning/dashboards/json/fitcoach-conversations.json`),
 con variables de filtro dinámicas y paneles organizados en capas de complejidad creciente.

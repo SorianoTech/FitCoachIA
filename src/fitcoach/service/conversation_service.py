@@ -20,6 +20,7 @@ from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.domain.exercise_catalogue import EquipmentClarificationError
 from fitcoach.domain.rate_limiter import UsageLimits, UsageTier
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
@@ -412,6 +413,10 @@ class ConversationService:
         retrieval_started = time.perf_counter()
         try:
             exercises = await self._exercise_retriever.retrieve(profile)
+        except EquipmentClarificationError:
+            logger.warning("%s el equipamiento del perfil necesita aclaracion", ctx)
+            await self._send(chat_id, message_thread_id, Constants.TRAINING_EQUIPMENT_QUESTION)
+            return
         except Exception:
             # No catalogue means no plan worth delivering: a mesocycle invented
             # from model memory is exactly what this agent exists to avoid.

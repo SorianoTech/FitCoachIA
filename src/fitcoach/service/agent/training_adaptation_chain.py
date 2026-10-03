@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from fitcoach.domain.exercise import Exercise
+from fitcoach.domain.exercise_catalogue import known_equipment
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TrainerGenerationTrace, TrainingPlan
@@ -22,7 +23,6 @@ from fitcoach.domain.training_lifecycle import (
 from fitcoach.infrastructure.config.settings import get_ia_settings
 from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
-from fitcoach.service.agent.exercise_retriever import known_equipment
 from fitcoach.service.agent.llm_chain import AsyncChatModel, BaseLLMChain, strict_response_format
 from fitcoach.service.agent.rag_context import build_rag_context
 from fitcoach.service.agent.trainer_chain import _hash_text, build_trainer_model

@@ -27,8 +27,10 @@ este indicador se registra y no interrumpe la respuesta principal.
    `embedder` y busca en pgVector por distancia coseno.
 5. `TrainerChain` compone el prompt de sistema con el catálogo recuperado en `{{rag_context}}`, le
    añade el perfil y hace **una** llamada al modelo.
-6. Valida el JSON y, además, comprueba que **todos los `exercise_id` vienen del catálogo
-   recuperado**. Si no cumple, solicita una única reparación.
+6. Valida el JSON, IDs del catálogo y nombres canónicos, material confirmado, objetivo,
+   entorno, días y duración declarada frente al perfil, y ausencia de ejercicios duplicados
+   en una sesión. Si no cumple, solicita una única reparación. Las estimaciones de tiempo
+   y heurísticas de lesiones no se convierten en validaciones clínicas bloqueantes.
 7. Persiste y activa el primer plan antes de enviar el informe. Con un plan vigente,
    `/train` abre el menú de lectura; `/train revisar` abre la revisión descrita más abajo.
 
@@ -42,6 +44,12 @@ seguridad. Si falta información, el entrenador no debe inventarla. Las consulta
 no sustituyen ejercicios, no ajustan el plan ni crean versiones. Una intención de renovación o
 sustitución abre un flujo independiente; nunca autoriza por sí misma una modificación.
 Durante una revisión abierta, `/train consulta PREGUNTA` permite consultar sin responder la revisión.
+
+La recuperación usa grupos derivados del `target` anatómico y material declarado
+en todos los entornos. Las renovaciones conservan ejercicios anteriores solo si
+su material sigue disponible; las sustituciones filtran por el mismo target,
+no por el `muscle_group` original del volcado. No se amplían restricciones
+para rellenar un catálogo vacío. Véanse clasificación y trazas en [vector-db.md](vector-db.md).
 
 ## Continuidad, revisión y confirmación
 

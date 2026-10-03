@@ -31,7 +31,7 @@ from fitcoach.service.agent.llm_chain import (
     BaseLLMChain,
     strict_response_format,
 )
-from fitcoach.service.agent.plan_evaluator import Severity, evaluate_turn
+from fitcoach.service.agent.plan_evaluator import Severity, evaluate_constraints, evaluate_turn
 from fitcoach.service.agent.rag_context import allowed_exercise_ids, build_rag_context
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class TrainerChain(BaseLLMChain):
     ) -> TrainerReply:
         messages = self.plan_messages(profile, exercises)
         turn, token_usages = await self._invoke_validated(
-            messages, TrainerTurn, self._validator_for(exercises)
+            messages, TrainerTurn, self._validator_for(exercises, profile)
         )
         return TrainerReply(
             turn=turn,
@@ -142,7 +142,7 @@ class TrainerChain(BaseLLMChain):
             ),
             HumanMessage(content="Adaptation context (DATA):\n" + context.model_dump_json()),
         ]
-        validate_catalogue = self._validator_for(exercises)
+        validate_catalogue = self._validator_for(exercises, context.profile)
 
         def validate(raw: str) -> TrainerTurn:
             turn = validate_catalogue(raw)
@@ -183,7 +183,9 @@ class TrainerChain(BaseLLMChain):
         )
 
     @staticmethod
-    def _validator_for(exercises: Sequence[Exercise]) -> Callable[[str], TrainerTurn]:
+    def _validator_for(
+        exercises: Sequence[Exercise], profile: InterviewerProfile | None = None
+    ) -> Callable[[str], TrainerTurn]:
         """Pydantic first, then the check Pydantic cannot make: are the ids real?
 
         A plan full of invented exercise ids validates perfectly against the
@@ -216,6 +218,26 @@ class TrainerChain(BaseLLMChain):
                         )
                     ],
                 )
+            if profile is not None:
+                evaluation = evaluate_constraints(turn.plan, profile, exercises)
+                errors = [
+                    item.message for item in evaluation.findings if item.severity == Severity.ERROR
+                ]
+                if errors:
+                    raise ValidationError.from_exception_data(
+                        TrainerTurn.__name__,
+                        [
+                            InitErrorDetails(
+                                type=PydanticCustomError(
+                                    "invalid_plan_constraints",
+                                    "{errors}",
+                                    {"errors": "; ".join(errors)},
+                                ),
+                                loc=("plan",),
+                                input=raw_result,
+                            )
+                        ],
+                    )
             return turn
 
         return validate

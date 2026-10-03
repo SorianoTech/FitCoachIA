@@ -11,6 +11,7 @@ from telegram.error import RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError
 from fitcoach.domain.constants import Constants
+from fitcoach.domain.exercise_catalogue import available_equipment, normalize_equipment
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.token_usage import TokenUsage
@@ -28,7 +29,7 @@ from fitcoach.domain.training_lifecycle import (
 from fitcoach.infrastructure.observability.latency import latency_action, latency_phase, timed
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.repository.training_repository import TrainingConflictError, TrainingRepository
-from fitcoach.service.agent.exercise_retriever import ExerciseRetriever, available_equipment
+from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.plan_evaluator import Severity, estimate_session_minutes, evaluate_turn
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.agent.training_adaptation_chain import TrainingAdaptationChain
@@ -679,7 +680,9 @@ class TrainingService:
             previous = await self._retriever.get_by_ids(sorted(stored.plan.exercise_ids()))
             candidates = await self._retriever.retrieve(effective)
             catalogue = {
-                item.id: item for item in [*previous, *candidates] if item.equipment in equipment
+                item.id: item
+                for item in [*previous, *candidates]
+                if item.equipment and normalize_equipment(item.equipment) in equipment
             }
             if not catalogue:
                 raise TrainingInputError(Constants.TRAINER_UNAVAILABLE_MESSAGE)
@@ -974,7 +977,11 @@ class TrainingService:
         if not candidates:
             raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)
         candidates = [
-            item for item in candidates if item.equipment not in request.excluded_equipment
+            item
+            for item in candidates
+            if item.equipment
+            and normalize_equipment(item.equipment)
+            not in {normalize_equipment(value) for value in request.excluded_equipment}
         ]
         if not candidates:
             raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)

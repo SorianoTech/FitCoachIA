@@ -101,7 +101,7 @@ _TRAINER_TURN = {
                         "exercises": [
                             {
                                 "exercise_id": exercise_id,
-                                "name": f"fixture exercise {exercise_id}",
+                                "name": {1: "barbell bench press", 2: "barbell row"}[exercise_id],
                                 "sets": 3,
                                 "reps": "8-10",
                                 "rest_seconds": 120,

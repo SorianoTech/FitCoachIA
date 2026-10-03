@@ -137,7 +137,7 @@ class IASettings(BaseSettings):
     trainer_extraction_max_tokens: int | None = Field(default=None, gt=0)
     trainer_extraction_timeout: float | None = Field(default=None, gt=0)
     # Exercises retrieved from the vector DB per muscle group.
-    rag_top_k: int = 8
+    rag_top_k: int = Field(default=8, gt=0)
 
 
 class DatabaseSettings(BaseSettings):

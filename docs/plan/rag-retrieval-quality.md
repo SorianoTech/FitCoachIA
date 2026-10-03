@@ -4,6 +4,22 @@
 > sin cambiar su comportamiento. La similitud de coseno será un diagnóstico y, solo si los datos
 > lo justifican, servirá para calibrar un umbral de aceptación.
 
+## Actualización de implementación
+
+Ya se han aplicado correcciones de coherencia: grupos canónicos derivados de `target`,
+disponibilidad compartida de equipamiento, alias de bandas y consultas con significado
+alineado con el corpus. Se han añadido `ExerciseMatch`, `search_scored()` y
+`retrieve_traced()` con distancia, similitud, filtros y ranking por grupo.
+`retrieve()` reutiliza esa ruta; el catálogo final sigue deduplicado por ID.
+El orden en empates es estable por ID.
+
+No se han implementado etiquetas, runner de métricas, umbral ni comparación de relevancia.
+El comportamiento descrito en «Situación actual» más abajo corresponde al baseline
+histórico anterior a estas correcciones. Los catálogos congelados del entrenador se
+conservan como referencia histórica, no como resultados de la recuperación nueva.
+Antes de comparar calidad hay que obtener una nueva línea base y completar etiquetas;
+no se afirma una mejora cuantificada de relevancia.
+
 ## Objetivo
 
 Determinar si el catálogo recuperado permite construir un plan adecuado para el perfil y

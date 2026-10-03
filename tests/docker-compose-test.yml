@@ -35,7 +35,7 @@ services:
       - ia_token=test-token
       - ia_model=test-model
       - ia_temperature=0.5
-      # Con 10 ejercicios en el fixture, top_k alto devuelve el corpus entero.
+      # Limite por grupo; los filtros de target y material siguen siendo obligatorios.
       - ia_rag_top_k=10
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
       - vector_database_url=postgresql+asyncpg://fitcoach_ro:fitcoach_ro_dev@pgvector-test:5432/fitcoach

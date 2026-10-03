@@ -99,6 +99,36 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_week_request_sends_only_real_selector_and_asks_reason(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        before = len(stub.get("/__sent").json())
+        client.post(
+            "/webhook/response", json=_update(20, "quiero cambiar un ejercicio de la semana 1")
+        )
+        messages = stub.get("/__sent").json()[before:]
+        assert len(messages) == 1
+        assert "¿Qué ejercicio de la semana 1 quieres cambiar?" in messages[0]["text"]
+        assert "exercise_swap" not in messages[0]["text"]
+        keyboard = json.loads(messages[0]["reply_markup"])["inline_keyboard"]
+        button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:exercise:")
+        )
+        client.post("/webhook/response", json=_callback(21, button["callback_data"]))
+        assert stub.get("/__sent").json()[-1]["text"] == "¿Por qué quieres cambiarlo?"
+        payload = json.loads(
+            await app_db.fetchval(
+                "SELECT payload FROM training_workflows WHERE chat_id=$1", CHAT_ID
+            )
+        )
+        assert payload["answers"]["swap_week"] == "1"
+        assert payload["swap"] is None
+
     @pytest.mark.parametrize("natural", [True, False])
     async def test_swap_request_uses_buttons_and_keeps_current_plan(
         self,

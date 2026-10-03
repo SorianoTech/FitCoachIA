@@ -99,6 +99,7 @@ Tu nueva vida te espera, ¡Adelante!
     )
     TRAINING_REVIEW_UNKNOWN: Final = "No informado; no inferir resultados ni ejecución."
     TRAINING_SWAP_PICKER: Final = "¿Qué ejercicio quieres cambiar? Elige abajo."
+    TRAINING_SWAP_PICKER_WEEK: Final = "¿Qué ejercicio de la semana {week} quieres cambiar?\nElige abajo. Tu plan seguirá igual hasta que confirmes la sustitución."
     TRAINING_SWAP_WEEK: Final = (
         "¿Desde qué semana quieres aplicar el cambio? Las anteriores se conservan."
     )

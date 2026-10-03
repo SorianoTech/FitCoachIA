@@ -109,6 +109,14 @@ el mismo selector, conservando el mensaje como motivo. No se exige un ID ni se e
 una modificación por decisión del modelo. Se reutiliza la salida estructurada existente,
 en lugar de añadir una tool con permisos de escritura; preguntas hipotéticas no deben
 iniciar un cambio. El usuario confirma el ejercicio, el alcance y la propuesta.
+Para intenciones de cambio/renovación no se muestra el texto libre del modelo:
+el servicio envía exclusivamente el siguiente paso real. `swap_selection` recoge
+semana explícita, ejercicio inequívoco del plan y motivo (o null si no se aportan).
+Una semana indicada filtra los botones y evita preguntarla de nuevo; un ejercicio
+identificado todavía requiere confirmación por botón. Los IDs ajenos al plan se
+descartan con aviso en logs. Sin motivo explícito se ofrecen los botones de motivo,
+en vez de tratar «quiero cambiar» como justificación. Se conserva el texto original
+para las comprobaciones de seguridad y se contabiliza la llamada de detección.
 También se puede usar `/train cambiar ID SEMANA MOTIVO`, por ejemplo
 `/train cambiar 101 2 no dispongo de barra`.
 La semana no se deduce como ejecución real a partir del calendario.

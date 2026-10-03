@@ -280,6 +280,11 @@ class StubHandler(BaseHTTPRequestHandler):
                         "report": None,
                         "plan": None,
                         "intent": "exercise_swap",
+                        "swap_selection": (
+                            {"week": 1, "exercise_id": None, "reason": None}
+                            if "semana 1" in str(messages[-1].get("content", "")).lower()
+                            else None
+                        ),
                     }
                 return {
                     "status": "answer",

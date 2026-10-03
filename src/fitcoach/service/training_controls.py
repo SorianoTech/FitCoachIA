@@ -33,8 +33,18 @@ def training_keyboard(
         if step == "exercise":
             exercises: dict[int, tuple[int, str]] = {}
             for week in plan.weeks:
+                if (
+                    workflow.answers.get("swap_filter_week")
+                    and str(week.week) != workflow.answers["swap_filter_week"]
+                ):
+                    continue
                 for day in week.days:
                     for item in day.exercises:
+                        if (
+                            workflow.answers.get("swap_filter_exercise")
+                            and str(item.exercise_id) != workflow.answers["swap_filter_exercise"]
+                        ):
+                            continue
                         exercises.setdefault(item.exercise_id, (day.day, item.name))
             page = int(workflow.answers.get("swap_page", "0"))
             items = list(exercises.items())

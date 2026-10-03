@@ -14,7 +14,7 @@ from fitcoach.domain.constants import Constants
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.token_usage import TokenUsage
-from fitcoach.domain.trainer_plan import PlannedExercise, TrainerTurn, TrainingPlan
+from fitcoach.domain.trainer_plan import PlannedExercise, SwapSelection, TrainerTurn, TrainingPlan
 from fitcoach.domain.training_lifecycle import (
     SwapRequest,
     TrainingAdaptationContext,
@@ -255,10 +255,17 @@ class TrainingService:
         ]
 
     async def handle(
-        self, chat_id: int, text: str, *, swap_message: str | None = None
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        swap_message: str | None = None,
+        swap_selection: SwapSelection | None = None,
     ) -> list[str]:
         try:
-            return await self._handle(chat_id, text, swap_message=swap_message)
+            return await self._handle(
+                chat_id, text, swap_message=swap_message, swap_selection=swap_selection
+            )
         except TrainingConflictError:
             logger.warning("Training proposal conflict for chat %s", chat_id, exc_info=True)
             return [Constants.TRAINING_CONFLICT_MESSAGE]
@@ -267,7 +274,12 @@ class TrainingService:
             return [str(error)]
 
     async def _handle(
-        self, chat_id: int, text: str, *, swap_message: str | None = None
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        swap_message: str | None = None,
+        swap_selection: SwapSelection | None = None,
     ) -> list[str]:
         tokens = text.split()
         command = tokens[0] if tokens else ""
@@ -345,7 +357,14 @@ class TrainingService:
                 chat_id, "exercise_swap" if action == "cambiar" else "renewal"
             )
         if swap_message:
-            workflow.answers["swap_message"] = swap_message
+            workflow.answers["swap_user_text"] = swap_message
+            if swap_selection is None or swap_selection.reason:
+                workflow.answers["swap_message"] = swap_message
+            if swap_selection and swap_selection.week:
+                workflow.answers["swap_week"] = str(swap_selection.week)
+                workflow.answers["swap_filter_week"] = str(swap_selection.week)
+            if swap_selection and swap_selection.exercise_id:
+                workflow.answers["swap_filter_exercise"] = str(swap_selection.exercise_id)
             workflow = await self._repository.save(chat_id, workflow)
         if action == "cambiar" and workflow.kind == "renewal":
             if workflow.draft is None and workflow.base_draft is None:
@@ -631,8 +650,25 @@ class TrainingService:
         workflow = workflow or await self._repository.get_workflow(chat_id)
         if workflow is None:
             raise TrainingConflictError("Missing exercise selection workflow")
+        filter_week = workflow.answers.get("swap_filter_week")
+        eligible = {
+            item.exercise_id
+            for week in plan.weeks
+            if not filter_week or str(week.week) == filter_week
+            for day in week.days
+            for item in day.exercises
+        }
+        exercise_filter = workflow.answers.get("swap_filter_exercise")
+        if exercise_filter and int(exercise_filter) not in eligible:
+            logger.warning("Ignoring invalid model exercise selection for chat %s", chat_id)
+            workflow.answers.pop("swap_filter_exercise", None)
+        picker = (
+            Constants.TRAINING_SWAP_PICKER_WEEK.format(week=filter_week)
+            if filter_week
+            else Constants.TRAINING_SWAP_PICKER
+        )
         prompts = {
-            "exercise": Constants.TRAINING_SWAP_PICKER,
+            "exercise": picker,
             "week": Constants.TRAINING_SWAP_WEEK,
             "reason": Constants.TRAINING_SWAP_REASON,
             "input": Constants.TRAINING_SWAP_REASON_INPUT,
@@ -642,7 +678,7 @@ class TrainingService:
         workflow.answers["swap_step"] = "exercise"
         workflow.answers["swap_page"] = "0"
         await self._repository.save(chat_id, workflow)
-        return [Constants.TRAINING_SWAP_PICKER]
+        return [picker]
 
     async def _swap_button(
         self, chat_id: int, workflow: TrainingWorkflow, action: str, value: str
@@ -659,16 +695,31 @@ class TrainingService:
             if page * 8 >= len(plan.exercise_ids()):
                 return [Constants.TRAINING_CALLBACK_INVALID]
             workflow.answers["swap_page"] = value
-            message = Constants.TRAINING_SWAP_PICKER
+            await self._repository.save(chat_id, workflow)
+            return await self._swap_question(chat_id, workflow.base_draft, workflow)
         elif (
             action == "exercise"
             and step == "exercise"
             and value.isdigit()
             and int(value) in plan.exercise_ids()
+            and (
+                not workflow.answers.get("swap_filter_exercise")
+                or value == workflow.answers["swap_filter_exercise"]
+            )
+            and any(
+                not workflow.answers.get("swap_filter_week")
+                or str(week.week) == workflow.answers["swap_filter_week"]
+                for week in plan.weeks
+                if any(
+                    item.exercise_id == int(value) for day in week.days for item in day.exercises
+                )
+            )
         ):
             workflow.answers["swap_exercise"] = value
             if workflow.base_draft is not None:
-                workflow.answers["swap_week"] = "1"
+                workflow.answers.setdefault("swap_week", "1")
+                return await self._swap_reason(chat_id, workflow)
+            if workflow.answers.get("swap_filter_week"):
                 return await self._swap_reason(chat_id, workflow)
             workflow.answers["swap_step"] = "week"
             message = Constants.TRAINING_SWAP_WEEK
@@ -713,6 +764,9 @@ class TrainingService:
     async def _finish_swap_picker(
         self, chat_id: int, workflow: TrainingWorkflow, reason: str
     ) -> list[str]:
+        original = workflow.answers.pop("swap_user_text", "")
+        if original and original != reason:
+            reason = f"{original}\n{reason}"
         request = f"{workflow.answers['swap_exercise']} {workflow.answers['swap_week']} {reason}"
         workflow.answers.pop("swap_step", None)
         workflow.answers.pop("swap_message", None)

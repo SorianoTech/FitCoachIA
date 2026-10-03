@@ -6,6 +6,7 @@ from telegram import Bot, Update
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.rate_limiter import UsageLimits
+from fitcoach.domain.trainer_plan import SwapSelection
 from fitcoach.domain.training_lifecycle import TrainingWorkflow
 from fitcoach.service.conversation_service import ConversationService
 from fitcoach.service.training_controls import training_keyboard
@@ -279,6 +280,55 @@ def test_swap_picker_paginates_and_weeks_exclude_missing_exercise() -> None:
     markup = training_keyboard(flow, [], plan)
     assert markup.inline_keyboard[0][0].callback_data == "tr:week:9:2:1"
     assert len(markup.inline_keyboard) == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_week_is_used_without_repeating_week_or_inventing_reason(
+    collaborators: tuple,
+) -> None:
+    service, repository, conversation, _, _ = collaborators
+    flow = TrainingWorkflow(id=3, kind="exercise_swap", base_plan_id=10, state="reviewing")
+    repository.start.return_value = flow
+    repository.get_workflow.return_value = flow
+    plan = conversation.get_current_plan.return_value.plan
+    plan.weeks[1].days[0].exercises[0] = (
+        plan.weeks[1].days[0].exercises[0].model_copy(update={"exercise_id": 222})
+    )
+    messages = await service.handle(
+        7,
+        "/train cambiar",
+        swap_message="quiero cambiar un ejercicio de la semana 1",
+        swap_selection=SwapSelection(week=1),
+    )
+    assert messages == [Constants.TRAINING_SWAP_PICKER_WEEK.format(week=1)]
+    markup = await service.keyboard(7, messages)
+    assert all(
+        button.callback_data != "tr:exercise:3:0:222"
+        for row in markup.inline_keyboard
+        for button in row
+    )
+    assert await service.callback(7, "tr:exercise:3:0:222") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:exercise:3:0:101") == [Constants.TRAINING_SWAP_REASON]
+    assert flow.answers["swap_week"] == "1"
+    assert "swap_message" not in flow.answers
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_model_exercise_is_not_used_to_hide_all_choices(collaborators: tuple) -> None:
+    service, repository, _, _, _ = collaborators
+    flow = TrainingWorkflow(id=3, kind="exercise_swap", base_plan_id=10, state="reviewing")
+    repository.start.return_value = flow
+    repository.get_workflow.return_value = flow
+    messages = await service.handle(
+        7,
+        "/train cambiar",
+        swap_message="quiero cambiar un ejercicio",
+        swap_selection=SwapSelection(week=1, exercise_id=999),
+    )
+    assert "swap_filter_exercise" not in flow.answers
+    markup = await service.keyboard(7, messages)
+    assert markup.inline_keyboard[0][0].callback_data == "tr:exercise:3:0:101"
 
 
 @pytest.mark.asyncio

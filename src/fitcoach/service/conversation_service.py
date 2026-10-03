@@ -22,7 +22,12 @@ from fitcoach.domain.entities import IAInput, IAMessage
 from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
-from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE, TrainerAction
+from fitcoach.domain.trainer_plan import (
+    TRAINING_STATUS_ACTIVE,
+    SwapSelection,
+    TrainerAction,
+    TrainerAnswerTurn,
+)
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.repository.training_repository import TrainingConflictError
@@ -515,6 +520,24 @@ class ConversationService:
             await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
             return
 
+        if self._training_service is not None and reply.turn.intent != "answer":
+            # Workflow messages are authoritative; do not send the model's speculative handoff.
+            await self._record_token_usage(
+                ctx, chat_id, None, reply.token_usages, elapsed_ms, AgentType.TRAINER.value
+            )
+            selection = (
+                reply.turn.swap_selection if isinstance(reply.turn, TrainerAnswerTurn) else None
+            )
+            await self._training_response(
+                ctx,
+                chat_id,
+                message_thread_id,
+                "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train",
+                swap_message=user_message if reply.turn.intent == "exercise_swap" else None,
+                swap_selection=selection,
+            )
+            return
+
         await self._send(chat_id, message_thread_id, reply.turn.reply)
         conversation_message_id = await self._conversation_repository.add_turn(
             chat_id, user_message, reply.turn.reply, AgentType.TRAINER.value
@@ -528,16 +551,6 @@ class ConversationService:
             AgentType.TRAINER.value,
         )
 
-        if self._training_service is not None and reply.turn.intent != "answer":
-            action = "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train"
-            await self._training_response(
-                ctx,
-                chat_id,
-                message_thread_id,
-                action,
-                swap_message=user_message if reply.turn.intent == "exercise_swap" else None,
-            )
-
     async def _training_response(
         self,
         ctx: str,
@@ -546,13 +559,16 @@ class ConversationService:
         text: str,
         *,
         swap_message: str | None = None,
+        swap_selection: SwapSelection | None = None,
     ) -> None:
         if self._training_service is None:
             return
         try:
             await self._training_service.remember_thread(chat_id, thread_id)
             responses = (
-                await self._training_service.handle(chat_id, text, swap_message=swap_message)
+                await self._training_service.handle(
+                    chat_id, text, swap_message=swap_message, swap_selection=swap_selection
+                )
                 if swap_message
                 else await self._training_service.handle(chat_id, text)
             )
@@ -560,7 +576,7 @@ class ConversationService:
             logger.warning("%s controlled training error: %s", ctx, error.code)
             await self._send(chat_id, thread_id, self._message_for_agent_error(error.code))
             return
-        await self._deliver_training_responses(chat_id, thread_id, text, responses)
+        await self._deliver_training_responses(chat_id, thread_id, swap_message or text, responses)
 
     async def _deliver_training_responses(
         self, chat_id: int, thread_id: int | None, text: str, responses: list[str]

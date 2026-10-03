@@ -71,10 +71,11 @@ class InterviewerProfileRecord(Base):
 
 
 class TrainingPlanRecord(Base):
-    """One generated mesocycle. Plans are versioned, never overwritten.
+    """One confirmed plan version, never overwritten.
 
-    A repeated ``/train`` appends version N+1 so the history stays available to
-    the Nutritionist agent, which needs the training volume it was built on.
+    The first generation and accepted proposals append versions. A renewal opens
+    a mesocycle; an exercise swap keeps the existing mesocycle and its dates.
+    Drafts live in training_workflows and do not receive a version until accepted.
     """
 
     __tablename__ = "training_plans"

@@ -119,6 +119,52 @@ class TestPgVectorExerciseRepository:
 
 class TestExerciseRetriever:
     @pytest.mark.asyncio
+    async def test_swap_excluded_equipment_is_a_strict_filter(
+        self, profile: InterviewerProfile
+    ) -> None:
+        profile.training.equipment = ["barbell", "dumbbell"]
+        embedder = AsyncMock()
+        embedder.embed.return_value = [_vector()]
+        repository = AsyncMock(spec=ExerciseRepository)
+        source = Exercise(1, "barbell press", target="pectorals", muscle_group="chest")
+        repository.search.return_value = [
+            Exercise(
+                2,
+                "barbell variation",
+                equipment="barbell",
+                target="pectorals",
+                muscle_group="chest",
+            ),
+            Exercise(
+                3, "dumbbell press", equipment="dumbbell", target="pectorals", muscle_group="chest"
+            ),
+        ]
+        result = await ExerciseRetriever(embedder, repository).retrieve_alternatives(
+            profile, source, "no tengo barra", excluded_equipment=["barbell"]
+        )
+        assert [item.id for item in result] == [3]
+        assert repository.search.await_args.kwargs["equipment"] == ["body weight", "dumbbell"]
+        assert repository.search.await_args.kwargs["target"] == "pectorals"
+        assert repository.search.await_args.kwargs["excluded_ids"] == [1]
+
+    @pytest.mark.asyncio
+    async def test_swap_without_available_equipment_does_not_search(
+        self, profile: InterviewerProfile
+    ) -> None:
+        profile.training.equipment = ["barbell"]
+        embedder = AsyncMock()
+        repository = AsyncMock(spec=ExerciseRepository)
+        result = await ExerciseRetriever(embedder, repository).retrieve_alternatives(
+            profile,
+            Exercise(1, "press", target="pectorals"),
+            "no gear",
+            excluded_equipment=["barbell", "body weight"],
+        )
+        assert result == []
+        repository.search.assert_not_awaited()
+        embedder.embed.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_embeds_one_query_per_muscle_group(self, profile: InterviewerProfile) -> None:
         embedder = AsyncMock()
         embedder.embed.return_value = [_vector() for _ in MUSCLE_GROUPS]

@@ -109,6 +109,20 @@ Si falta información o no hay candidatos adecuados, informa y no inventa altern
 La similitud semántica no certifica equivalencia biomecánica ni seguridad médica.
 La propuesta incluye hasta tres opciones y ajustes conservadores de prescripción.
 
+Antes de buscar, una extracción estructurada interpreta el motivo: identifica material
+explícitamente no disponible y síntomas, distinguiendo «no tengo dolor» de dolor nuevo.
+El material excluido se aplica como filtro estricto del RAG, sin modificar permanentemente
+el perfil. Si la petición es ambigua, hace una pregunta concreta y guarda la respuesta;
+los síntomas preocupantes bloquean el flujo hasta cancelarlo y obtener orientación adecuada.
+Esta interpretación añade una llamada al LLM, contabilizada y sujeta a la cuota de generación.
+
+El modelo de alternativas recibe las sesiones afectadas completas, sus prescripciones
+pendientes, el resumen semanal de series por target y metadatos/instrucciones del catálogo.
+Prioriza función y patrón de movimiento cuando las instrucciones lo permiten, evita
+redundancias y debe explicar equivalencias no verificables. No se añaden metadatos
+biomecánicos inventados: la comprobación determinista sigue siendo target/grupo/material,
+duplicados y las reglas del evaluador sobre el plan resultante.
+
 `/train elegir PROPUESTA OPCIÓN` crea el borrador de sustitución y
 `/train confirmar PROPUESTA` lo aplica. Cambia las ocurrencias desde la semana indicada;
 las anteriores quedan intactas. Mantiene la progresión relativa de series y limita RPE,

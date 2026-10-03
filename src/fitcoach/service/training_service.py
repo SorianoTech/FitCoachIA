@@ -348,6 +348,15 @@ class TrainingService:
                 return [Constants.TRAINING_BUSY_MESSAGE]
             return await self._generate(chat_id, workflow)
         if workflow.kind == "exercise_swap" or workflow.base_draft is not None:
+            if workflow.answers.get("safety_hold"):
+                return [Constants.TRAINING_SAFETY_MESSAGE]
+            if workflow.answers.get("swap_clarification") and workflow.swap:
+                if command == "/train" and not arguments:
+                    return [workflow.answers["swap_clarification"]]
+                if command != "/train":
+                    workflow.swap.reason += f"\n{workflow.answers['swap_clarification']}\n{text}"
+                    workflow = await self._repository.save(chat_id, workflow)
+                    return await self._generate(chat_id, workflow)
             request_text = " ".join(arguments[1:]) if action == "cambiar" else text
             if command == "/train" and not request_text:
                 return await self._swap_question(chat_id, workflow.base_draft)
@@ -616,8 +625,6 @@ class TrainingService:
         week = self._integer(parts[1])
         if week > 4:
             raise TrainingInputError(Constants.TRAINING_MESSAGES["invalid_week"])
-        if any(word in parts[2].lower() for word in ("dolor", "pain", "lesión", "lesion", "mareo")):
-            return [Constants.TRAINING_SAFETY_MESSAGE]
         cycle = await self._repository.get_cycle(chat_id)
         if cycle and cycle.completed_at and workflow.base_draft is None:
             raise TrainingInputError(Constants.TRAINING_MESSAGES["closed_swap"])
@@ -647,12 +654,26 @@ class TrainingService:
         request = workflow.swap
         if request is None:
             raise TrainingInputError(Constants.TRAINING_SWAP_QUESTION)
+        constraints = await self._adaptation.extract_swap_constraints(profile, request)
+        await self._account(chat_id, constraints.token_usages)
+        if constraints.result.safety_hold:
+            workflow.answers["safety_hold"] = "true"
+            workflow.state = "reviewing"
+            await self._repository.save(chat_id, workflow)
+            return [Constants.TRAINING_SAFETY_MESSAGE]
+        if constraints.result.clarification:
+            workflow.answers["swap_clarification"] = constraints.result.clarification
+            workflow.state = "reviewing"
+            await self._repository.save(chat_id, workflow)
+            return [constraints.result.clarification]
+        request.excluded_equipment = constraints.result.excluded_equipment
+        workflow.answers.pop("swap_clarification", None)
         source = await self._retriever.get_by_ids([request.exercise_id])
         if len(source) != 1:
             raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)
         try:
             candidates = await self._retriever.retrieve_alternatives(
-                profile, source[0], request.reason
+                profile, source[0], request.reason, excluded_equipment=request.excluded_equipment
             )
         except ValueError as error:
             raise TrainingInputError(
@@ -660,13 +681,21 @@ class TrainingService:
             ) from error
         if not candidates:
             raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)
+        candidates = [
+            item for item in candidates if item.equipment not in request.excluded_equipment
+        ]
+        if not candidates:
+            raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)
+        complete_catalogue = await self._retriever.get_by_ids(sorted(plan.exercise_ids()))
         proposal = await self._adaptation.propose_swap(
-            profile, request, source[0], candidates, plan
+            profile, request, source[0], candidates, plan, catalogue=complete_catalogue
         )
         await self._account(chat_id, proposal.token_usages)
         if proposal.result.safety_hold:
-            raise TrainingInputError(Constants.TRAINING_SAFETY_MESSAGE)
-        complete_catalogue = await self._retriever.get_by_ids(sorted(plan.exercise_ids()))
+            workflow.answers["safety_hold"] = "true"
+            workflow.state = "reviewing"
+            await self._repository.save(chat_id, workflow)
+            return [Constants.TRAINING_SAFETY_MESSAGE]
         catalogue = [*complete_catalogue, *candidates]
         valid = []
         for option in proposal.result.options:

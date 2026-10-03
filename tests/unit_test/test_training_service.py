@@ -13,6 +13,7 @@ from fitcoach.domain.training_lifecycle import (
     Mesocycle,
     ReviewExtraction,
     ReviewSummary,
+    SwapConstraints,
     SwapOption,
     SwapProposal,
     TrainingProfilePatch,
@@ -235,6 +236,9 @@ def collaborators(
     ]
     retriever.retrieve.return_value = retriever.get_by_ids.return_value
     adaptation = AsyncMock(spec=TrainingAdaptationChain)
+    adaptation.extract_swap_constraints.return_value = AdaptationReply(
+        SwapConstraints(excluded_equipment=[], safety_hold=False, clarification=None), []
+    )
     adaptation.extract_review.return_value = AdaptationReply(
         ReviewExtraction(
             profile_patch=TrainingProfilePatch(), safety_hold=False, explanation="Sin cambios"
@@ -345,7 +349,8 @@ async def test_invalid_controls_are_visible(collaborators: tuple, command: str) 
 
 
 @pytest.mark.asyncio
-async def test_swap_requires_selection_then_confirmation(collaborators: tuple) -> None:
+@pytest.mark.parametrize("reason", ["preferencia", "no tengo dolor, prefiero otro ejercicio"])
+async def test_swap_requires_selection_then_confirmation(collaborators: tuple, reason: str) -> None:
     service, repository, conversation, _, adaptation = collaborators
     flow = TrainingWorkflow(id=3, base_plan_id=10, kind="exercise_swap", state="reviewing")
     repository.start.return_value = flow
@@ -364,7 +369,7 @@ async def test_swap_requires_selection_then_confirmation(collaborators: tuple) -
     adaptation.propose_swap.return_value = AdaptationReply(
         SwapProposal(options=[SwapOption(exercise=replacement, rationale="Mismo target")]), []
     )
-    result = await service.handle(7, "/train cambiar 101 2 preferencia")
+    result = await service.handle(7, f"/train cambiar 101 2 {reason}")
     assert any("elegir 3" in item for item in result)
     repository.get_workflow.return_value = flow
     await service.handle(7, "/train elegir 3 1")
@@ -377,10 +382,47 @@ async def test_swap_requires_selection_then_confirmation(collaborators: tuple) -
 
 
 @pytest.mark.asyncio
+async def test_swap_clarification_resumes_with_request_local_equipment_filter(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, _, adaptation = collaborators
+    flow = TrainingWorkflow(id=3, base_plan_id=10, kind="exercise_swap", state="reviewing")
+    repository.start.return_value = flow
+    repository.claim_generation.return_value = flow
+    repository.get_workflow.return_value = flow
+    question = "¿Te refieres a una barra de pesas?"
+    adaptation.extract_swap_constraints.return_value = AdaptationReply(
+        SwapConstraints(excluded_equipment=[], safety_hold=False, clarification=question),
+        [],
+    )
+    assert await service.handle(7, "/train cambiar 101 2 no tengo barra") == [question]
+    service._retriever.retrieve_alternatives.assert_not_awaited()
+    assert await service.handle(7, "/train") == [question]
+    adaptation.extract_swap_constraints.return_value = AdaptationReply(
+        SwapConstraints(excluded_equipment=["barbell"], safety_hold=False, clarification=None),
+        [],
+    )
+    service._retriever.retrieve_alternatives.return_value = []
+    assert await service.handle(7, "Sí, barra de pesas") == [
+        Constants.TRAINING_NO_ALTERNATIVES_MESSAGE
+    ]
+    assert question in flow.swap.reason
+    assert "Sí, barra de pesas" in flow.swap.reason
+    assert service._retriever.retrieve_alternatives.await_args.kwargs["excluded_equipment"] == [
+        "barbell"
+    ]
+    adaptation.propose_swap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_pain_is_not_treated_by_swap(collaborators: tuple) -> None:
     service, repository, _, _, adaptation = collaborators
     repository.start.return_value = TrainingWorkflow(
         id=3, base_plan_id=10, kind="exercise_swap", state="reviewing"
+    )
+    repository.claim_generation.return_value = repository.start.return_value
+    adaptation.extract_swap_constraints.return_value = AdaptationReply(
+        SwapConstraints(excluded_equipment=[], safety_hold=True, clarification=None), []
     )
     assert await service.handle(7, "/train cambiar 101 2 dolor") == [
         Constants.TRAINING_SAFETY_MESSAGE

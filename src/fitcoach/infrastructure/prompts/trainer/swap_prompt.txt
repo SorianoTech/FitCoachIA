@@ -12,3 +12,10 @@ New pain/concerning symptoms require stopping the affected activity and professi
 not a replacement intended as treatment. If the request indicates such symptoms or there are
 unclear restriction conflicts, return safety_hold=true and options=[]; do not prescribe.
 For safe requests return safety_hold=false and 1-3 options.
+Use affected_sessions and prescribed_weekly_sets_by_target to consider the entire session:
+avoid repeating an exercise already present and avoid redundant work that unbalances the session.
+Use source instructions and session metadata to prioritize a similar movement pattern and
+training function (compound versus isolation), not merely the same primary muscle.
+If metadata does not establish equivalence, explain that uncertainty; never invent a pattern
+or claim clinical safety. Prefer the closest supported option over arbitrary novelty.
+Never use excluded_equipment even if it appears in the saved profile.

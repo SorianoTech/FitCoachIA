@@ -66,12 +66,24 @@ class ExerciseRetriever:
         return await self._exercise_repository.get_by_ids(ids)
 
     async def retrieve_alternatives(
-        self, profile: InterviewerProfile, source: Exercise, reason: str
+        self,
+        profile: InterviewerProfile,
+        source: Exercise,
+        reason: str,
+        excluded_equipment: Sequence[str] = (),
     ) -> list[Exercise]:
         """Same target first: a broad group alone does not imply equivalence."""
         if not source.target:
             raise ValueError("The source exercise has no verified primary target")
-        equipment = available_equipment(profile.training.equipment)
+        if any(item not in _KNOWN_EQUIPMENT for item in excluded_equipment):
+            raise ValueError("Unknown excluded equipment")
+        equipment = [
+            item
+            for item in available_equipment(profile.training.equipment)
+            if item not in excluded_equipment
+        ]
+        if not equipment:
+            return []
         query = (
             f"name: {source.name} | muscle_group: {source.muscle_group or ''} "
             f"| target: {source.target} | equipment: {', '.join(equipment)}"
@@ -131,6 +143,10 @@ _KNOWN_EQUIPMENT = {
     "upper body ergometer",
     "trap bar",
 }
+
+
+def known_equipment() -> list[str]:
+    return sorted(_KNOWN_EQUIPMENT)
 
 
 def available_equipment(declared: Sequence[str]) -> list[str]:

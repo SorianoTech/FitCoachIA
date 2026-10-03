@@ -86,6 +86,13 @@ class SwapRequest(PlanModel):
     exercise_id: int = Field(ge=1)
     from_week: int = Field(ge=1, le=MESOCYCLE_WEEKS)
     reason: str = Field(min_length=1)
+    excluded_equipment: list[str] = Field(default_factory=list)
+
+
+class SwapConstraints(PlanModel):
+    excluded_equipment: list[str]
+    safety_hold: bool
+    clarification: str | None
 
 
 class SwapOption(PlanModel):

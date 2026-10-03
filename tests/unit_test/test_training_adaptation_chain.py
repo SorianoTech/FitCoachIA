@@ -16,6 +16,7 @@ from fitcoach.service.agent.llm_chain import InvalidModelOutputError
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.agent.training_adaptation_chain import TrainingAdaptationChain
 from tests.fixtures.stub_server import _renewal_turn
+from tests.unit_test.conftest import build_plan_payload
 
 
 @pytest.mark.asyncio
@@ -63,6 +64,76 @@ async def test_swap_rejects_invented_ids_after_one_repair(profile: InterviewerPr
             [Exercise(2, "other press")],
         )
     assert model.ainvoke.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_swap_includes_affected_sessions_weekly_volume_and_source_instructions(
+    profile: InterviewerProfile,
+) -> None:
+    model = AsyncMock()
+    model.ainvoke.return_value = AIMessage(
+        content=json.dumps({
+            "safety_hold": False,
+            "options": [
+                {
+                    "exercise": {
+                        "exercise_id": 202,
+                        "name": "push up",
+                        "sets": 3,
+                        "reps": "8-10",
+                        "rest_seconds": 120,
+                        "rpe": 7.0,
+                    },
+                    "rationale": "Similar pressing function",
+                }
+            ],
+        })
+    )
+    plan = TrainingPlan.model_validate(build_plan_payload())
+    source = Exercise(
+        101,
+        "barbell bench press",
+        target="pectorals",
+        instructions_en="Press the bar from the chest.",
+    )
+    reply = await TrainingAdaptationChain(AsyncMock(), model).propose_swap(
+        profile,
+        SwapRequest(exercise_id=101, from_week=2, reason="variation"),
+        source,
+        [Exercise(202, "push up")],
+        plan,
+        catalogue=[source],
+    )
+    assert len(reply.result.options) == 1
+    data = json.loads(model.ainvoke.await_args.args[0][1].content)
+    assert {item["week"] for item in data["affected_sessions"]} == {2, 3, 4}
+    assert data["affected_sessions"][0]["session"] == plan.weeks[1].days[0].model_dump(mode="json")
+    assert data["prescribed_weekly_sets_by_target"]["2"]["pectorals"] == 9
+    assert data["source"]["instructions_en"] == source.instructions_en
+    assert data["session_exercise_metadata"][0]["target"] == "pectorals"
+
+
+@pytest.mark.asyncio
+async def test_swap_request_extraction_uses_separate_schema_and_canonical_equipment(
+    profile: InterviewerProfile,
+) -> None:
+    model = AsyncMock()
+    model.ainvoke.return_value = AIMessage(
+        content=json.dumps({
+            "excluded_equipment": ["barbell"],
+            "safety_hold": False,
+            "clarification": None,
+        })
+    )
+    chain = TrainingAdaptationChain(AsyncMock(), AsyncMock(), request_model=model)
+    reply = await chain.extract_swap_constraints(
+        profile, SwapRequest(exercise_id=101, from_week=2, reason="sin barra, no tengo dolor")
+    )
+    assert reply.result.excluded_equipment == ["barbell"]
+    assert not reply.result.safety_hold
+    data = json.loads(model.ainvoke.await_args.args[0][1].content)
+    assert "barbell" in data["known_equipment"]
+    assert data["request"]["reason"] == "sin barra, no tengo dolor"
 
 
 @pytest.mark.asyncio

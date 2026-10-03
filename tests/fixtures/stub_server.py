@@ -245,6 +245,8 @@ class StubHandler(BaseHTTPRequestHandler):
                 "safety_hold": False,
                 "explanation": "Sin cambios de disponibilidad ni restricciones.",
             }
+        if "Interpret the client's exercise substitution request" in system:
+            return {"excluded_equipment": [], "safety_hold": False, "clarification": None}
         if "Propose 1-3 distinct alternatives" in system:
             return {
                 "safety_hold": False,

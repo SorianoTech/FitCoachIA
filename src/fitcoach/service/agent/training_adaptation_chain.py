@@ -1,6 +1,6 @@
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import Generic, TypeVar
 
@@ -12,9 +12,16 @@ from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TrainerGenerationTrace, TrainingPlan
-from fitcoach.domain.training_lifecycle import ReviewExtraction, SwapProposal, SwapRequest
+from fitcoach.domain.training_lifecycle import (
+    ReviewExtraction,
+    SwapConstraints,
+    SwapProposal,
+    SwapRequest,
+    prescribed_summary,
+)
 from fitcoach.infrastructure.config.settings import get_ia_settings
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
+from fitcoach.service.agent.exercise_retriever import known_equipment
 from fitcoach.service.agent.llm_chain import AsyncChatModel, BaseLLMChain, strict_response_format
 from fitcoach.service.agent.rag_context import build_rag_context
 from fitcoach.service.agent.trainer_chain import _hash_text, build_trainer_model
@@ -31,10 +38,15 @@ class AdaptationReply(Generic[ResultT]):
 
 class TrainingAdaptationChain:
     def __init__(
-        self, review_model: AsyncChatModel, swap_model: AsyncChatModel, model_name: str = "unknown"
+        self,
+        review_model: AsyncChatModel,
+        swap_model: AsyncChatModel,
+        model_name: str = "unknown",
+        request_model: AsyncChatModel | None = None,
     ) -> None:
         self._review = BaseLLMChain(review_model, model_name)
         self._swap = BaseLLMChain(swap_model, model_name)
+        self._request = BaseLLMChain(request_model or swap_model, model_name)
         self._loader = PromptLoader()
         self._model_name = model_name
 
@@ -64,6 +76,7 @@ class TrainingAdaptationChain:
         source: Exercise,
         candidates: Sequence[Exercise],
         plan: TrainingPlan | None = None,
+        catalogue: Sequence[Exercise] = (),
     ) -> AdaptationReply[SwapProposal]:
         allowed = {item.id: item for item in candidates}
 
@@ -102,7 +115,28 @@ class TrainingAdaptationChain:
                     content=json.dumps({
                         "profile": profile.model_dump(mode="json"),
                         "request": request.model_dump(mode="json"),
-                        "source": {"id": source.id, "name": source.name, "target": source.target},
+                        "source": asdict(source),
+                        "affected_sessions": [
+                            {
+                                "week": week.week,
+                                "intensity": week.intensity,
+                                "session": day.model_dump(mode="json"),
+                            }
+                            for week in plan.weeks
+                            if week.week >= request.from_week
+                            for day in week.days
+                            if any(
+                                item.exercise_id == request.exercise_id for item in day.exercises
+                            )
+                        ]
+                        if plan
+                        else [],
+                        "prescribed_weekly_sets_by_target": prescribed_summary(
+                            plan, list(catalogue)
+                        )
+                        if plan
+                        else {},
+                        "session_exercise_metadata": [asdict(item) for item in catalogue],
                         "pending_prescriptions": [
                             {
                                 "week": week.week,
@@ -132,6 +166,26 @@ class TrainingAdaptationChain:
         )
         return AdaptationReply(result, usages, trace)
 
+    async def extract_swap_constraints(
+        self, profile: InterviewerProfile, request: SwapRequest
+    ) -> AdaptationReply[SwapConstraints]:
+        result, usages = await self._request._invoke_validated(
+            [
+                SystemMessage(
+                    content=self._loader.load_system_prompt("trainer", "swap_request_prompt.txt")
+                ),
+                HumanMessage(
+                    content=json.dumps({
+                        "profile": profile.model_dump(mode="json"),
+                        "request": request.model_dump(mode="json"),
+                        "known_equipment": known_equipment(),
+                    })
+                ),
+            ],
+            SwapConstraints,
+        )
+        return AdaptationReply(result, usages)
+
 
 @lru_cache
 def get_training_adaptation_chain() -> TrainingAdaptationChain:
@@ -140,4 +194,7 @@ def get_training_adaptation_chain() -> TrainingAdaptationChain:
         response_format=strict_response_format(ReviewExtraction)
     )
     swap = build_trainer_model(settings).bind(response_format=strict_response_format(SwapProposal))
-    return TrainingAdaptationChain(review, swap, settings.model)
+    request = build_trainer_model(settings).bind(
+        response_format=strict_response_format(SwapConstraints)
+    )
+    return TrainingAdaptationChain(review, swap, settings.model, request_model=request)

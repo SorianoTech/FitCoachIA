@@ -11,6 +11,13 @@ atención profesional.
 
 ## Flujo de una generación de plan
 
+Las operaciones del modelo muestran «escribiendo…» en Telegram si tardan más
+de 300 ms. El indicador se renueva cada cuatro segundos y se detiene al finalizar,
+fallar o cancelar la operación, conservando el thread del mensaje. Incluye entrevista,
+consulta, generación y flujos de revisión/sustitución desde texto, botones o Mini App.
+No transmite fragmentos del JSON ni altera validación o confirmación. Un fallo de
+este indicador se registra y no interrumpe la respuesta principal.
+
 1. El usuario envía `/train` y Telegram entrega el update en `POST /webhook/response`.
 2. `ConversationService` busca el perfil del `chat_id` en `interviewer_profiles`. Si no existe,
    responde que hace falta `/interview` y termina.

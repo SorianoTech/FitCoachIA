@@ -39,6 +39,7 @@ from fitcoach.service.agent.interviewer_chain import InterviewerChain, Interview
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.training_service import TrainingService
 from fitcoach.service.training_view import persistent_keyboard
+from fitcoach.service.typing_indicator import typing_indicator
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
@@ -160,7 +161,8 @@ class ConversationService:
             return
         await self._bot.answer_callback_query(query.id)
         try:
-            responses = await self._training_service.callback(message.chat_id, query.data or "")
+            async with typing_indicator(self._bot, message.chat_id, message.message_thread_id):
+                responses = await self._training_service.callback(message.chat_id, query.data or "")
         except AgentError as error:
             logger.warning("%s controlled callback error: %s", ctx, error.code)
             await self._send(
@@ -320,7 +322,8 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            reply = await self._reply_with_interviewer(chat_id, llm_input)
+            async with typing_indicator(self._bot, chat_id, message_thread_id):
+                reply = await self._reply_with_interviewer(chat_id, llm_input)
         except AgentError as exc:
             await self._record_token_usage(
                 ctx,
@@ -426,7 +429,8 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            reply = await self._trainer.generate_plan(profile, exercises)
+            async with typing_indicator(self._bot, chat_id, message_thread_id):
+                reply = await self._trainer.generate_plan(profile, exercises)
         except AgentError as exc:
             await self._record_trainer_error(
                 ctx, chat_id, message_thread_id, TrainerAction.GENERATE_PLAN, exc, started
@@ -519,7 +523,8 @@ class ConversationService:
 
         started = time.perf_counter()
         try:
-            reply = await self._trainer.answer(user_message, stored_plan.plan, history, profile)
+            async with typing_indicator(self._bot, chat_id, message_thread_id):
+                reply = await self._trainer.answer(user_message, stored_plan.plan, history, profile)
         except AgentError as exc:
             await self._record_trainer_error(
                 ctx, chat_id, message_thread_id, TrainerAction.ANSWER_PLAN, exc, started
@@ -581,13 +586,14 @@ class ConversationService:
             return
         try:
             await self._training_service.remember_thread(chat_id, thread_id)
-            responses = (
-                await self._training_service.handle(
-                    chat_id, text, swap_message=swap_message, swap_selection=swap_selection
+            async with typing_indicator(self._bot, chat_id, thread_id):
+                responses = (
+                    await self._training_service.handle(
+                        chat_id, text, swap_message=swap_message, swap_selection=swap_selection
+                    )
+                    if swap_message
+                    else await self._training_service.handle(chat_id, text)
                 )
-                if swap_message
-                else await self._training_service.handle(chat_id, text)
-            )
         except AgentError as error:
             logger.warning("%s controlled training error: %s", ctx, error.code)
             await self._send(chat_id, thread_id, self._message_for_agent_error(error.code))

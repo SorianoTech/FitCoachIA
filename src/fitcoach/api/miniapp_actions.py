@@ -19,6 +19,7 @@ from fitcoach.infrastructure.database.postgres_conversation_repository import (
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
 from fitcoach.infrastructure.database.session import get_session
 from fitcoach.service.training_service import TrainingService
+from fitcoach.service.typing_indicator import typing_indicator
 
 logger = logging.getLogger(__name__)
 miniapp_actions = APIRouter(
@@ -57,9 +58,10 @@ async def open_training_action(
         me = await bot.get_me()
         if not me.username:
             raise HTTPException(status_code=503, detail="El bot no tiene un nombre configurado.")
-        responses = await service.handle(
-            chat_id, "/train cambiar" if action.action == "swap" else "/train revisar"
-        )
+        async with typing_indicator(bot, chat_id):
+            responses = await service.handle(
+                chat_id, "/train cambiar" if action.action == "swap" else "/train revisar"
+            )
         keyboard = await service.keyboard(chat_id, responses)
         for index, text in enumerate(responses):
             await bot.send_message(

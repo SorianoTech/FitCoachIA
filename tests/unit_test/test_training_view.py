@@ -66,7 +66,44 @@ def test_week_shows_complete_prescription_without_draft_language() -> None:
     assert "SEMANA 1" not in text
     assert "borrador" not in text.lower()
     assert plan.model_dump_json() == before
-    assert len(messages) == 5
+    assert len(messages) == 1
+    assert text.count("SEMANA 2") == 1
+    assert "\n\nDía" in text
+    assert plan.progression_notes not in text
+
+
+def test_large_week_splits_between_days_without_losing_prescriptions() -> None:
+    plan = TrainingPlan.model_validate(build_plan_payload(days_per_week=7))
+    for day in plan.weeks[0].days:
+        day.exercises[0].notes = "Control " * 180
+    stored = StoredTrainingPlan(10, 3, plan, "report")
+    messages = view_plan(stored, None, START, mode="week", week=1)
+    assert len(messages) > 1
+    assert all(len(message.encode("utf-16-le")) // 2 <= 4096 for message in messages)
+    for day in plan.weeks[0].days:
+        label = Constants.TRAINING_PREVIEW["day"].format(
+            day=day.day,
+            focus=day.focus,
+            minutes=day.estimated_minutes,
+        )
+        matches = [message for message in messages if label in message]
+        assert len(matches) == 1
+        assert day.exercises[0].notes in matches[0]
+
+
+@pytest.mark.asyncio
+async def test_progression_notes_are_available_on_demand_without_llm(collaborators: tuple) -> None:
+    service, repository, conversation, trainer, adaptation = collaborators
+    result = await service.callback(7, "tv:10:notes")
+    assert conversation.get_current_plan.return_value.plan.progression_notes in result[0]
+    assert Constants.TRAINING_PREVIEW["progression_notes"] in result[0]
+    markup = await service.keyboard(7, result)
+    assert any(
+        button.callback_data == "tv:10:notes" for row in markup.inline_keyboard for button in row
+    )
+    repository.save.assert_not_awaited()
+    trainer.answer.assert_not_awaited()
+    adaptation.extract_review.assert_not_awaited()
 
 
 @pytest.mark.asyncio

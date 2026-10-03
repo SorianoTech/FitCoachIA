@@ -106,6 +106,7 @@ Tu nueva vida te espera, ¡Adelante!
         "review": "Terminé el mesociclo",
         "home": "Mi entrenamiento",
         "resume": "Continuar propuesta pendiente",
+        "notes": "Ver indicaciones",
         "menu": "Tu entrenamiento, a un toque. Consultar no consume tokens ni cambia tu plan.",
         "title": "TU PLAN ACTUAL · Versión {version}",
         "week_title": "TU SEMANA · PLAN ACTUAL",

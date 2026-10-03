@@ -108,6 +108,13 @@ RPE y notas. El teclado persistente ofrece «Ver semana actual», «Ver plan com
 Los botones inline permiten elegir otra semana y abrir cambio/revisión.
 La renovación explícita sigue disponible mediante `/train revisar`.
 
+La semana se presenta en un único mensaje con bloques separados por día. Si supera
+4096 unidades UTF-16 de Telegram, se divide preferentemente entre sesiones; una
+sesión que por sí sola exceda el límite se divide mediante el transporte existente,
+sin perder texto. Los botones se adjuntan al último mensaje. Las indicaciones generales
+de progresión se consultan con «Ver indicaciones», sin un mensaje adicional automático
+ni llamada al LLM; las notas específicas de los ejercicios siguen visibles.
+
 Las vistas leen exclusivamente `training_sessions.current_plan_id`, incluso con
 borrador pendiente o cuota agotada; no llaman al LLM/RAG ni modifican el workflow.
 Los botones incluyen la identidad del plan y rechazan versiones obsoletas; siguen

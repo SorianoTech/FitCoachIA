@@ -230,6 +230,12 @@ class TrainingService:
             logger.warning("Invalid or stale training view callback for chat %s", chat_id)
             return [Constants.TRAINING_CALLBACK_INVALID]
         action = parts[2]
+        if len(parts) == 3 and action == "notes":
+            return [
+                Constants.TRAINING_NAVIGATION["week_title"] + "\n\n"
+                + Constants.TRAINING_PREVIEW["progression_notes"] + "\n"
+                + stored.plan.progression_notes
+            ]
         if len(parts) == 3 and action == "resume":
             workflow = await self._repository.get_workflow(chat_id)
             if workflow is None:

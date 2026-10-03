@@ -113,6 +113,7 @@ class TrainerTurn(PlanModel):
     reply: str = Field(min_length=1)
     report: str | None = None
     plan: TrainingPlan | None = None
+    intent: Literal["answer", "renewal", "exercise_swap"] = Field(default_factory=lambda: "answer")
 
     @model_validator(mode="after")
     def validate_completion(self) -> "TrainerTurn":

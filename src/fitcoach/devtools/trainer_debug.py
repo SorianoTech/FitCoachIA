@@ -50,6 +50,7 @@ from fitcoach.service.agent.trainer_chain import build_trainer_model
 DEFAULT_OUT = Path("runs/trainer")
 # Rough heuristic, only to notice when the prompt grows out of proportion.
 _CHARS_PER_TOKEN = 4
+logger = logging.getLogger("fitcoach.devtools.trainer_debug")
 
 
 def echo(text: str) -> None:
@@ -107,6 +108,23 @@ def add_model_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", help="Override ia_model")
     parser.add_argument("--temperature", type=float, help="Override ia_temperature")
     parser.add_argument("--max-tokens", type=int, help="Override ia_trainer_max_tokens")
+    add_timeout_argument(parser)
+
+
+def positive_seconds(value: str) -> int:
+    seconds = int(value)
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError("timeout must be greater than zero")
+    return seconds
+
+
+def add_timeout_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--timeout",
+        type=positive_seconds,
+        metavar="SECONDS",
+        help="Timeout per LLM request, including repair (default: ia_trainer_timeout)",
+    )
 
 
 def model_settings(args: argparse.Namespace) -> IASettings:
@@ -117,6 +135,8 @@ def model_settings(args: argparse.Namespace) -> IASettings:
         overrides["temperature"] = args.temperature
     if args.max_tokens is not None:
         overrides["trainer_max_tokens"] = args.max_tokens
+    if args.timeout is not None:
+        overrides["trainer_timeout"] = args.timeout
     return get_ia_settings().model_copy(update=overrides)
 
 
@@ -222,8 +242,10 @@ async def main_async(args: argparse.Namespace) -> int:
         echo(f"written: {args.evaluate_run / 'evaluation.md'}")
         return 0 if evaluation.passed else 1
     profile, case = await resolve_profile(args)
+    logger.info("Profile loaded: %s", case)
     settings = None if args.render_only else model_settings(args)
     exercises = await resolve_catalogue(args, profile, settings)
+    logger.info("Catalogue loaded: %s exercises", len(exercises))
     if args.save_catalogue is not None:
         dump_catalogue(exercises, args.save_catalogue)
         echo(f"catalogue saved: {args.save_catalogue} ({len(exercises)} exercises)")
@@ -250,9 +272,18 @@ async def main_async(args: argparse.Namespace) -> int:
 
     if settings is None:
         raise RuntimeError("LLM settings are required unless --render-only is used")
+    logger.info(
+        "Starting case %s: model=%s skill=%s timeout=%ss per request retries=%s",
+        case,
+        settings.model,
+        variant.skill,
+        settings.trainer_timeout or settings.timeout_seconds,
+        settings.max_retries,
+    )
     run = await run_trainer_case(
         case, profile, exercises, build_trainer_model(settings), settings.model, variant
     )
+    logger.info("Writing artifacts: %s", out_dir)
     write_artifacts(run, out_dir)
     print_run(run, out_dir)
     return 0 if run.status == "plan" else 1
@@ -264,6 +295,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s [%(levelname)8s] %(name)s - %(message)s",
     )
+    logging.getLogger("fitcoach.devtools").setLevel(logging.DEBUG if args.verbose else logging.INFO)
     return asyncio.run(main_async(args))
 
 

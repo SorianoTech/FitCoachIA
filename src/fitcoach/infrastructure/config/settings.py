@@ -5,7 +5,8 @@ Real OS environment variables take precedence over any ``.env`` file, so in
 up automatically -- nothing is shipped to production. The ``.env`` files are a
 local-development convenience only.
 
-Precedence (high -> low): OS env vars > ``.env.<APP_ENV>`` > ``.env`` > defaults.
+Precedence (high -> low): OS env vars > ``FITCOACH_ENV_FILE`` when set >
+``.env.<APP_ENV>`` > ``.env`` > defaults.
 """
 
 import os
@@ -22,11 +23,12 @@ from fitcoach.domain.rate_limiter import UsageLimits
 _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 
 _APP_ENV = os.getenv("APP_ENV", "dev")
+_ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or (".env", f".env.{_APP_ENV}")
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -61,7 +63,7 @@ def get_settings() -> Settings:
 
 class IASettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         env_prefix="ia_",
         extra="ignore",
@@ -93,7 +95,7 @@ class IASettings(BaseSettings):
 
 class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         env_prefix="database_",
         extra="ignore",
@@ -111,7 +113,7 @@ class VectorDatabaseSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         env_prefix="vector_database_",
         extra="ignore",
@@ -122,7 +124,7 @@ class VectorDatabaseSettings(BaseSettings):
 
 class EmbedderSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         env_prefix="embedder_",
         extra="ignore",
@@ -134,7 +136,7 @@ class EmbedderSettings(BaseSettings):
 
 class UsageSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", f".env.{_APP_ENV}"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         env_prefix="rate_limit_",
         extra="ignore",

@@ -144,15 +144,18 @@ vector-logs:
 
 # Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
 trainer-debug:
-	@uv run python -m fitcoach.devtools.trainer_debug $(ARGS)
+	@$(resolve_dev_env); \
+	uv run python -m fitcoach.devtools.trainer_debug $(ARGS)
 
 trainer-compare:
-	@uv run python -m fitcoach.devtools.trainer_compare $(ARGS)
+	@$(resolve_dev_env); \
+	uv run python -m fitcoach.devtools.trainer_compare $(ARGS)
 
 TRAINER_CASES=evals/trainer/cases
 
 trainer-refresh-catalogues:
-	@for case in $(TRAINER_CASES)/*/; do \
+	@$(resolve_dev_env); \
+	for case in $(TRAINER_CASES)/*/; do \
 		uv run python -m fitcoach.devtools.trainer_debug --case-dir "$$case" --live-retrieval \
 			--save-catalogue "$$case/catalogue.json" --render-only --out /tmp/fitcoach-trainer-render || exit 1; \
 	done

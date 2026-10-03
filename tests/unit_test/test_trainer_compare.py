@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import AIMessage
 
+from fitcoach.devtools import trainer_compare
 from fitcoach.devtools.trainer_compare import (
     ComparisonVariant,
     aggregate_rows,
@@ -16,6 +17,7 @@ from fitcoach.devtools.trainer_compare import (
 from fitcoach.devtools.trainer_runner import dump_catalogue
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
+from fitcoach.infrastructure.config.settings import IASettings
 from tests.unit_test.conftest import build_plan_payload
 
 
@@ -53,6 +55,46 @@ def test_discover_cases_requires_complete_case_directories(tmp_path: Path) -> No
 
     with pytest.raises(SystemExit, match="no trainer cases"):
         discover_cases(tmp_path)
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1", "nan", "1.5"])
+def test_compare_rejects_invalid_timeouts(timeout: str) -> None:
+    with pytest.raises(SystemExit) as error:
+        trainer_compare.build_parser().parse_args(["--timeout", timeout])
+    assert error.value.code == 2
+
+
+def test_compare_applies_timeout_override(
+    tmp_path: Path,
+    profile: InterviewerProfile,
+    exercises: list[Exercise],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cases = tmp_path / "cases"
+    write_case(cases, "case-a", profile, exercises)
+    settings = IASettings(
+        _env_file=None,  # type: ignore[call-arg]
+        base_url="http://llm",
+        token="test",  # noqa: S106
+        model="model-a",
+        temperature=1,
+    )
+    monkeypatch.setattr(trainer_compare, "get_ia_settings", lambda: settings)
+    build = MagicMock(return_value=model())
+    monkeypatch.setattr(trainer_compare, "build_trainer_model", build)
+
+    code = trainer_compare.main([
+        "--cases-root",
+        str(cases),
+        "--out",
+        str(tmp_path / "runs"),
+        "--timeout",
+        "300",
+    ])
+
+    assert code == 0
+    assert build.call_args.args[0].trainer_timeout == 300
+    assert settings.trainer_timeout == 60
 
 
 @pytest.mark.asyncio

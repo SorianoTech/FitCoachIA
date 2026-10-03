@@ -8,6 +8,7 @@ the validated plan, so a bad plan can be traced to the exact prompt that caused 
 
 import hashlib
 import json
+import logging
 import re
 import time
 from collections.abc import Sequence
@@ -30,6 +31,7 @@ from fitcoach.service.agent.plan_evaluator import PlanEvaluation, Severity, eval
 from fitcoach.service.agent.trainer_chain import TrainerChain
 
 _SLUG = re.compile(r"[^a-zA-Z0-9_.-]+")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +108,7 @@ async def run_trainer_case(
     model_name: str,
     variant: TrainerVariant,
 ) -> TrainerRun:
+    logger.info("Preparing case %s: model=%s skill=%s", case, model_name, variant.skill)
     recorder = RecordingChatModel(model)
     chain = build_chain(recorder, model_name, variant)
     run = TrainerRun(
@@ -128,8 +131,10 @@ async def run_trainer_case(
     else:
         run.turn = reply.turn
         run.token_usages = reply.token_usages
+        logger.info("Validating plan and evaluating case %s", case)
         run.evaluation = evaluate_turn(reply.turn, profile, exercises)
     run.latency_ms = int((time.perf_counter() - started) * 1000)
+    logger.info("Case %s finished: status=%s error=%s", case, run.status, run.error)
     return run
 
 

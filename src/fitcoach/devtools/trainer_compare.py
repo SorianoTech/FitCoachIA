@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from fitcoach.devtools.trainer_debug import add_timeout_argument
 from fitcoach.devtools.trainer_runner import (
     TrainerRun,
     TrainerVariant,
@@ -27,6 +28,7 @@ from fitcoach.service.agent.trainer_chain import build_trainer_model
 
 DEFAULT_CASES = Path("evals/trainer/cases")
 DEFAULT_OUT = Path("runs/trainer-comparisons")
+logger = logging.getLogger("fitcoach.devtools.trainer_compare")
 SUMMARY_FIELDS = (
     "case",
     "variant",
@@ -81,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skills-root", type=Path)
     parser.add_argument("--temperature", type=float)
     parser.add_argument("--max-tokens", type=int)
+    add_timeout_argument(parser)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
@@ -233,9 +236,18 @@ async def main_async(args: argparse.Namespace) -> int:
         overrides["temperature"] = args.temperature
     if args.max_tokens is not None:
         overrides["trainer_max_tokens"] = args.max_tokens
+    if args.timeout is not None:
+        overrides["trainer_timeout"] = args.timeout
 
     def model_factory(model: str) -> AsyncChatModel:
-        return build_trainer_model(settings.model_copy(update={**overrides, "model": model}))
+        configured = settings.model_copy(update={**overrides, "model": model})
+        logger.info(
+            "Starting model %s: timeout=%ss per request retries=%s",
+            model,
+            configured.trainer_timeout or configured.timeout_seconds,
+            configured.max_retries,
+        )
+        return build_trainer_model(configured)
 
     out_dir = comparison_dir(args.out)
     runs = await run_comparison(args.cases_root, variants, model_factory, out_dir)
@@ -251,6 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s [%(levelname)8s] %(name)s - %(message)s",
     )
+    logging.getLogger("fitcoach.devtools").setLevel(logging.DEBUG if args.verbose else logging.INFO)
     return asyncio.run(main_async(args))
 
 

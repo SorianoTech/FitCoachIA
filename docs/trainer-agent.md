@@ -232,6 +232,8 @@ ejecución, de modo que los cambios en disco se aplican sin reiniciar nada.
 
 Los casos del *golden set* viven en [`evals/trainer/cases`](../evals/trainer/README.md): cada uno es
 un `profile.json` y el `catalogue.json` congelado que devolvió la recuperación real para ese perfil.
+Los targets `trainer-debug`, `trainer-compare` y `trainer-refresh-catalogues` usan el entorno de
+desarrollo del Makefile (`/etc/fitcoachia/dev/.env.dev`, o `.env.dev` del repositorio como fallback).
 
 ```bash
 # Solo renderiza el prompt que se enviaría (sin llamar al LLM, sin coste)
@@ -254,8 +256,18 @@ make trainer-debug ARGS="--chat-id 123 --live-retrieval --save-catalogue evals/t
 | `--save-catalogue` | Congela el catálogo usado para repetir la ejecución |
 | `--prompts-root` / `--skills-root` / `--skill` | Variante de `trainer/system_prompt.txt` y `<skill>/SKILL.md` |
 | `--model` / `--temperature` / `--max-tokens` | Sobrescriben `ia_model`, `ia_temperature`, `ia_trainer_max_tokens` |
+| `--timeout SECONDS` | Sobrescribe `ia_trainer_timeout` con un entero positivo para cada petición al LLM |
 | `--render-only` | Escribe el prompt y los mensajes sin llamar al modelo |
 | `--evaluate-run DIR` | Vuelve a puntuar una ejecución guardada sin llamar al modelo |
+
+`trainer-debug` y `trainer-compare` muestran el inicio de cada llamada, las reparaciones y un
+aviso cada 10 segundos mientras esperan la respuesta. Estos mensajes van a stderr; no son tokens
+en streaming ni muestran el razonamiento interno del modelo. El timeout se aplica a cada petición,
+no a la ejecución completa: una reparación y los reintentos configurados pueden aumentar el total.
+
+```bash
+make trainer-debug ARGS="--case-dir evals/trainer/cases/knee_injury_home --timeout 300"
+```
 
 Cada ejecución crea `runs/trainer/<fecha>-<caso>-<variante>/` (ignorado por git) con:
 

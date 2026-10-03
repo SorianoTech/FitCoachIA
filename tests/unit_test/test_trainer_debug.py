@@ -1,11 +1,13 @@
+import asyncio
 import json
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage
 
-from fitcoach.devtools import trainer_debug
+from fitcoach.devtools import recording_model, trainer_debug
 from fitcoach.devtools.recording_model import RecordingChatModel
 from fitcoach.devtools.trainer_runner import (
     TrainerVariant,
@@ -59,6 +61,41 @@ def catalogue_file(tmp_path: Path, exercises: list[Exercise]) -> Path:
 
 class TestRecordingChatModel:
     @pytest.mark.asyncio
+    async def test_reports_wait_and_stops_the_heartbeat_after_the_response(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(recording_model, "_PROGRESS_INTERVAL_SECONDS", 0.001)
+        caplog.set_level(logging.INFO, logger="fitcoach.devtools.recording_model")
+
+        async def delayed_response(messages: list[object]) -> AIMessage:
+            await asyncio.sleep(0.02)
+            return AIMessage(content="done")
+
+        inner = MagicMock()
+        inner.ainvoke = delayed_response
+        before = asyncio.all_tasks()
+        recorder = RecordingChatModel(inner)
+
+        await recorder.ainvoke([])
+
+        assert "generating plan" in caplog.text
+        assert "waiting for response" in caplog.text
+        assert "response received" in caplog.text
+        assert asyncio.all_tasks() == before
+
+    @pytest.mark.asyncio
+    async def test_cancellation_cleans_up_the_heartbeat(self) -> None:
+        inner = MagicMock()
+        inner.ainvoke = AsyncMock(side_effect=asyncio.CancelledError)
+        recorder = RecordingChatModel(inner)
+        before = asyncio.all_tasks()
+
+        with pytest.raises(asyncio.CancelledError):
+            await recorder.ainvoke([])
+
+        assert asyncio.all_tasks() == before
+
+    @pytest.mark.asyncio
     async def test_records_the_error_and_reraises(self) -> None:
         inner = MagicMock()
         inner.ainvoke = AsyncMock(side_effect=TimeoutError("slow"))
@@ -86,8 +123,13 @@ class TestRunTrainerCase:
 
     @pytest.mark.asyncio
     async def test_keeps_both_calls_when_a_repair_happens(
-        self, model: MagicMock, profile: InterviewerProfile, exercises: list[Exercise]
+        self,
+        model: MagicMock,
+        profile: InterviewerProfile,
+        exercises: list[Exercise],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
+        caplog.set_level(logging.INFO, logger="fitcoach.devtools.recording_model")
         model.ainvoke.side_effect = [
             AIMessage(content=_plan_json(exercise_id=999)),
             AIMessage(content=_plan_json(exercise_id=102)),
@@ -98,6 +140,7 @@ class TestRunTrainerCase:
         assert run.repaired
         assert run.calls[0].response is not None
         assert '"exercise_id": 999' in run.calls[0].response
+        assert "LLM call 2: repairing output" in caplog.text
 
     @pytest.mark.asyncio
     async def test_reports_an_agent_error_instead_of_raising(
@@ -199,6 +242,12 @@ def test_render_messages_does_not_call_the_model(
 
 
 class TestCli:
+    @pytest.mark.parametrize("timeout", ["0", "-1", "nan", "1.5"])
+    def test_rejects_invalid_timeouts(self, timeout: str) -> None:
+        with pytest.raises(SystemExit) as error:
+            trainer_debug.build_parser().parse_args(["--timeout", timeout])
+        assert error.value.code == 2
+
     def test_case_dir_provides_profile_and_catalogue(
         self, tmp_path: Path, profile_file: Path, catalogue_file: Path
     ) -> None:
@@ -321,6 +370,8 @@ class TestCli:
             "0.7",
             "--max-tokens",
             "9000",
+            "--timeout",
+            "300",
             "--save-catalogue",
             str(tmp_path / "saved.json"),
         ])
@@ -329,6 +380,7 @@ class TestCli:
         assert built[0].model == "other-model"
         assert built[0].temperature == 0.7
         assert built[0].trainer_max_tokens == 9000
+        assert built[0].trainer_timeout == 300
         assert (tmp_path / "saved.json").exists()
         [run_dir] = (tmp_path / "runs").iterdir()
         assert json.loads((run_dir / "run.json").read_text())["model"] == "other-model"

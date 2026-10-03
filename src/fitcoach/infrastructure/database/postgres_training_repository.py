@@ -21,6 +21,7 @@ from fitcoach.infrastructure.database.models import (
     TrainingSessionRecord,
     TrainingWorkflowRecord,
 )
+from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.repository.training_repository import ReminderDelivery, TrainingConflictError
 
 _OPEN = ("reviewing", "generating", "awaiting_confirmation")
@@ -101,6 +102,7 @@ class PostgresTrainingRepository:
         await self._session.commit()
         return workflow
 
+    @timed("persistence")
     async def save(self, chat_id: int, workflow: TrainingWorkflow) -> TrainingWorkflow:
         await self._lock(chat_id)
         record = await self._session.get(
@@ -137,6 +139,7 @@ class PostgresTrainingRepository:
         workflow.generation_key = str(uuid4())
         return await self.save(chat_id, workflow)
 
+    @timed("activation")
     async def accept(
         self, chat_id: int, workflow_id: int, start: datetime, expected_revision: int | None = None
     ) -> int:

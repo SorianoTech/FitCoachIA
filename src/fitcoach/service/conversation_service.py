@@ -28,6 +28,7 @@ from fitcoach.domain.trainer_plan import (
     TrainerAction,
     TrainerAnswerTurn,
 )
+from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.repository.training_repository import TrainingConflictError
@@ -682,6 +683,7 @@ class ConversationService:
             IAMessage(message=user_message),
         ])
 
+    @timed("telegram_delivery")
     async def _send(
         self,
         chat_id: int,

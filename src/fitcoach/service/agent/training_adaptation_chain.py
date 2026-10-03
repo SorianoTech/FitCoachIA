@@ -20,6 +20,7 @@ from fitcoach.domain.training_lifecycle import (
     prescribed_summary,
 )
 from fitcoach.infrastructure.config.settings import get_ia_settings
+from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.exercise_retriever import known_equipment
 from fitcoach.service.agent.llm_chain import AsyncChatModel, BaseLLMChain, strict_response_format
@@ -50,6 +51,7 @@ class TrainingAdaptationChain:
         self._loader = PromptLoader()
         self._model_name = model_name
 
+    @timed("review_extraction", action="renewal")
     async def extract_review(
         self, profile: InterviewerProfile, answers: dict[str, str]
     ) -> AdaptationReply[ReviewExtraction]:
@@ -69,6 +71,7 @@ class TrainingAdaptationChain:
         )
         return AdaptationReply(result, usages)
 
+    @timed("proposal", action="exercise_swap")
     async def propose_swap(
         self,
         profile: InterviewerProfile,
@@ -166,6 +169,7 @@ class TrainingAdaptationChain:
         )
         return AdaptationReply(result, usages, trace)
 
+    @timed("constraint_extraction", action="exercise_swap")
     async def extract_swap_constraints(
         self, profile: InterviewerProfile, request: SwapRequest
     ) -> AdaptationReply[SwapConstraints]:

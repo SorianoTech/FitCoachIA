@@ -22,6 +22,7 @@ from fitcoach.domain.trainer_plan import (
 )
 from fitcoach.domain.training_lifecycle import TrainingAdaptationContext
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
+from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.agent_factory import build_trainer_agent
 from fitcoach.service.agent.llm_chain import (
@@ -82,6 +83,7 @@ class TrainerChain(BaseLLMChain):
             HumanMessage(content=_PLAN_INSTRUCTION + profile.model_dump_json()),
         ]
 
+    @timed("generation", action="initial")
     async def generate_plan(
         self, profile: InterviewerProfile, exercises: Sequence[Exercise]
     ) -> TrainerReply:
@@ -95,6 +97,7 @@ class TrainerChain(BaseLLMChain):
             trace=self._trace(messages, exercises),
         )
 
+    @timed("consultation", action="consultation")
     async def answer(
         self,
         question: str,
@@ -119,6 +122,7 @@ class TrainerChain(BaseLLMChain):
             token_usages=token_usages,
         )
 
+    @timed("generation", action="renewal")
     async def generate_next_plan(
         self, context: TrainingAdaptationContext, exercises: Sequence[Exercise]
     ) -> TrainerReply:

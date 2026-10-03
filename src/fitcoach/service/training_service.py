@@ -24,6 +24,7 @@ from fitcoach.domain.training_lifecycle import (
     prescribed_summary,
     utc_now,
 )
+from fitcoach.infrastructure.observability.latency import latency_phase, timed
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.repository.training_repository import TrainingConflictError, TrainingRepository
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever, available_equipment
@@ -523,6 +524,7 @@ class TrainingService:
                 conversation_message_id=None,
             )
 
+    @timed("workflow", action="renewal")
     async def _generate(self, chat_id: int, workflow: TrainingWorkflow) -> list[str]:
         if await self._quota(chat_id):
             return [Constants.QUOTA_SOFT_MESSAGE]
@@ -800,6 +802,7 @@ class TrainingService:
         workflow = await self._repository.save(chat_id, workflow)
         return await self._generate(chat_id, workflow)
 
+    @timed("workflow", action="exercise_swap")
     async def _generate_swap(
         self,
         chat_id: int,
@@ -856,7 +859,8 @@ class TrainingService:
         valid = []
         for option in proposal.result.options:
             try:
-                draft = self._swap_draft(plan, request, option.exercise)
+                with latency_phase("patch_validation"):
+                    draft = self._swap_draft(plan, request, option.exercise)
             except ValueError:
                 logger.warning("Rejected invalid swap for chat %s", chat_id, exc_info=True)
                 continue

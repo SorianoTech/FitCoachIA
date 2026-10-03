@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fitcoach.domain.exercise import Exercise
+from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.vectordb.models import EMBEDDING_DIMENSIONS, ExerciseRecord
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class PgVectorExerciseRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    @timed("vector_search")
     async def search(
         self,
         query_vector: Sequence[float],

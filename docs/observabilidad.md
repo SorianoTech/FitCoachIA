@@ -62,6 +62,26 @@ nginx proxy manager pueda llegar a Grafana por nombre de contenedor
 
 ## 3. Qué información se recoge
 
+### Latencia del entrenador
+
+Los spans `training.*` y logs `training_latency` miden acción, fase, resultado
+y duración en ms, sin incluir argumentos, mensajes, perfiles ni textos de errores.
+Incluyen consulta/detección, extracción, generación, llamadas LLM, reparación,
+validación, embeddings, recuperación, búsqueda vectorial, catálogo, persistencia
+y entrega Telegram. `llm.model` identifica el modelo en el span de cada llamada.
+Los tiempos de etapas anidadas no se suman: una reparación contiene otra llamada LLM.
+`training.workflow` mide generación del borrador, no el tiempo entre respuestas humanas.
+
+Para establecer la línea base, repetir consultas locales/globales, renovación rápida/
+abierta y swaps por botones/texto/material ambiguo/síntomas, con datos sintéticos.
+Separar por acción y comparar p50/p95, tokens, número de llamadas y reparaciones,
+errores y duración total hasta el mensaje útil. La duración de `training.llm` incluye
+red y espera del proveedor; no identifica su cola interna. Correlacionar fases por
+traza, no por texto de usuario. Los stubs de IT verifican rutas y contadores, pero
+no son una medición de latencia real ni prueban el objetivo de mejora del 20%.
+Antes de cambiar un modelo, recoger una muestra comparable con el proveedor autorizado,
+misma carga y configuración; conservar los resultados fuera del repositorio.
+
 ### 3.1 Logs (app → stdout, JSON)
 
 `fitcoach.infrastructure.config.logging_config.JsonFormatter` escribe cada

@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.infrastructure.ia.embedder_client import Embedder
+from fitcoach.infrastructure.observability.latency import latency_phase, timed
 from fitcoach.repository.exercise_repository import ExerciseRepository
 from fitcoach.service.agent.rag_context import build_query_text, equipment_filter
 
@@ -42,12 +43,14 @@ class ExerciseRetriever:
         self._top_k = top_k
         self._muscle_groups = tuple(muscle_groups)
 
+    @timed("retrieval")
     async def retrieve(self, profile: InterviewerProfile) -> list[Exercise]:
         """Top-k exercises per muscle group, de-duplicated, order preserved."""
         logger.debug("profile=%s", profile)
         queries = [build_query_text(profile, group) for group in self._muscle_groups]
         logger.debug("queries=%s", queries)
-        vectors = await self._embedder.embed(queries)
+        with latency_phase("embeddings"):
+            vectors = await self._embedder.embed(queries)
         logger.debug("vectors=%s", vectors)
         equipment = equipment_filter(profile)
         logger.debug("equipment=%s", equipment)
@@ -62,9 +65,11 @@ class ExerciseRetriever:
                 retrieved.setdefault(exercise.id, exercise)
         return list(retrieved.values())
 
+    @timed("catalogue")
     async def get_by_ids(self, ids: Sequence[int]) -> list[Exercise]:
         return await self._exercise_repository.get_by_ids(ids)
 
+    @timed("retrieval", action="exercise_swap")
     async def retrieve_alternatives(
         self,
         profile: InterviewerProfile,
@@ -89,7 +94,8 @@ class ExerciseRetriever:
             f"| target: {source.target} | equipment: {', '.join(equipment)}"
             f" | variation: {reason}"
         )
-        vectors = await self._embedder.embed([query])
+        with latency_phase("embeddings"):
+            vectors = await self._embedder.embed([query])
         if len(vectors) != 1:
             raise ValueError("The embedder must return exactly one variation vector")
         candidates = await self._exercise_repository.search(

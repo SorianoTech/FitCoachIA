@@ -17,6 +17,7 @@ from fitcoach.domain.trainer_plan import (
     TrainerGenerationTrace,
     TrainingPlan,
 )
+from fitcoach.domain.training_lifecycle import expected_end, utc_now
 from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
@@ -24,6 +25,7 @@ from fitcoach.infrastructure.database.models import (
     ModelPriceRecord,
     ProcessedUpdateRecord,
     TokenUsageRecord,
+    TrainingMesocycleRecord,
     TrainingPlanRecord,
     TrainingSessionRecord,
 )
@@ -137,6 +139,9 @@ class PostgresConversationRepository:
             delete(TrainingPlanRecord).where(TrainingPlanRecord.chat_id == chat_id)
         )
         await self._session.execute(
+            delete(TrainingMesocycleRecord).where(TrainingMesocycleRecord.chat_id == chat_id)
+        )
+        await self._session.execute(
             delete(InterviewerProfileRecord).where(InterviewerProfileRecord.chat_id == chat_id)
         )
         await self._session.execute(
@@ -206,9 +211,14 @@ class PostgresConversationRepository:
     async def get_current_plan(self, chat_id: int) -> StoredTrainingPlan | None:
         statement = (
             select(TrainingPlanRecord)
-            .where(TrainingPlanRecord.chat_id == chat_id)
-            .order_by(TrainingPlanRecord.version.desc())
-            .limit(1)
+            .join(
+                TrainingSessionRecord,
+                TrainingSessionRecord.current_plan_id == TrainingPlanRecord.id,
+            )
+            .where(
+                TrainingSessionRecord.chat_id == chat_id,
+                TrainingPlanRecord.chat_id == chat_id,
+            )
         )
         record = (await self._session.scalars(statement)).first()
         if record is None:
@@ -257,9 +267,15 @@ class PostgresConversationRepository:
                 TrainingPlanRecord.chat_id == chat_id
             )
         )
+        cycle = TrainingMesocycleRecord(
+            chat_id=chat_id, started_at=utc_now(), expected_end_at=expected_end(utc_now())
+        )
+        self._session.add(cycle)
+        await self._session.flush()
         plan_record = TrainingPlanRecord(
             chat_id=chat_id,
             version=(current_version or 0) + 1,
+            mesocycle_id=cycle.id,
             plan=plan.model_dump(mode="json"),
             report=report,
             model=trace.model if trace else None,

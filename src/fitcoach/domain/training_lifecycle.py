@@ -95,6 +95,7 @@ class TrainingWorkflow(PlanModel):
     kind: Literal["renewal", "exercise_swap"]
     base_plan_id: int
     state: WorkflowState
+    revision: int = 0
     answers: dict[str, str] = Field(default_factory=dict)
     review: TrainingReview | None = None
     effective_profile: InterviewerProfile | None = None

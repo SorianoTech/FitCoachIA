@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -84,6 +85,13 @@ class TrainingPlanRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
+    mesocycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="SET NULL")
+    )
+    parent_plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="SET NULL")
+    )
+    change_kind: Mapped[str] = mapped_column(String(32), server_default="initial")
     plan: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     report: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -110,6 +118,58 @@ class TrainingSessionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class TrainingMesocycleRecord(Base):
+    __tablename__ = "training_mesocycles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    previous_cycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="SET NULL")
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expected_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reminders_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    message_thread_id: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class TrainingWorkflowRecord(Base):
+    __tablename__ = "training_workflows"
+    __table_args__ = (
+        Index(
+            "uq_training_workflows_open_chat",
+            "chat_id",
+            unique=True,
+            postgresql_where=text("state IN ('reviewing', 'generating', 'awaiting_confirmation')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    base_plan_id: Mapped[int] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+
+class TrainingNotificationRecord(Base):
+    __tablename__ = "training_notifications"
+    __table_args__ = (
+        UniqueConstraint("mesocycle_id", "occasion", name="uq_training_notifications_occasion"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mesocycle_id: Mapped[int] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="CASCADE"), nullable=False
+    )
+    occasion: Mapped[int] = mapped_column(default=0, server_default="0")
+    state: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
 
 
 class ProcessedUpdateRecord(Base):

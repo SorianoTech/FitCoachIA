@@ -31,6 +31,7 @@ from fitcoach.service.agent.plan_evaluator import Severity, estimate_session_min
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.agent.training_adaptation_chain import TrainingAdaptationChain
 from fitcoach.service.training_controls import training_keyboard
+from fitcoach.service.training_preview import details, preview
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,12 @@ class TrainingService:
             return [Constants.TRAINING_CALLBACK_INVALID]
         action = parts[1]
         value = parts[4] if len(parts) == 5 else ""
+        if (
+            action == "details"
+            and workflow.draft is not None
+            and workflow.state == "awaiting_confirmation"
+        ):
+            return details(workflow)
         if (
             action == "accept"
             and workflow.draft is not None
@@ -635,6 +642,7 @@ class TrainingService:
         if stored is None:
             raise TrainingConflictError("Missing base plan")
         chosen = workflow.options[option - 1]
+        workflow.answers["selected_exercise_id"] = str(chosen.exercise.exercise_id)
         workflow.draft = self._swap_draft(
             workflow.base_draft or stored.plan, workflow.swap, chosen.exercise
         )
@@ -680,26 +688,4 @@ class TrainingService:
                 ),
                 Constants.TRAINING_MESSAGES["choose"].format(id=workflow.id),
             ]
-        result = [
-            Constants.TRAINING_MESSAGES["draft"].format(id=workflow.id, report=workflow.report)
-        ]
-        if workflow.answers.get("interpretation"):
-            result.append(workflow.answers["interpretation"])
-        profile = workflow.effective_profile
-        if profile is not None:
-            result.append(
-                Constants.TRAINING_MESSAGES["context"].format(
-                    goal=profile.goal.primary,
-                    days=profile.commitment.days_per_week,
-                    minutes=profile.commitment.minutes_per_session,
-                    environment=profile.training.environment,
-                    equipment=", ".join(profile.training.equipment),
-                    sleep=profile.sleep.average_hours,
-                    injuries="; ".join(
-                        f"{item.location}: {item.restriction}" for item in profile.injuries
-                    )
-                    or Constants.TRAINING_MESSAGES["no_injuries"],
-                )
-            )
-        result.append(Constants.TRAINING_MESSAGES["confirm_draft"].format(id=workflow.id))
-        return result
+        return [preview(workflow)]

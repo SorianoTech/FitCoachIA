@@ -57,6 +57,7 @@ def training_keyboard(
         if workflow.kind == "renewal":
             rows.append([button(Constants.TRAINING_BUTTONS["date"], "dates")])
         rows.extend([
+            [button(Constants.TRAINING_BUTTONS["details"], "details")],
             [button(Constants.TRAINING_BUTTONS["swap"], "swap")],
             [button(Constants.TRAINING_BUTTONS["cancel"], "cancel")],
         ])

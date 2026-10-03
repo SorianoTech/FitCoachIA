@@ -130,6 +130,24 @@ class TestTrainerFlowIntegration:
         )
         assert flow["state"] == "awaiting_confirmation"
         assert json.loads(flow["payload"])["draft"] is not None
+        sent = stub.get("/__sent").json()
+        card = sent[-1]
+        assert "TU SIGUIENTE MESOCICLO" in card["text"]
+        assert "Borrador " not in card["text"]
+        assert "Contexto propuesto" not in card["text"]
+        assert len(card["text"]) <= 4096
+        keyboard = json.loads(card["reply_markup"])["inline_keyboard"]
+        details_button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:details:")
+        )
+        client.post("/webhook/response", json=_callback(32, details_button["callback_data"]))
+        shown = [message["text"] for message in stub.get("/__sent").json()]
+        assert "PLAN COMPLETO PROPUESTO" in shown
+        assert any("SEMANA 4" in text for text in shown)
+        assert shown[-1].startswith("TU SIGUIENTE MESOCICLO")
         assert (
             await app_db.fetchval(
                 "SELECT current_plan_id FROM training_sessions WHERE chat_id = $1", CHAT_ID

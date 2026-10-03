@@ -111,7 +111,8 @@ async def test_review_generates_draft_not_active_plan(collaborators: tuple) -> N
     context = trainer.generate_next_plan.await_args.args[0]
     assert context.previous_version == 1
     assert context.prescribed_summary["4"]["pectorals"] == 9
-    assert any("confirmar 1" in item for item in result)
+    assert len(result) == 1
+    assert "TU SIGUIENTE MESOCICLO" in result[0]
     repository.accept.assert_not_awaited()
     assert flow.state == "awaiting_confirmation"
 

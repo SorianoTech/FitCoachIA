@@ -45,6 +45,14 @@ Elegir fecha ofrece mañana, próximo lunes u otra fecha; solo esta última pide
 se puede seleccionar con su propio botón. El cierre ofrece «Sí, he terminado» o
 «Todavía no (recordar en 7 días)». Los comandos siguientes siguen como alternativa.
 
+El borrador se presenta en una sola tarjeta compacta con objetivo, frecuencia,
+duración máxima de las sesiones, ejercicios de la primera semana y progresión de
+series/RPE del bloque. Se construye desde el plan validado, no desde un nuevo resumen
+del modelo. Las restricciones y alertas siguen visibles antes de aceptar.
+«Ver plan completo y detalles» despliega todas las semanas, descansos, notas, informe,
+revisión interpretada y perfil efectivo; termina con la tarjeta y los botones de decisión.
+Consultar detalles no cambia el borrador ni consume una llamada al LLM.
+
 El webhook admite `callback_query` y responde inmediatamente a las pulsaciones.
 Cada botón lleva el id y revisión del flujo; las acciones comprueban el chat propietario
 y rechazan controles obsoletos. La aceptación verifica también la revisión dentro de

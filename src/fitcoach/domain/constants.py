@@ -145,6 +145,7 @@ Tu nueva vida te espera, ¡Adelante!
         "tomorrow": "Mañana",
         "monday": "Próximo lunes",
         "other": "Otra fecha",
+        "details": "Ver plan completo y detalles",
     }
     TRAINING_DATE_PICKER: Final = "¿Cuándo quieres empezar el nuevo mesociclo?"
     TRAINING_DATE_INPUT: Final = "Escribe la fecha de inicio con formato AAAA-MM-DD (UTC)."
@@ -154,6 +155,50 @@ Tu nueva vida te espera, ¡Adelante!
     TRAINING_CALLBACK_PRIVATE: Final = (
         "Solo el propietario puede confirmar propuestas en su chat privado."
     )
+    TRAINING_PREVIEW: Final = {
+        "renewal": "TU SIGUIENTE MESOCICLO",
+        "swap": "TU CAMBIO DE EJERCICIO",
+        "pending": "Propuesta pendiente de tu aprobación",
+        "schedule": "{days} días/semana · sesiones de hasta {minutes} min",
+        "sessions": "TUS SESIONES · SEMANA 1",
+        "day": "Día {day} · {focus} · {minutes} min",
+        "more": "  + {count} ejercicios más",
+        "progression": "PROGRESIÓN · 4 SEMANAS",
+        "week": "S{week} · {intensity} · {sets} series{rpe}",
+        "rpe": " · RPE máx. {value:g}",
+        "sets_note": "Series totales prescritas por semana, no realizadas.",
+        "swap_scope": "Sustitución del ejercicio {id} desde la semana {week}.\nLas semanas anteriores y las fechas del ciclo no cambian.",
+        "restrictions": "IMPORTANTE · RESTRICCIONES",
+        "flags": "Consulta a un profesional antes de empezar: {flags}",
+        "footer": "¿Te encaja? Confirma abajo o consulta el plan completo antes de decidir.\nTu plan vigente no cambia hasta que aceptes.",
+        "full": "PLAN COMPLETO PROPUESTO",
+        "report": "POR QUÉ ESTE PLAN",
+        "review": "TU REVISIÓN · CAMBIOS INTERPRETADOS",
+        "profile": "DATOS QUE HEMOS TENIDO EN CUENTA",
+        "prescription": "  • {name} — {sets} × {reps} · descanso {rest}s{rpe}",
+        "exercise_rpe": " · RPE {value}",
+        "full_week": "SEMANA {week} · {intensity}",
+        "progression_notes": "INDICACIONES DE PROGRESIÓN",
+        "notes": "    {notes}",
+        "truncated": "Hay más información en «Ver plan completo y detalles».",
+    }
+    TRAINING_GOAL_LABELS: Final = {
+        "gain_muscle": "Ganar músculo",
+        "lose_fat": "Perder grasa",
+        "performance": "Mejorar rendimiento",
+    }
+    TRAINING_ENVIRONMENT_LABELS: Final = {
+        "gym": "Gimnasio",
+        "home": "Casa",
+        "outdoors": "Exterior",
+        "mixed": "Mixto",
+    }
+    TRAINING_INTENSITY_LABELS: Final = {
+        "accumulation": "Acumulación",
+        "intensification": "Intensificación",
+        "peak": "Pico",
+        "deload": "Descarga",
+    }
     TRAINING_MESSAGES: Final = {
         "closed": "Cierre confirmado. Envía /train para continuar la revisión del siguiente bloque.",
         "status": "Mesociclo iniciado el {start}; cierre previsto: {end}. La ejecución no se registra automáticamente. Envía /train si ya has terminado.",

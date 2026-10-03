@@ -182,6 +182,23 @@ async def test_discard_button_cancels_only_the_identified_workflow(collaborators
 
 
 @pytest.mark.asyncio
+async def test_details_button_does_not_modify_or_activate_the_draft(collaborators: tuple) -> None:
+    service, repository, conversation, _, _ = collaborators
+    workflow = repository.start.return_value
+    workflow.state = "awaiting_confirmation"
+    workflow.draft = conversation.get_current_plan.return_value.plan
+    workflow.report = "Detailed report"
+    repository.get_workflow.return_value = workflow
+    before = workflow.model_dump_json()
+    messages = await service.callback(7, "tr:details:1:0")
+    assert any("PLAN COMPLETO PROPUESTO" in text for text in messages)
+    assert "TU SIGUIENTE MESOCICLO" in messages[-1]
+    assert workflow.model_dump_json() == before
+    repository.accept.assert_not_awaited()
+    repository.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_callback_duplicate_update_is_not_processed() -> None:
     from datetime import timedelta
 

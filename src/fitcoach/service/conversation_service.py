@@ -162,6 +162,7 @@ class ConversationService:
         if (
             Constants.TRAINING_CALLBACK_INVALID not in responses
             and Constants.TRAINING_CONFLICT_MESSAGE not in responses
+            and not (query.data or "").startswith("tr:details:")
         ):
             try:
                 await self._bot.edit_message_reply_markup(

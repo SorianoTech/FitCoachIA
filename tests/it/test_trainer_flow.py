@@ -99,6 +99,59 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    @pytest.mark.parametrize("natural", [True, False])
+    async def test_swap_request_uses_buttons_and_keeps_current_plan(
+        self,
+        client: httpx.Client,
+        app_db: asyncpg.Connection,
+        stub: httpx.Client,
+        natural: bool,
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        text = "Quiero cambiar el press de banca, prefiero otro ejercicio"
+        client.post("/webhook/response", json=_update(20, text if natural else "/train cambiar"))
+        sent = stub.get("/__sent").json()[-1]
+        assert sent["text"] == "¿Qué ejercicio quieres cambiar? Elige abajo."
+        keyboard = json.loads(sent["reply_markup"])["inline_keyboard"]
+        button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:exercise:")
+            and button["callback_data"].endswith(":1")
+        )
+        client.post("/webhook/response", json=_callback(21, button["callback_data"]))
+        keyboard = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])["inline_keyboard"]
+        week = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:week:")
+            and button["callback_data"].endswith(":2")
+        )
+        client.post("/webhook/response", json=_callback(22, week["callback_data"]))
+        if not natural:
+            keyboard = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])["inline_keyboard"]
+            reason = next(
+                button
+                for row in keyboard
+                for button in row
+                if button["callback_data"].endswith(":preference")
+            )
+            client.post("/webhook/response", json=_callback(23, reason["callback_data"]))
+        flow = await app_db.fetchrow(
+            "SELECT state, payload FROM training_workflows WHERE chat_id=$1", CHAT_ID
+        )
+        assert flow["state"] == "awaiting_confirmation"
+        payload = json.loads(flow["payload"])
+        assert payload["swap"]["reason"] == (text if natural else "Prefiero otro ejercicio")
+        assert payload["swap"]["from_week"] == 2
+        assert (
+            await app_db.fetchval("SELECT count(*) FROM training_plans WHERE chat_id=$1", CHAT_ID)
+            == 1
+        )
+
     async def test_quick_closure_generates_draft_with_one_button(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:

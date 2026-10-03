@@ -269,6 +269,18 @@ class StubHandler(BaseHTTPRequestHandler):
         # los agentes siguientes. Hay que mirar la linea de ROLE.
         if "You are the Trainer" in system:
             if "This is a read-only consultation" in system:
+                if (
+                    messages
+                    and isinstance(messages[-1], dict)
+                    and "quiero cambiar" in str(messages[-1].get("content", "")).lower()
+                ):
+                    return {
+                        "status": "answer",
+                        "reply": "Elige el ejercicio con los botones.",
+                        "report": None,
+                        "plan": None,
+                        "intent": "exercise_swap",
+                    }
                 return {
                     "status": "answer",
                     "reply": "El plan indica 120 segundos de descanso.",

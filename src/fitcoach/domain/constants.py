@@ -98,6 +98,23 @@ Tu nueva vida te espera, ¡Adelante!
         "Puedes explicarlo con tus palabras; indica también si hay molestias nuevas."
     )
     TRAINING_REVIEW_UNKNOWN: Final = "No informado; no inferir resultados ni ejecución."
+    TRAINING_SWAP_PICKER: Final = "¿Qué ejercicio quieres cambiar? Elige abajo."
+    TRAINING_SWAP_WEEK: Final = (
+        "¿Desde qué semana quieres aplicar el cambio? Las anteriores se conservan."
+    )
+    TRAINING_SWAP_REASON: Final = "¿Por qué quieres cambiarlo?"
+    TRAINING_SWAP_REASON_INPUT: Final = (
+        "Cuéntame el motivo. Si falta material, indica cuál; si hay molestias, descríbelas."
+    )
+    TRAINING_SWAP_REASONS: Final = {
+        "equipment": "No tengo el material",
+        "preference": "Prefiero otro ejercicio",
+        "difficulty": "Me resulta difícil",
+        "other": "Otro motivo",
+    }
+    TRAINING_SWAP_NAVIGATION: Final = {"previous": "Anterior", "next": "Siguiente"}
+    TRAINING_SWAP_WEEK_BUTTON: Final = "Semana {week}"
+    TRAINING_SWAP_DAY_BUTTON: Final = "Día {day} · {name}"
     TRAINING_EQUIPMENT_QUESTION: Final = "¿Qué material tienes disponible para entrenar? Indica el tipo de pesas, máquinas o accesorios."
     TRAINING_REVIEW_BUTTONS: Final = {
         "good": "Terminé y todo bien",

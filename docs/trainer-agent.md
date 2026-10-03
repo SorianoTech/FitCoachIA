@@ -98,7 +98,17 @@ dos versiones. Si cambió el plan base, la propuesta no puede activarse.
 
 ## Sustituir un ejercicio
 
-`/train cambiar` muestra los ids del plan y pide el ejercicio, la semana actual y el motivo.
+`/train cambiar` muestra un selector por botones con nombres y sesión de referencia,
+paginado en grupos de ocho. Después permite elegir la semana y el motivo; solo solicita
+texto para concretar material o un motivo libre. Las semanas ofrecidas contienen el
+ejercicio seleccionado. En un borrador nuevo aplica desde la semana 1 por defecto.
+Los callbacks verifican identidad, revisión, paso y pertenencia al plan.
+Los mensajes naturales («quiero cambiar el press de banca», «no tengo barra, ¿podemos
+sustituirlo?») se detectan en la consulta mediante `intent="exercise_swap"` y abren
+el mismo selector, conservando el mensaje como motivo. No se exige un ID ni se ejecuta
+una modificación por decisión del modelo. Se reutiliza la salida estructurada existente,
+en lugar de añadir una tool con permisos de escritura; preguntas hipotéticas no deben
+iniciar un cambio. El usuario confirma el ejercicio, el alcance y la propuesta.
 También se puede usar `/train cambiar ID SEMANA MOTIVO`, por ejemplo
 `/train cambiar 101 2 no dispongo de barra`.
 La semana no se deduce como ejecución real a partir del calendario.

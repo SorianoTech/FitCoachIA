@@ -200,6 +200,88 @@ async def test_details_button_does_not_modify_or_activate_the_draft(collaborator
 
 
 @pytest.mark.asyncio
+async def test_swap_picker_validates_buttons_and_collects_reason(collaborators: tuple) -> None:
+    service, repository, _, _, adaptation = collaborators
+    flow = TrainingWorkflow(id=3, kind="exercise_swap", base_plan_id=10, state="reviewing")
+    repository.start.return_value = flow
+    repository.claim_generation.return_value = flow
+    repository.get_workflow.return_value = flow
+    assert await service.handle(7, "/train cambiar") == [Constants.TRAINING_SWAP_PICKER]
+    markup = await service.keyboard(7, [Constants.TRAINING_SWAP_PICKER])
+    assert "barbell bench press" in markup.inline_keyboard[0][0].text
+    assert await service.callback(7, "tr:exercise:3:0:999") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:week:3:0:2") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:exercise:3:0:101") == [Constants.TRAINING_SWAP_WEEK]
+    assert await service.handle(7, "/train") == [Constants.TRAINING_SWAP_WEEK]
+    assert await service.callback(7, "tr:week:3:0:8") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:week:3:0:2") == [Constants.TRAINING_SWAP_REASON]
+    assert await service.callback(7, "tr:reason:3:0:equipment") == [
+        Constants.TRAINING_SWAP_REASON_INPUT
+    ]
+    service._retriever.retrieve_alternatives.return_value = []
+    await service.handle(7, "No dispongo de barra")
+    assert flow.swap.exercise_id == 101
+    assert flow.swap.from_week == 2
+    assert flow.swap.reason == "No dispongo de barra"
+    adaptation.extract_swap_constraints.assert_awaited_once()
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_natural_request_preserves_reason_and_draft_defaults_to_week_one(
+    collaborators: tuple,
+) -> None:
+    service, repository, conversation, _, adaptation = collaborators
+    flow = repository.start.return_value
+    flow.state = "awaiting_confirmation"
+    flow.draft = conversation.get_current_plan.return_value.plan
+    repository.get_workflow.return_value = flow
+    text = "Quiero cambiar el press porque no tengo barra"
+    assert await service.handle(7, "/train cambiar", swap_message=text) == [
+        Constants.TRAINING_SWAP_PICKER
+    ]
+    service._retriever.retrieve_alternatives.return_value = []
+    await service.callback(7, "tr:exercise:1:0:101")
+    assert flow.swap.from_week == 1
+    assert flow.swap.reason == text
+    adaptation.extract_swap_constraints.assert_awaited_once()
+    repository.accept.assert_not_awaited()
+
+
+def test_swap_picker_paginates_and_weeks_exclude_missing_exercise() -> None:
+    from fitcoach.domain.trainer_plan import TrainingPlan
+    from tests.unit_test.conftest import build_plan_payload
+
+    plan = TrainingPlan.model_validate(build_plan_payload())
+    template = plan.weeks[0].days[0].exercises[0]
+    plan.weeks[0].days[0].exercises = [
+        template.model_copy(update={"exercise_id": index, "name": f"Exercise {index}"})
+        for index in range(1, 12)
+    ]
+    flow = TrainingWorkflow(
+        id=9,
+        revision=2,
+        kind="exercise_swap",
+        base_plan_id=10,
+        state="reviewing",
+        answers={"swap_step": "exercise"},
+    )
+    markup = training_keyboard(flow, [Constants.TRAINING_SWAP_PICKER], plan)
+    assert len(markup.inline_keyboard) == 10
+    assert markup.inline_keyboard[-2][0].callback_data == "tr:page:9:2:1"
+    flow.answers["swap_page"] = "1"
+    markup = training_keyboard(flow, [], plan)
+    assert markup.inline_keyboard[-2][0].text == "Anterior"
+    assert all(
+        len(button.callback_data.encode()) <= 64 for row in markup.inline_keyboard for button in row
+    )
+    flow.answers.update({"swap_step": "week", "swap_exercise": "1"})
+    markup = training_keyboard(flow, [], plan)
+    assert markup.inline_keyboard[0][0].callback_data == "tr:week:9:2:1"
+    assert len(markup.inline_keyboard) == 2
+
+
+@pytest.mark.asyncio
 async def test_callback_duplicate_update_is_not_processed() -> None:
     from datetime import timedelta
 

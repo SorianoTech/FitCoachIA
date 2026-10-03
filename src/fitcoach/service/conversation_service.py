@@ -530,16 +530,32 @@ class ConversationService:
 
         if self._training_service is not None and reply.turn.intent != "answer":
             action = "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train"
-            await self._training_response(ctx, chat_id, message_thread_id, action)
+            await self._training_response(
+                ctx,
+                chat_id,
+                message_thread_id,
+                action,
+                swap_message=user_message if reply.turn.intent == "exercise_swap" else None,
+            )
 
     async def _training_response(
-        self, ctx: str, chat_id: int, thread_id: int | None, text: str
+        self,
+        ctx: str,
+        chat_id: int,
+        thread_id: int | None,
+        text: str,
+        *,
+        swap_message: str | None = None,
     ) -> None:
         if self._training_service is None:
             return
         try:
             await self._training_service.remember_thread(chat_id, thread_id)
-            responses = await self._training_service.handle(chat_id, text)
+            responses = (
+                await self._training_service.handle(chat_id, text, swap_message=swap_message)
+                if swap_message
+                else await self._training_service.handle(chat_id, text)
+            )
         except AgentError as error:
             logger.warning("%s controlled training error: %s", ctx, error.code)
             await self._send(chat_id, thread_id, self._message_for_agent_error(error.code))

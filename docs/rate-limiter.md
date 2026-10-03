@@ -166,6 +166,14 @@ tier de la cuenta, no `rate_limit_token_limit`.
 
 ## 3. Cómo corta
 
+Los flujos del entrenador aplican la cuota por **acción**, no únicamente por comando:
+renovar, interpretar una revisión y proponer alternativas usan el umbral soft;
+consultar el plan usa hard. Confirmar, cancelar, editar respuestas, cambiar preferencias
+de avisos y consultar `/progress` no invocan al modelo y siguen disponibles sin cuota.
+Así, escribir una renovación como texto libre no evita el límite soft.
+Cada llamada de interpretación/generación y cada reparación registra sus tokens,
+incluidos los fallos. Los avisos programados no consumen tokens.
+
 Un único contador —tokens del chat en la ventana— con **dos umbrales**, de modo que lo caro caiga
 primero y se pueda terminar lo empezado:
 

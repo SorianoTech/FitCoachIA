@@ -2,6 +2,19 @@ name: fitcoach-local
 
 # El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
 services:
+  training-reminders:
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      fitcoach-ia:
+        condition: service_healthy
+    networks:
+      - fit-coach-net
 
   postgres:
     image: postgres:16-alpine

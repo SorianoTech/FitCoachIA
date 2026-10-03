@@ -22,23 +22,94 @@ atención profesional.
    añade el perfil y hace **una** llamada al modelo.
 6. Valida el JSON y, además, comprueba que **todos los `exercise_id` vienen del catálogo
    recuperado**. Si no cumple, solicita una única reparación.
-7. Envía el informe al usuario y persiste el plan como una nueva versión.
+7. Persiste y activa el primer plan antes de enviar el informe. Con un plan vigente,
+   `/train` abre la revisión descrita más abajo, no regenera silenciosamente.
 
 Los mensajes posteriores, mientras la sesión de entrenamiento está `active`, van al modo preguntas:
-se consulta en PostgreSQL la última versión del plan, el perfil disponible y el historial propio del
+se consulta en PostgreSQL el plan apuntado por `training_sessions.current_plan_id`, el perfil efectivo y el historial propio del
 agente. No se llama al embedder ni a pgVector.
 
 Este modo utiliza `prompts/trainer/answer_prompt.txt`, sin la skill de generación ni el catálogo.
 El plan guardado prevalece sobre el historial y el perfil aporta restricciones y contexto de
 seguridad. Si falta información, el entrenador no debe inventarla. Las consultas son de solo lectura:
-no sustituyen ejercicios, no ajustan el plan ni crean versiones. Ante una petición de cambios, el
-entrenador explica esta limitación; las modificaciones persistentes requieren un flujo futuro.
+no sustituyen ejercicios, no ajustan el plan ni crean versiones. Una intención de renovación o
+sustitución abre un flujo independiente; nunca autoriza por sí misma una modificación.
+Durante una revisión abierta, `/train consulta PREGUNTA` permite consultar sin responder la revisión.
+
+## Continuidad, revisión y confirmación
+
+El ciclo dura cuatro semanas desde el inicio confirmado, no desde la creación del borrador.
+Al alcanzar la fecha prevista, el bot propone revisar el bloque sin asumir que se realizaron
+las sesiones. También se puede declarar su finalización antes. No hay diario de ejecución:
+el cierre y los resultados son autodeclarados, y lo desconocido sigue siendo desconocido.
+
+`/train` con plan vigente pide confirmar el cierre y recoge seis respuestas breves:
+adherencia, resultados, recuperación, molestias, preferencias y cambios de disponibilidad/objetivo.
+El flujo se guarda y puede reanudarse. Los cambios confirmados de entrenamiento, sueño,
+restricciones y objetivo se guardan como perfil efectivo; no se reinicia `/interview` ni se
+reescribe el informe original del entrevistador.
+
+La renovación recibe el perfil efectivo, el plan previo, sus series prescritas por target/semana
+y la revisión. Con buena adherencia y recuperación conserva ejercicios útiles y progresa
+gradualmente; con baja adherencia simplifica, y con fatiga reduce o mantiene estímulo.
+El estancamiento no implica subir siempre el volumen. La descarga no es la base del nuevo bloque.
+No se inventan cargas realizadas ni se garantiza mejoría. Nuevos síntomas preocupantes bloquean
+la generación y requieren atención profesional.
+
+El resultado es un **borrador no activo**, con informe de cambios y su justificación.
+`/train confirmar PROPUESTA [AAAA-MM-DD]` lo activa y asigna una versión. La fecha opcional
+es el inicio del nuevo mesociclo, en UTC; por defecto se usa la confirmación.
+`/train cancelar` descarta la propuesta sin cambiar el plan. Confirmar dos veces no crea
+dos versiones. Si cambió el plan base, la propuesta no puede activarse.
+`/train editar CAMPO TEXTO` corrige una respuesta e invalida el borrador; los campos son
+`adherence`, `results`, `recovery`, `discomfort`, `preferences` y `changes`.
+
+## Sustituir un ejercicio
+
+`/train cambiar` muestra los ids del plan y pide el ejercicio, la semana actual y el motivo.
+También se puede usar `/train cambiar ID SEMANA MOTIVO`, por ejemplo
+`/train cambiar 101 2 no dispongo de barra`.
+La semana no se deduce como ejecución real a partir del calendario.
+
+El RAG obtiene el ejercicio por id y busca alternativas del mismo target y grupo verificado,
+excluyendo el original y filtrando el material declarado (no todo el gimnasio).
+Si falta información o no hay candidatos adecuados, informa y no inventa alternativas.
+La similitud semántica no certifica equivalencia biomecánica ni seguridad médica.
+La propuesta incluye hasta tres opciones y ajustes conservadores de prescripción.
+
+`/train elegir PROPUESTA OPCIÓN` crea el borrador de sustitución y
+`/train confirmar PROPUESTA` lo aplica. Cambia las ocurrencias desde la semana indicada;
+las anteriores quedan intactas. Mantiene la progresión relativa de series y limita RPE,
+incluida la descarga. Una sustitución crea una versión del **mismo mesociclo**, sin
+reiniciar fechas. En una renovación, los cambios deseados se recogen en `preferences`
+y pueden corregirse mediante `/train editar preferences ...` antes de aceptar.
+
+## Fechas y avisos
+
+`/progress` muestra el estado del mesociclo, no un registro detallado de rendimiento.
+`/train posponer AAAA-MM-DD` fija otra fecha prevista cuando aún no se ha completado.
+`/train avisos off|on` guarda la preferencia, que se conserva al renovar.
+
+La interacción con el bot y un worker independiente comparten eventos PostgreSQL con
+clave por ciclo/ocasión y leases. Hay una propuesta inicial por ciclo; solo una
+posposición explícita habilita otra ocasión. El worker no llama al LLM.
+Los avisos automáticos requieren `training_reminders_enabled=true`; ver
+[entornos-y-despliegue.md](entornos-y-despliegue.md#worker-de-avisos-de-entrenamiento).
+
+Los planes anteriores a esta funcionalidad conservan sus versiones, pero no se inventa
+su fecha de inicio a partir de la creación. `/train inicio AAAA-MM-DD` confirma la fecha,
+o `/train` permite confirmar que ya acabaron. Hasta entonces no reciben avisos por antigüedad.
+
+La entrega externa es **al menos una vez**: un fallo después de enviar a Telegram y antes
+de registrar éxito puede duplicar excepcionalmente un aviso. Las reservas evitan duplicados
+normales entre workers/interacciones, no prometen exactamente una entrega externa.
 
 ## Comandos y estados
 
-`/train` genera un plan nuevo. Repetirlo **no sobrescribe** el anterior: crea la versión N+1 y la
-sesión apunta a ella. Así el Agente 3 (Nutricionista) podrá consultar el volumen de entrenamiento
-sobre el que se calculó una dieta.
+El primer `/train` genera y activa un plan. Repetirlo abre o reanuda revisión y renovación.
+Solo aceptar un borrador crea la versión N+1 y actualiza el puntero vigente; las versiones
+anteriores no se sobrescriben. Versión y mesociclo no son equivalentes: una sustitución
+confirmada pertenece al mismo ciclo.
 
 Un mensaje sin comando se enruta según dos estados:
 
@@ -48,6 +119,9 @@ Un mensaje sin comando se enruta según dos estados:
 | `in_progress` | — | `interviewer` |
 | `completed` | `null` | Mensaje indicando que use `/train` |
 | `completed` | `active` | `trainer`, modo preguntas |
+
+Un flujo abierto de entrenamiento recibe las respuestas libres antes del modo preguntas.
+Los comandos explícitos de consulta y control permiten consultar, corregir o cancelar.
 
 `/interview` borra el historial, el perfil **y también el plan y la sesión de entrenamiento**: un
 perfil nuevo invalida el mesociclo anterior.
@@ -61,6 +135,9 @@ el mensaje según el comando y los estados de entrevista y entrenamiento:
 | --- | --- | --- |
 | `/train`, con perfil disponible | `generate_plan()` | `trainer/system_prompt.txt` + skill seleccionada + catálogo recuperado; el perfil se añade como mensaje. |
 | Mensaje sin comando, con entrevista completada y entrenamiento activo | `answer()` | `trainer/answer_prompt.txt`; se añaden el historial, el plan guardado, el perfil disponible y la pregunta. Sin skill ni catálogo. |
+| Revisión completa | `generate_next_plan()` | Prompt de generación + `renewal_prompt.txt`, contexto adaptativo y catálogo actualizado. |
+| Interpretación de revisión | `extract_review()` | `review_prompt.txt` y esquema limitado de cambios de entrenamiento. |
+| Petición de sustitución | `propose_swap()` | `swap_prompt.txt`, perfil y candidatos RAG filtrados. |
 
 En generación, `ia_trainer_skill` selecciona `trainer` o `trainer-dev`. `PromptLoader` ensambla
 `system_prompt.txt` con esa skill al crear la cadena y el catálogo se inserta en cada generación.
@@ -189,8 +266,11 @@ agente existe para evitar, mientras que una pregunta se puede responder desde el
 
 | Tabla | Contenido | Cuándo se actualiza |
 | --- | --- | --- |
-| `training_plans` | Plan JSON e informe, versionados por `chat_id`. | En cada `/train` correcto. |
-| `training_sessions` | Estado `active` y plan vigente. | Al generar o regenerar un plan. |
+| `training_plans` | Plan JSON e informe, versionados por `chat_id`, con ciclo y plan padre. | Primer plan o confirmación de un borrador. |
+| `training_sessions` | Estado `active` y puntero autoritativo del vigente. | Primera activación o confirmación. |
+| `training_mesocycles` | Inicio, fin previsto, cierre declarado y preferencias de avisos. | Inicio, cierre, renovación o controles de fechas. |
+| `training_workflows` | Revisión, perfil efectivo, candidatos, borrador, estado y aprobación. | En cada avance del flujo; conserva los cerrados. |
+| `training_notifications` | Eventos de aviso, ocasión, intentos y lease. | Detección, envío, reintento o posposición. |
 | `conversation_messages` | Turnos, con la columna `agent` que separa entrevista de entrenamiento. | En cada turno válido. |
 | `token_usage` | Una fila por llamada al modelo, con `agent = 'trainer'`. | En cada llamada, incluidas las fallidas. |
 

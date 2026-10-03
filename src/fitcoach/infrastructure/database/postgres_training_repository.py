@@ -1,8 +1,9 @@
 import json
 from datetime import datetime, timedelta
+from typing import Literal
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +42,7 @@ class PostgresTrainingRepository:
                 TrainingSessionRecord.current_plan_id == TrainingPlanRecord.id,
             )
             .where(TrainingSessionRecord.chat_id == chat_id, TrainingPlanRecord.chat_id == chat_id)
+            .execution_options(populate_existing=True)
         )
 
     async def get_cycle(self, chat_id: int) -> Mesocycle | None:
@@ -57,9 +59,11 @@ class PostgresTrainingRepository:
 
     async def get_workflow(self, chat_id: int) -> TrainingWorkflow | None:
         record = await self._session.scalar(
-            select(TrainingWorkflowRecord).where(
+            select(TrainingWorkflowRecord)
+            .where(
                 TrainingWorkflowRecord.chat_id == chat_id, TrainingWorkflowRecord.state.in_(_OPEN)
             )
+            .execution_options(populate_existing=True)
         )
         return self._decode(record) if record else None
 
@@ -67,18 +71,20 @@ class PostgresTrainingRepository:
     def _decode(record: TrainingWorkflowRecord) -> TrainingWorkflow:
         return TrainingWorkflow.model_validate_json(json.dumps(record.payload))
 
-    async def start(self, chat_id: int, kind: str) -> TrainingWorkflow:
+    async def start(
+        self, chat_id: int, kind: Literal["renewal", "exercise_swap"]
+    ) -> TrainingWorkflow:
         await self._lock(chat_id)
         existing = await self.get_workflow(chat_id)
         if existing:
             await self._session.commit()
             return existing
-        session = await self._session.get(TrainingSessionRecord, chat_id)
+        session = await self._session.get(TrainingSessionRecord, chat_id, populate_existing=True)
         if session is None or session.current_plan_id is None:
             raise TrainingConflictError("No active training plan")
         workflow = TrainingWorkflow(
             id=0,
-            kind="exercise_swap" if kind == "exercise_swap" else "renewal",
+            kind=kind,
             base_plan_id=session.current_plan_id,
             state="reviewing",
         )
@@ -97,13 +103,15 @@ class PostgresTrainingRepository:
 
     async def save(self, chat_id: int, workflow: TrainingWorkflow) -> TrainingWorkflow:
         await self._lock(chat_id)
-        record = await self._session.get(TrainingWorkflowRecord, workflow.id)
+        record = await self._session.get(
+            TrainingWorkflowRecord, workflow.id, populate_existing=True
+        )
         if record is None or record.chat_id != chat_id:
             raise TrainingConflictError("Unknown proposal")
         current = self._decode(record)
         if current.revision != workflow.revision or current.state not in _OPEN:
             raise TrainingConflictError("Proposal changed concurrently")
-        session = await self._session.get(TrainingSessionRecord, chat_id)
+        session = await self._session.get(TrainingSessionRecord, chat_id, populate_existing=True)
         if session is None or session.current_plan_id != workflow.base_plan_id:
             record.state = "stale"
             current.state = "stale"
@@ -131,7 +139,9 @@ class PostgresTrainingRepository:
 
     async def accept(self, chat_id: int, workflow_id: int, start: datetime) -> int:
         await self._lock(chat_id)
-        record = await self._session.get(TrainingWorkflowRecord, workflow_id)
+        record = await self._session.get(
+            TrainingWorkflowRecord, workflow_id, populate_existing=True
+        )
         if record is None or record.chat_id != chat_id:
             raise TrainingConflictError("Unknown proposal")
         workflow = self._decode(record)
@@ -141,7 +151,13 @@ class PostgresTrainingRepository:
                 raise TrainingConflictError("Accepted proposal has no plan")
             await self._session.commit()
             return int(accepted_id)
-        session = await self._session.get(TrainingSessionRecord, chat_id)
+        session = await self._session.get(TrainingSessionRecord, chat_id, populate_existing=True)
+        if session is not None and session.current_plan_id != workflow.base_plan_id:
+            workflow.state = "stale"
+            record.state = workflow.state
+            record.payload = workflow.model_dump(mode="json")
+            await self._session.commit()
+            raise TrainingConflictError("Base plan is no longer current")
         if (
             workflow.state != "awaiting_confirmation"
             or workflow.draft is None
@@ -239,6 +255,19 @@ class PostgresTrainingRepository:
         if cycle.completed_at:
             raise TrainingConflictError("A closed mesocycle cannot be postponed")
         cycle.expected_end_at = until
+        await self._session.execute(
+            insert(TrainingNotificationRecord)
+            .values(mesocycle_id=cycle.id, occasion=0, due_at=until, state="cancelled")
+            .on_conflict_do_nothing()
+        )
+        await self._session.execute(
+            update(TrainingNotificationRecord)
+            .where(
+                TrainingNotificationRecord.mesocycle_id == cycle.id,
+                TrainingNotificationRecord.state.in_(("pending", "sending")),
+            )
+            .values(state="cancelled", lease_until=None)
+        )
         occasion = await self._session.scalar(
             select(func.max(TrainingNotificationRecord.occasion)).where(
                 TrainingNotificationRecord.mesocycle_id == cycle.id
@@ -269,10 +298,11 @@ class PostgresTrainingRepository:
         return None
 
     async def remember_thread(self, chat_id: int, thread_id: int | None) -> None:
+        await self._lock(chat_id)
         cycle = await self._cycle_record(chat_id)
         if cycle and cycle.message_thread_id != thread_id:
             cycle.message_thread_id = thread_id
-            await self._session.commit()
+        await self._session.commit()
 
     async def enqueue_due(self, now: datetime) -> None:
         statement = (

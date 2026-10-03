@@ -11,12 +11,13 @@ from pydantic_core import InitErrorDetails, PydanticCustomError
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.token_usage import TokenUsage
+from fitcoach.domain.trainer_plan import TrainerGenerationTrace, TrainingPlan
 from fitcoach.domain.training_lifecycle import ReviewExtraction, SwapProposal, SwapRequest
 from fitcoach.infrastructure.config.settings import get_ia_settings
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.llm_chain import AsyncChatModel, BaseLLMChain, strict_response_format
 from fitcoach.service.agent.rag_context import build_rag_context
-from fitcoach.service.agent.trainer_chain import build_trainer_model
+from fitcoach.service.agent.trainer_chain import _hash_text, build_trainer_model
 
 ResultT = TypeVar("ResultT", bound=BaseModel)
 
@@ -25,6 +26,7 @@ ResultT = TypeVar("ResultT", bound=BaseModel)
 class AdaptationReply(Generic[ResultT]):
     result: ResultT
     token_usages: list[TokenUsage]
+    trace: TrainerGenerationTrace | None = None
 
 
 class TrainingAdaptationChain:
@@ -34,6 +36,7 @@ class TrainingAdaptationChain:
         self._review = BaseLLMChain(review_model, model_name)
         self._swap = BaseLLMChain(swap_model, model_name)
         self._loader = PromptLoader()
+        self._model_name = model_name
 
     async def extract_review(
         self, profile: InterviewerProfile, answers: dict[str, str]
@@ -60,6 +63,7 @@ class TrainingAdaptationChain:
         request: SwapRequest,
         source: Exercise,
         candidates: Sequence[Exercise],
+        plan: TrainingPlan | None = None,
     ) -> AdaptationReply[SwapProposal]:
         allowed = {item.id: item for item in candidates}
 
@@ -86,25 +90,47 @@ class TrainingAdaptationChain:
                 )
             return proposal
 
+        prompt = (
+            self._loader.load_system_prompt("trainer", "swap_prompt.txt")
+            + "\n"
+            + build_rag_context(candidates)
+        )
         result, usages = await self._swap._invoke_validated(
             [
-                SystemMessage(
-                    content=self._loader.load_system_prompt("trainer", "swap_prompt.txt")
-                    + "\n"
-                    + build_rag_context(candidates)
-                ),
+                SystemMessage(content=prompt),
                 HumanMessage(
                     content=json.dumps({
                         "profile": profile.model_dump(mode="json"),
                         "request": request.model_dump(mode="json"),
                         "source": {"id": source.id, "name": source.name, "target": source.target},
+                        "pending_prescriptions": [
+                            {
+                                "week": week.week,
+                                "day": day.day,
+                                "exercise": item.model_dump(mode="json"),
+                            }
+                            for week in plan.weeks
+                            if week.week >= request.from_week
+                            for day in week.days
+                            for item in day.exercises
+                            if item.exercise_id == request.exercise_id
+                        ]
+                        if plan
+                        else [],
                     })
                 ),
             ],
             SwapProposal,
             validate,
         )
-        return AdaptationReply(result, usages)
+        trace = TrainerGenerationTrace(
+            model=self._model_name,
+            skill_name="trainer-swap",
+            prompt_hash=_hash_text(prompt),
+            skill_hash=_hash_text(self._loader.load_system_prompt("trainer", "swap_prompt.txt")),
+            retrieved_exercise_ids=tuple(sorted(allowed)),
+        )
+        return AdaptationReply(result, usages, trace)
 
 
 @lru_cache

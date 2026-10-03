@@ -13,6 +13,7 @@ from fitcoach.infrastructure.config.settings import (
     IASettings,
     UsageSettings,
     get_ia_settings,
+    get_training_settings,
     get_usage_settings,
 )
 from fitcoach.infrastructure.database.dependencies import get_conversation_repository
@@ -108,6 +109,7 @@ def get_conversation_service(
             trainer_deps.retriever,
             adaptation,
             usage_settings.to_limits(),
+            reminder_max_attempts=get_training_settings().reminder_max_attempts,
         ),
     )
 

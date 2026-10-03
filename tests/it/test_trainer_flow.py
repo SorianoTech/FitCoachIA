@@ -46,7 +46,8 @@ async def app_db() -> asyncpg.Connection:
     # Cada ejecucion parte de cero para este chat: los tests no deben heredar
     # el plan de una ejecucion anterior.
     await connection.execute(
-        "DELETE FROM processed_updates WHERE update_id = ANY($1::bigint[])", [1, 2, 3, 5]
+        "DELETE FROM processed_updates WHERE update_id = ANY($1::bigint[])",
+        [1, 2, 3, 5, *range(20, 40)],
     )
     await connection.execute("DELETE FROM token_usage WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM training_sessions WHERE chat_id = $1", CHAT_ID)
@@ -80,6 +81,94 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_review_draft_and_repeated_confirmation(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        before = await app_db.fetchrow(
+            "SELECT current_plan_id FROM training_sessions WHERE chat_id = $1", CHAT_ID
+        )
+        old_cycle = await app_db.fetchval(
+            "SELECT mesocycle_id FROM training_plans WHERE id = $1", before["current_plan_id"]
+        )
+        for update_id, text in enumerate(
+            [
+                "/train",
+                "sí",
+                "He realizado todas las sesiones",
+                "Mejoran las repeticiones",
+                "Buena recuperación y sueño sin cambios",
+                "No hay molestias nuevas",
+                "Mantener ejercicios principales",
+                "Sin cambios de disponibilidad",
+            ],
+            20,
+        ):
+            response = client.post("/webhook/response", json=_update(update_id, text))
+            assert response.status_code == 200
+        flow = await app_db.fetchrow(
+            "SELECT id, state, payload FROM training_workflows WHERE chat_id = $1", CHAT_ID
+        )
+        assert flow["state"] == "awaiting_confirmation"
+        assert json.loads(flow["payload"])["draft"] is not None
+        assert (
+            await app_db.fetchval(
+                "SELECT current_plan_id FROM training_sessions WHERE chat_id = $1", CHAT_ID
+            )
+            == before["current_plan_id"]
+        )
+        client.post("/webhook/response", json=_update(30, "/train cambiar 1 1 preferencia"))
+        client.post("/webhook/response", json=_update(31, f"/train elegir {flow['id']} 1"))
+        for update_id in (28, 29):
+            response = client.post(
+                "/webhook/response", json=_update(update_id, f"/train confirmar {flow['id']}")
+            )
+            assert response.status_code == 200
+        plans = await app_db.fetch(
+            "SELECT version, mesocycle_id FROM training_plans WHERE chat_id = $1 ORDER BY version",
+            CHAT_ID,
+        )
+        assert [row["version"] for row in plans] == [1, 2]
+        assert plans[1]["mesocycle_id"] != old_cycle
+        payload = await app_db.fetchval(
+            "SELECT payload FROM training_workflows WHERE id=$1", flow["id"]
+        )
+        assert len(json.loads(payload)["generation_traces"]) == 2
+
+    async def test_swap_creates_version_in_same_cycle_after_selection(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        before = await app_db.fetchrow(
+            "SELECT plan, mesocycle_id FROM training_plans WHERE chat_id = $1", CHAT_ID
+        )
+        client.post("/webhook/response", json=_update(20, "/train cambiar 1 2 preferencia"))
+        flow = await app_db.fetchrow(
+            "SELECT id, state FROM training_workflows WHERE chat_id = $1", CHAT_ID
+        )
+        assert flow["state"] == "awaiting_confirmation"
+        client.post("/webhook/response", json=_update(21, f"/train elegir {flow['id']} 1"))
+        client.post("/webhook/response", json=_update(22, f"/train confirmar {flow['id']}"))
+        after = await app_db.fetchrow(
+            "SELECT version, plan, mesocycle_id FROM training_plans WHERE chat_id = $1 ORDER BY version DESC LIMIT 1",
+            CHAT_ID,
+        )
+        assert after["version"] == 2
+        assert after["mesocycle_id"] == before["mesocycle_id"]
+        old_plan, new_plan = json.loads(before["plan"]), json.loads(after["plan"])
+        assert new_plan["weeks"][0] == old_plan["weeks"][0]
+        assert new_plan["weeks"][1]["days"][0]["exercises"][0]["exercise_id"] == 6
+        assert new_plan["weeks"][3]["days"][0]["exercises"][0]["rpe"] <= 6
+        trace = await app_db.fetchrow(
+            "SELECT model, skill_name, retrieved_exercise_ids FROM training_plans WHERE chat_id=$1 ORDER BY version DESC LIMIT 1",
+            CHAT_ID,
+        )
+        assert trace["model"] == "test-model"
+        assert trace["skill_name"] == "trainer-swap"
+        assert 6 in json.loads(trace["retrieved_exercise_ids"])
+
     async def test_a_question_answers_from_the_plan_without_modifying_it(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:

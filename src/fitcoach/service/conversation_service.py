@@ -233,7 +233,7 @@ class ConversationService:
                 await self._answer_about_plan(ctx, chat_id, message_thread_id, input_text)
                 if self._training_service is not None:
                     await self._training_service.remind_on_interaction(
-                        chat_id, message_thread_id, self._send
+                        chat_id, message_thread_id, self._send_reminder
                     )
                 return
             await self._send(chat_id, message_thread_id, Constants.INTERVIEW_COMPLETED_MESSAGE)
@@ -412,6 +412,8 @@ class ConversationService:
             await self._send(chat_id, message_thread_id, Constants.TRAINING_CONFLICT_MESSAGE)
             return
         await self._send(chat_id, message_thread_id, turn.report)
+        if self._training_service:
+            await self._training_service.remember_thread(chat_id, message_thread_id)
         await self._record_token_usage(
             ctx,
             chat_id,
@@ -487,6 +489,7 @@ class ConversationService:
         if self._training_service is None:
             return
         try:
+            await self._training_service.remember_thread(chat_id, thread_id)
             responses = await self._training_service.handle(chat_id, text)
         except AgentError as error:
             logger.warning("%s controlled training error: %s", ctx, error.code)
@@ -589,9 +592,13 @@ class ConversationService:
 
     async def _send(self, chat_id: int, message_thread_id: int | None, text: str) -> None:
         """Envia al usuario, reintentando una vez si Telegram aplica control de flujo."""
-        if len(text) > 4096:
-            for offset in range(0, len(text), 4096):
-                await self._send(chat_id, message_thread_id, text[offset : offset + 4096])
+        if len(text) > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
+            for offset in range(0, len(text), Constants.TELEGRAM_MAX_MESSAGE_CHARS):
+                await self._send(
+                    chat_id,
+                    message_thread_id,
+                    text[offset : offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS],
+                )
             return
         try:
             await self._bot.send_message(
@@ -613,6 +620,9 @@ class ConversationService:
             await self._bot.send_message(
                 chat_id=chat_id, message_thread_id=message_thread_id, text=text
             )
+
+    async def _send_reminder(self, chat_id: int, thread_id: int | None, text: str) -> None:
+        await self._bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=text)
 
     async def _notify_server_error(self, message: Message | None, ctx: str) -> None:
         if message is None:

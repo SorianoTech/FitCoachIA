@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from telegram.error import RetryAfter
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.exercise import Exercise
@@ -17,7 +18,7 @@ from fitcoach.domain.training_lifecycle import (
     TrainingWorkflow,
 )
 from fitcoach.repository.conversation_repository import ConversationRepository, StoredTrainingPlan
-from fitcoach.repository.training_repository import TrainingRepository
+from fitcoach.repository.training_repository import ReminderDelivery, TrainingRepository
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.trainer_chain import TrainerChain, TrainerReply
 from fitcoach.service.agent.training_adaptation_chain import (
@@ -36,6 +37,7 @@ def collaborators(
 ) -> tuple[TrainingService, AsyncMock, AsyncMock, AsyncMock, AsyncMock]:
     repository = AsyncMock(spec=TrainingRepository)
     repository.get_workflow.return_value = None
+    repository.reserve_interaction_reminder.return_value = None
     repository.effective_profile.return_value = None
     repository.get_cycle.return_value = Mesocycle(
         id=1, started_at=NOW - timedelta(days=28), expected_end_at=NOW
@@ -215,3 +217,14 @@ async def test_pain_is_not_treated_by_swap(collaborators: tuple) -> None:
         Constants.TRAINING_SAFETY_MESSAGE
     ]
     adaptation.propose_swap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_interaction_reminder_persists_telegram_delay(collaborators: tuple) -> None:
+    service, repository, _, _, _ = collaborators
+    delivery = ReminderDelivery(1, 7, 22, 1)
+    repository.reserve_interaction_reminder.return_value = delivery
+    sender = AsyncMock(side_effect=RetryAfter(600))
+    await service.remind_on_interaction(7, 22, sender)
+    assert repository.finish_reminder.await_args.kwargs["retry_at"] == NOW + timedelta(seconds=600)
+    assert not repository.finish_reminder.await_args.kwargs["failed"]

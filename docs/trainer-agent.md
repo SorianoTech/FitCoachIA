@@ -83,6 +83,10 @@ las anteriores quedan intactas. Mantiene la progresión relativa de series y lim
 incluida la descarga. Una sustitución crea una versión del **mismo mesociclo**, sin
 reiniciar fechas. En una renovación, los cambios deseados se recogen en `preferences`
 y pueden corregirse mediante `/train editar preferences ...` antes de aceptar.
+Con el borrador ya generado, `/train cambiar ID SEMANA MOTIVO` ofrece también alternativas
+RAG para ese borrador: indicar semana 1 aplica al nuevo bloque completo. Elegir una opción
+actualiza el borrador, no abre versiones intermedias. Confirmarlo sigue siendo una renovación
+con un nuevo mesociclo. El flujo conserva las trazas de generación y de las sustituciones.
 
 ## Fechas y avisos
 
@@ -193,7 +197,8 @@ El modelo devuelve siempre un único objeto JSON. Al generar un plan:
   "status": "plan",
   "reply": "Confirmación breve.",
   "report": "Resumen del mesociclo listo para Telegram.",
-  "plan": { "...": "mesociclo validado" }
+  "plan": { "...": "mesociclo validado" },
+  "intent": "answer"
 }
 ```
 
@@ -204,11 +209,16 @@ Al responder una pregunta sobre el plan:
   "status": "answer",
   "reply": "Respuesta breve.",
   "report": null,
-  "plan": null
+  "plan": null,
+  "intent": "answer"
 }
 ```
 
 `TrainerTurn` valida el contrato con Pydantic:
+
+`intent` puede ser `answer`, `renewal` o `exercise_swap` en consulta; solo enruta
+al flujo correspondiente, no autoriza cambios. En generación se usa `answer`.
+Para respuestas antiguas sin este campo se conserva el valor por defecto `answer`.
 
 - `plan` exige `report` y `plan`; `answer` prohíbe ambos.
 - `weeks` debe tener exactamente 4 entradas, numeradas 1-4 y en orden.

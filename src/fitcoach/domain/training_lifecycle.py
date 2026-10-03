@@ -110,10 +110,13 @@ class TrainingWorkflow(PlanModel):
     swap: SwapRequest | None = None
     options: list[SwapOption] = Field(default_factory=list)
     draft: TrainingPlan | None = None
+    base_draft: TrainingPlan | None = None
+    base_report: str | None = None
     report: str | None = None
     lease_until: datetime | None = None
     generation_key: str | None = None
     prompt_trace: dict[str, str | list[int]] | None = None
+    generation_traces: list[dict[str, str | list[int]]] = Field(default_factory=list)
 
 
 class TrainingAdaptationContext(PlanModel):
@@ -179,12 +182,11 @@ def apply_swap(
                     item.sets = max(
                         1, min(10, round(replacement.sets * exercise.sets / reference.sets))
                     )
-                    caps = [
-                        value
-                        for value in (item.rpe, exercise.rpe, RPE_CAPS.get(week.week))
-                        if value is not None
-                    ]
-                    item.rpe = min(caps) if caps else None
+                    values = [value for value in (item.rpe, exercise.rpe) if value is not None]
+                    cap = RPE_CAPS.get(week.week)
+                    if values and cap is not None:
+                        values.append(cap)
+                    item.rpe = min(values) if values else None
                     day.exercises[index] = item
                     changed = True
             ids = [exercise.exercise_id for exercise in day.exercises]

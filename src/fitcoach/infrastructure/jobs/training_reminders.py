@@ -34,6 +34,10 @@ async def run_batch(
         delivery = await repository.claim_reminder(utc_now())
         if delivery is None:
             break
+        if delivery.attempts > settings.reminder_max_attempts:
+            logger.error("Reminder %s exhausted attempts after a worker interruption", delivery.id)
+            await repository.finish_reminder(delivery, failed=True)
+            continue
         try:
             await bot.send_message(
                 chat_id=delivery.chat_id,

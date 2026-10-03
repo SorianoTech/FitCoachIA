@@ -57,3 +57,20 @@ def test_profile_patch_preserves_non_training_data(profile: InterviewerProfile) 
     assert patched.sleep.average_hours == 8
     assert patched.biometrics == profile.biometrics
     assert patched.user == profile.user
+
+
+def test_swap_preserves_deload_and_does_not_invent_rpe() -> None:
+    plan = TrainingPlan.model_validate(build_plan_payload())
+    for week in plan.weeks:
+        for day in week.days:
+            day.exercises[0].sets = 2 if week.week == 4 else 4
+            day.exercises[0].rpe = None
+    replacement = PlannedExercise(
+        exercise_id=202, name="press", sets=3, reps="8-10", rest_seconds=120
+    )
+    changed = apply_swap(
+        plan, SwapRequest(exercise_id=101, from_week=1, reason="preferencia"), replacement
+    )
+    assert changed.weeks[0].days[0].exercises[0].sets == 3
+    assert changed.weeks[3].days[0].exercises[0].sets == 2
+    assert changed.weeks[3].days[0].exercises[0].rpe is None

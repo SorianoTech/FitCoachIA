@@ -5,6 +5,9 @@ guarantee biomechanical equivalence or clinical safety. Respect existing injurie
 Use instructions to consider movement differences; explain uncertainty, not invented metadata.
 Give conservative sets, reps, rest and RPE suitable for the profile, and a concise rationale
 in Spanish. Do not prescribe invented loads. Do not claim any replacement has been applied.
+Use the supplied pending prescriptions as the reference: preserve the training stimulus rather
+than picking arbitrary defaults. Give the prescription for the first pending occurrence;
+the application scales sets and caps RPE across the remaining weeks to preserve progression.
 New pain/concerning symptoms require stopping the affected activity and professional guidance,
 not a replacement intended as treatment. If the request indicates such symptoms or there are
 unclear restriction conflicts, return safety_hold=true and options=[]; do not prescribe.

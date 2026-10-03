@@ -98,6 +98,27 @@ dos versiones. Si cambió el plan base, la propuesta no puede activarse.
 
 ## Sustituir un ejercicio
 
+### Modelos y presupuestos por tarea
+
+`ia_trainer_generation_model` selecciona el modelo de planes y propuestas de sustitución.
+`ia_trainer_consultation_model` y `ia_trainer_extraction_model` seleccionan consulta/
+detección e interpretación de revisión/restricciones respectivamente. Si se omiten,
+cada uno usa `ia_model`. Consulta y extracción tienen overrides opcionales de
+`max_tokens` y `timeout` con los mismos prefijos; sin overrides heredan
+`ia_trainer_max_tokens` y `ia_trainer_timeout` (o `ia_timeout_seconds`).
+No se activa un modelo rápido ni se recortan respuestas automáticamente.
+Las cadenas y clientes siguen cacheados; reiniciar la app aplica cambios de entorno.
+
+El presupuesto nominal de una tarea con reparación es
+`2 × (1 + ia_max_retries) × timeout`; el backoff del proveedor y red pueden añadir
+tiempo. No es un deadline del workflow. Un swap por texto puede además sumar detección,
+extracción y propuesta. Mantener `ia_max_retries=0` y dimensionar presupuestos por
+acción antes de elevarlos. Las llamadas fallidas y de reparación conservan tokens
+y modelo en `token_usage`; no hay fallback silencioso a otro modelo.
+Los valores comentados de `.env.example` son ejemplos, no límites de calidad validados.
+Antes de activarlos, comparar salidas máximas, síntomas, material, esquemas y latencia
+con los casos de línea base; ante regresión, retirar los overrides.
+
 `/train cambiar` muestra un selector por botones con nombres y sesión de referencia,
 paginado en grupos de ocho. Después permite elegir la semana y el motivo; solo solicita
 texto para concretar material o un motivo libre. Las semanas ofrecidas contienen el

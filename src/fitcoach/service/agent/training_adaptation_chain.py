@@ -44,10 +44,13 @@ class TrainingAdaptationChain:
         swap_model: AsyncChatModel,
         model_name: str = "unknown",
         request_model: AsyncChatModel | None = None,
+        extraction_model_name: str | None = None,
     ) -> None:
-        self._review = BaseLLMChain(review_model, model_name)
+        self._review = BaseLLMChain(review_model, extraction_model_name or model_name)
         self._swap = BaseLLMChain(swap_model, model_name)
-        self._request = BaseLLMChain(request_model or swap_model, model_name)
+        self._request = BaseLLMChain(
+            request_model or swap_model, extraction_model_name or model_name
+        )
         self._loader = PromptLoader()
         self._model_name = model_name
 
@@ -194,11 +197,17 @@ class TrainingAdaptationChain:
 @lru_cache
 def get_training_adaptation_chain() -> TrainingAdaptationChain:
     settings = get_ia_settings()
-    review = build_trainer_model(settings).bind(
+    review = build_trainer_model(settings, "extraction").bind(
         response_format=strict_response_format(ReviewExtraction)
     )
     swap = build_trainer_model(settings).bind(response_format=strict_response_format(SwapProposal))
-    request = build_trainer_model(settings).bind(
+    request = build_trainer_model(settings, "extraction").bind(
         response_format=strict_response_format(SwapConstraints)
     )
-    return TrainingAdaptationChain(review, swap, settings.model, request_model=request)
+    return TrainingAdaptationChain(
+        review,
+        swap,
+        settings.trainer_generation_model or settings.model,
+        request_model=request,
+        extraction_model_name=settings.trainer_extraction_model or settings.model,
+    )

@@ -89,6 +89,13 @@ class IASettings(BaseSettings):
     # A full 4-week mesocycle does not fit in the interview's max_tokens.
     trainer_max_tokens: int = 4096
     trainer_history_window_messages: int = 10
+    trainer_generation_model: str | None = Field(default=None, min_length=1)
+    trainer_consultation_model: str | None = Field(default=None, min_length=1)
+    trainer_consultation_max_tokens: int | None = Field(default=None, gt=0)
+    trainer_consultation_timeout: float | None = Field(default=None, gt=0)
+    trainer_extraction_model: str | None = Field(default=None, min_length=1)
+    trainer_extraction_max_tokens: int | None = Field(default=None, gt=0)
+    trainer_extraction_timeout: float | None = Field(default=None, gt=0)
     # Exercises retrieved from the vector DB per muscle group.
     rag_top_k: int = 8
 

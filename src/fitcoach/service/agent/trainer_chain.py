@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
+from typing import Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -61,8 +62,15 @@ class TrainerChain(BaseLLMChain):
         model_name: str = "unknown",
         skill_name: str = "trainer",
         loader: PromptLoader | None = None,
+        consultation_model: AsyncChatModel | None = None,
+        consultation_model_name: str | None = None,
     ) -> None:
         super().__init__(model, model_name)
+        self._consultation = (
+            BaseLLMChain(consultation_model, consultation_model_name or model_name)
+            if consultation_model is not None
+            else self
+        )
         loader = loader or PromptLoader()
         self._loader = loader
         self._skill_name = skill_name
@@ -116,7 +124,7 @@ class TrainerChain(BaseLLMChain):
             ),
             HumanMessage(content=question),
         ]
-        turn, token_usages = await self._invoke_validated(messages, TrainerAnswerTurn)
+        turn, token_usages = await self._consultation._invoke_validated(messages, TrainerAnswerTurn)
         return TrainerReply(
             turn=turn,
             token_usages=token_usages,
@@ -213,17 +221,33 @@ class TrainerChain(BaseLLMChain):
         return validate
 
 
-def build_trainer_model(settings: IASettings) -> ChatOpenAI:
+def build_trainer_model(
+    settings: IASettings,
+    task: Literal["generation", "consultation", "extraction"] = "generation",
+) -> ChatOpenAI:
+    model = settings.trainer_generation_model or settings.model
+    max_tokens = settings.trainer_max_tokens
+    timeout: float = settings.trainer_timeout or settings.timeout_seconds
+    schema: type[TrainerTurn] = TrainerTurn
+    if task == "consultation":
+        model = settings.trainer_consultation_model or settings.model
+        max_tokens = settings.trainer_consultation_max_tokens or max_tokens
+        timeout = settings.trainer_consultation_timeout or timeout
+        schema = TrainerAnswerTurn
+    elif task == "extraction":
+        model = settings.trainer_extraction_model or settings.model
+        max_tokens = settings.trainer_extraction_max_tokens or max_tokens
+        timeout = settings.trainer_extraction_timeout or timeout
     return ChatOpenAI(
         base_url=settings.base_url,
         api_key=settings.token,
-        model=settings.model,
+        model=model,
         temperature=settings.temperature,
         # A full mesocycle needs far more room than an interview question.
-        max_tokens=settings.trainer_max_tokens or None,
-        timeout=settings.trainer_timeout or settings.timeout_seconds,
+        max_tokens=max_tokens or None,
+        timeout=timeout,
         max_retries=settings.max_retries,
-        model_kwargs={"response_format": strict_response_format(TrainerTurn)},
+        model_kwargs={"response_format": strict_response_format(schema)},
     )
 
 
@@ -235,5 +259,9 @@ def _hash_text(text: str) -> str:
 def get_trainer_chain() -> TrainerChain:
     settings = get_ia_settings()
     return TrainerChain(
-        build_trainer_model(settings), model_name=settings.model, skill_name=settings.trainer_skill
+        build_trainer_model(settings),
+        model_name=settings.trainer_generation_model or settings.model,
+        skill_name=settings.trainer_skill,
+        consultation_model=build_trainer_model(settings, "consultation"),
+        consultation_model_name=settings.trainer_consultation_model or settings.model,
     )

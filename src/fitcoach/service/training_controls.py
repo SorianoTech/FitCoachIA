@@ -62,9 +62,33 @@ def training_keyboard(
             [button(Constants.TRAINING_BUTTONS["cancel"], "cancel")],
         ])
         return InlineKeyboardMarkup(rows)
-    if Constants.TRAINING_CLOSURE_QUESTION in responses:
-        return InlineKeyboardMarkup([
-            [button(Constants.TRAINING_BUTTONS["finished"], "close")],
-            [button(Constants.TRAINING_BUTTONS["not_yet"], "postpone")],
-        ])
+    if any(
+        text in responses
+        for text in (Constants.TRAINING_CLOSURE_QUESTION, Constants.TRAINING_REVIEW_CHOICE)
+    ):
+        rows = [
+            [
+                button(
+                    Constants.TRAINING_REVIEW_BUTTONS[
+                        "good"
+                        if Constants.TRAINING_CLOSURE_QUESTION in responses
+                        else "closed_good"
+                    ],
+                    "good",
+                )
+            ],
+            [
+                button(
+                    Constants.TRAINING_REVIEW_BUTTONS[
+                        "changes"
+                        if Constants.TRAINING_CLOSURE_QUESTION in responses
+                        else "closed_changes"
+                    ],
+                    "changes",
+                )
+            ],
+        ]
+        if Constants.TRAINING_CLOSURE_QUESTION in responses:
+            rows.append([button(Constants.TRAINING_BUTTONS["not_yet"], "postpone")])
+        return InlineKeyboardMarkup(rows)
     return None

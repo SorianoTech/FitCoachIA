@@ -42,13 +42,17 @@ class TrainingProfilePatch(PlanModel):
         return InterviewerProfile.model_validate_json(json.dumps(data))
 
 
-class TrainingReview(PlanModel):
+class ReviewSummary(PlanModel):
     adherence: str = Field(min_length=1)
     results: str = Field(min_length=1)
     recovery: str = Field(min_length=1)
     discomfort: str = Field(min_length=1)
     preferences: str = Field(min_length=1)
     changes: str = Field(min_length=1)
+
+
+class TrainingReview(ReviewSummary):
+    user_feedback: str = ""
     profile_patch: TrainingProfilePatch = Field(default_factory=TrainingProfilePatch)
     safety_hold: bool = False
 
@@ -57,6 +61,8 @@ class ReviewExtraction(PlanModel):
     profile_patch: TrainingProfilePatch
     safety_hold: bool
     explanation: str = Field(min_length=1)
+    summary: ReviewSummary | None = Field(default_factory=lambda: None)
+    clarification: str | None = Field(default_factory=lambda: None, min_length=1)
 
 
 class Mesocycle(PlanModel):

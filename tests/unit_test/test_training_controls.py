@@ -162,7 +162,8 @@ async def test_closure_and_postponement_buttons(collaborators: tuple) -> None:
     workflow = repository.start.return_value
     repository.get_workflow.return_value = workflow
     markup = await service.keyboard(7, [Constants.TRAINING_CLOSURE_QUESTION])
-    assert markup.inline_keyboard[0][0].callback_data == "tr:close:1:0"
+    assert markup.inline_keyboard[0][0].callback_data == "tr:good:1:0"
+    assert markup.inline_keyboard[1][0].callback_data == "tr:changes:1:0"
     await service.callback(7, "tr:postpone:1:0")
     repository.postpone.assert_awaited_once()
     assert repository.postpone.await_args.args[1] == datetime(2026, 10, 8, tzinfo=UTC)

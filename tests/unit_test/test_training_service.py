@@ -12,6 +12,7 @@ from fitcoach.domain.trainer_plan import PlannedExercise, TrainerTurn, TrainingP
 from fitcoach.domain.training_lifecycle import (
     Mesocycle,
     ReviewExtraction,
+    ReviewSummary,
     SwapOption,
     SwapProposal,
     TrainingProfilePatch,
@@ -29,6 +30,173 @@ from fitcoach.service.training_service import TrainingService
 from tests.unit_test.conftest import build_plan_payload
 
 NOW = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("button", [True, False])
+async def test_quick_review_generates_in_one_interaction_without_extraction(
+    collaborators: tuple, button: bool
+) -> None:
+    service, repository, _, trainer, adaptation = collaborators
+    flow = repository.start.return_value
+    repository.get_workflow.return_value = flow
+    result = (
+        await service.callback(7, "tr:good:1:0")
+        if button
+        else await service.handle(7, "terminé y todo bien")
+    )
+    repository.close_cycle.assert_awaited_once_with(7, NOW, expected_plan_id=10)
+    adaptation.extract_review.assert_not_awaited()
+    trainer.generate_next_plan.assert_awaited_once()
+    context = trainer.generate_next_plan.await_args.args[0]
+    assert "no informado" in context.review.adherence
+    assert "no aporta mejoras" in context.review.results
+    assert context.profile.injuries == (await service.profile(7)).injuries
+    assert len(result) == 1
+    assert "TU SIGUIENTE MESOCICLO" in result[0]
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_open_review_needs_only_one_answer_and_retains_raw_feedback(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, trainer, adaptation = collaborators
+    flow = repository.start.return_value
+    repository.get_workflow.return_value = flow
+    assert await service.callback(7, "tr:changes:1:0") == [Constants.TRAINING_OPEN_REVIEW]
+    feedback = "Sin molestias nuevas, prefiero mancuernas y solo tengo 3 días."
+    summary = ReviewSummary(**dict.fromkeys(Constants.TRAINING_REVIEW_QUESTIONS, "No informado"))
+    summary.preferences = "Prefiere mancuernas."
+    adaptation.extract_review.return_value = AdaptationReply(
+        ReviewExtraction(
+            profile_patch=TrainingProfilePatch(),
+            safety_hold=False,
+            explanation="Cambios recogidos",
+            summary=summary,
+        ),
+        [],
+    )
+    result = await service.handle(7, feedback)
+    assert adaptation.extract_review.await_args.args[1]["open_review"] == feedback
+    context = trainer.generate_next_plan.await_args.args[0]
+    assert context.review.user_feedback == feedback
+    assert context.review.preferences == "Prefiere mancuernas."
+    assert "TU SIGUIENTE MESOCICLO" in result[0]
+
+
+@pytest.mark.asyncio
+async def test_essential_clarification_resumes_without_repeating_review(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, trainer, adaptation = collaborators
+    flow = repository.start.return_value
+    flow.answers = {"closed": "confirmed", "review_mode": "open"}
+    repository.get_workflow.return_value = flow
+    question = "¿Qué material tienes disponible?"
+    adaptation.extract_review.return_value = AdaptationReply(
+        ReviewExtraction(
+            profile_patch=TrainingProfilePatch(),
+            safety_hold=False,
+            explanation="Material ambiguo",
+            clarification=question,
+        ),
+        [],
+    )
+    assert await service.handle(7, "Entrenaré en casa, sin molestias nuevas.") == [question]
+    trainer.generate_next_plan.assert_not_awaited()
+    assert await service.handle(7, "/train") == [question]
+    adaptation.extract_review.return_value = AdaptationReply(
+        ReviewExtraction(
+            profile_patch=TrainingProfilePatch(),
+            safety_hold=False,
+            explanation="Aclarado",
+        ),
+        [],
+    )
+    await service.handle(7, "Tengo mancuernas.")
+    answers = adaptation.extract_review.await_args.args[1]
+    assert "Entrenaré en casa" in answers["open_review"]
+    assert question in answers["open_review"]
+    assert "Tengo mancuernas" in answers["open_review"]
+    trainer.generate_next_plan.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_open_review_symptoms_override_clarification_and_block_quick_path(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, trainer, adaptation = collaborators
+    flow = repository.start.return_value
+    flow.answers = {"closed": "confirmed", "review_mode": "open"}
+    repository.get_workflow.return_value = flow
+    adaptation.extract_review.return_value = AdaptationReply(
+        ReviewExtraction(
+            profile_patch=TrainingProfilePatch(),
+            safety_hold=True,
+            explanation="Consultar profesional",
+            clarification="¿Qué material tienes?",
+        ),
+        [],
+    )
+    assert Constants.TRAINING_SAFETY_MESSAGE in await service.handle(7, "Dolor nuevo")
+    assert await service.callback(7, "tr:good:1:0") == [Constants.TRAINING_CALLBACK_INVALID]
+    trainer.generate_next_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_quick_review_survives_quota_limit_and_stale_button(collaborators: tuple) -> None:
+    service, repository, conversation, trainer, _ = collaborators
+    flow = repository.start.return_value
+    flow.revision = 2
+    repository.get_workflow.return_value = flow
+    assert await service.callback(7, "tr:good:1:1") == [Constants.TRAINING_CALLBACK_INVALID]
+    repository.close_cycle.assert_not_awaited()
+    conversation.tokens_used_since.return_value = 900
+    assert await service.callback(7, "tr:good:1:2") == [Constants.QUOTA_SOFT_MESSAGE]
+    assert flow.answers["quick_review"] == "true"
+    trainer.generate_next_plan.assert_not_awaited()
+    conversation.tokens_used_since.return_value = 0
+    await service.handle(7, "generar")
+    trainer.generate_next_plan.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_legacy_partial_review_is_preserved_and_checked_for_safety(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, trainer, adaptation = collaborators
+    flow = repository.start.return_value
+    flow.answers = {"closed": "confirmed", "discomfort": "Dolor nuevo de rodilla"}
+    repository.get_workflow.return_value = flow
+    adaptation.extract_review.return_value = AdaptationReply(
+        ReviewExtraction(
+            profile_patch=TrainingProfilePatch(), safety_hold=True, explanation="Consultar"
+        ),
+        [],
+    )
+    assert Constants.TRAINING_SAFETY_MESSAGE in await service.callback(7, "tr:good:1:0")
+    assert flow.answers["discomfort"] == "Dolor nuevo de rodilla"
+    adaptation.extract_review.assert_awaited_once()
+    trainer.generate_next_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unknown_equipment_gets_natural_clarification(collaborators: tuple) -> None:
+    service, repository, conversation, trainer, adaptation = collaborators
+    flow = repository.start.return_value
+    repository.get_workflow.return_value = flow
+    profile = conversation.get_interviewer_profile.return_value
+    profile.training.equipment = ["unknown gadget"]
+    assert await service.callback(7, "tr:good:1:0") == [Constants.TRAINING_EQUIPMENT_QUESTION]
+    assert flow.state == "reviewing"
+    assert flow.review is None
+    assert "quick_review" not in flow.answers
+    trainer.generate_next_plan.assert_not_awaited()
+    profile.training.equipment = ["barbell"]
+    await service.handle(7, "Tengo barra")
+    adaptation.extract_review.assert_awaited_once()
+    trainer.generate_next_plan.assert_awaited_once()
 
 
 @pytest.fixture
@@ -93,8 +261,8 @@ async def test_renewal_requires_confirmed_closure(collaborators: tuple) -> None:
     trainer.generate_next_plan.assert_not_awaited()
     repository.get_workflow.return_value = repository.start.return_value
     result = await service.handle(7, "sí")
-    repository.close_cycle.assert_awaited_once_with(7, NOW)
-    assert result == [Constants.TRAINING_REVIEW_QUESTIONS["adherence"]]
+    repository.close_cycle.assert_awaited_once_with(7, NOW, expected_plan_id=10)
+    assert result == [Constants.TRAINING_REVIEW_CHOICE]
 
 
 @pytest.mark.asyncio

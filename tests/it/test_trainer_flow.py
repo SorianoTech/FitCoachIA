@@ -99,6 +99,33 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_quick_closure_generates_draft_with_one_button(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        client.post("/webhook/response", json=_update(20, "/train"))
+        sent = stub.get("/__sent").json()[-1]
+        keyboard = json.loads(sent["reply_markup"])["inline_keyboard"]
+        assert keyboard[0][0]["text"] == "Terminé y todo bien"
+        client.post("/webhook/response", json=_callback(21, keyboard[0][0]["callback_data"]))
+        flow = await app_db.fetchrow(
+            "SELECT state, payload FROM training_workflows WHERE chat_id=$1", CHAT_ID
+        )
+        payload = json.loads(flow["payload"])
+        assert flow["state"] == "awaiting_confirmation"
+        assert payload["answers"]["quick_review"] == "true"
+        assert "no informado" in payload["review"]["adherence"]
+        assert payload["review"]["safety_hold"] is False
+        assert (
+            await app_db.fetchval("SELECT count(*) FROM training_plans WHERE chat_id=$1", CHAT_ID)
+            == 1
+        )
+        assert await app_db.fetchval(
+            "SELECT completed_at IS NOT NULL FROM training_mesocycles WHERE chat_id=$1", CHAT_ID
+        )
+        assert "TU SIGUIENTE MESOCICLO" in stub.get("/__sent").json()[-1]["text"]
+
     async def test_review_draft_and_repeated_confirmation(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:
@@ -114,12 +141,9 @@ class TestTrainerFlowIntegration:
             [
                 "/train",
                 "sí",
-                "He realizado todas las sesiones",
-                "Mejoran las repeticiones",
-                "Buena recuperación y sueño sin cambios",
-                "No hay molestias nuevas",
-                "Mantener ejercicios principales",
-                "Sin cambios de disponibilidad",
+                "He realizado todas las sesiones y mejoran las repeticiones. "
+                "Buena recuperación y sueño sin cambios, sin molestias nuevas. "
+                "Quiero mantener los ejercicios, sin cambios de disponibilidad.",
             ],
             20,
         ):

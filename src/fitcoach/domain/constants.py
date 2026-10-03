@@ -82,9 +82,37 @@ Tu nueva vida te espera, ¡Adelante!
         "changes": "¿Han cambiado tu objetivo, días disponibles, minutos por sesión, entorno o material? Si no, responde «sin cambios».",
     }
     TRAINING_CLOSURE_QUESTION: Final = (
-        "¿Has terminado el mesociclo, incluida la descarga? Responde «sí» para iniciar "
-        "la revisión o usa /train posponer AAAA-MM-DD si aún no has terminado."
+        "¿Has terminado el bloque, incluida la descarga?\n\n"
+        "Si te ha ido bien, sin molestias nuevas y quieres mantener objetivo, horarios y "
+        "material, podemos preparar el siguiente.\n"
+        "Elige abajo o responde «terminé y todo bien», «quiero ajustar algo» o «todavía no»."
     )
+    TRAINING_REVIEW_CHOICE: Final = (
+        "¿Cómo te ha ido el bloque?\n\n"
+        "Elige «Todo bien» si no hay molestias nuevas ni cambios de objetivo, horarios o "
+        "material. Si quieres ajustar algo, cuéntamelo con tus palabras."
+    )
+    TRAINING_OPEN_REVIEW: Final = (
+        "Cuéntame cómo te ha ido y qué quieres cambiar: algo que te costó, molestias, "
+        "ejercicios que no te convencen o cambios de tiempo y material. "
+        "Puedes explicarlo con tus palabras; indica también si hay molestias nuevas."
+    )
+    TRAINING_REVIEW_UNKNOWN: Final = "No informado; no inferir resultados ni ejecución."
+    TRAINING_EQUIPMENT_QUESTION: Final = "¿Qué material tienes disponible para entrenar? Indica el tipo de pesas, máquinas o accesorios."
+    TRAINING_REVIEW_BUTTONS: Final = {
+        "good": "Terminé y todo bien",
+        "closed_good": "Todo bien",
+        "changes": "Terminé, pero quiero ajustar algo",
+        "closed_changes": "Quiero ajustar algo",
+    }
+    TRAINING_QUICK_REVIEW: Final = {
+        "adherence": "Mesociclo terminado; número de sesiones realizadas no informado.",
+        "results": "El usuario declara que le ha ido bien; no aporta mejoras ni cargas concretas.",
+        "recovery": "El usuario declara que todo ha ido bien; sueño y fatiga no cuantificados.",
+        "discomfort": "El usuario confirma que no hay molestias nuevas; conservar restricciones previas.",
+        "preferences": "Mantener ejercicios principales y progresar de forma prudente.",
+        "changes": "Sin cambios de objetivo, horarios ni material; conservar el perfil vigente.",
+    }
     TRAINING_DUE_MESSAGE: Final = (
         "Ha llegado la fecha prevista de cierre de tu mesociclo. Esto no significa que hayas "
         "completado las sesiones. Envía /train para revisarlo y preparar un borrador del siguiente, "

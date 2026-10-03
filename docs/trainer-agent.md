@@ -42,8 +42,9 @@ La interacción principal usa **botones inline**: «Empezar hoy», «Elegir fech
 «Cambiar un ejercicio» y «Descartar borrador». No hace falta escribir el identificador.
 Elegir fecha ofrece mañana, próximo lunes u otra fecha; solo esta última pide escribir
 `AAAA-MM-DD`. Para una sustitución se muestra «Aplicar cambio» y cada alternativa
-se puede seleccionar con su propio botón. El cierre ofrece «Sí, he terminado» o
-«Todavía no (recordar en 7 días)». Los comandos siguientes siguen como alternativa.
+se puede seleccionar con su propio botón. El cierre ofrece «Terminé y todo bien»,
+«Terminé, pero quiero ajustar algo» o «Todavía no (recordar en 7 días)».
+Los comandos siguientes siguen como alternativa.
 
 El borrador se presenta en una sola tarjeta compacta con objetivo, frecuencia,
 duración máxima de las sesiones, ejercicios de la primera semana y progresión de
@@ -65,8 +66,17 @@ Al alcanzar la fecha prevista, el bot propone revisar el bloque sin asumir que s
 las sesiones. También se puede declarar su finalización antes. No hay diario de ejecución:
 el cierre y los resultados son autodeclarados, y lo desconocido sigue siendo desconocido.
 
-`/train` con plan vigente pide confirmar el cierre y recoge seis respuestas breves:
-adherencia, resultados, recuperación, molestias, preferencias y cambios de disponibilidad/objetivo.
+`/train` con plan vigente ofrece un cierre rápido. «Terminé y todo bien» confirma el
+cierre y genera directamente un borrador conservando el perfil y las restricciones,
+sin inventar adherencia, mejoras ni cargas. Este botón confirma ausencia de molestias
+nuevas y de cambios de objetivo, horarios y material; no llama al extractor de revisión.
+«Terminé, pero quiero ajustar algo» confirma el cierre y abre una sola pregunta libre.
+El extractor organiza la respuesta en adherencia, resultados, recuperación, molestias,
+preferencias y cambios, manteniendo desconocidos los datos no aportados. Solo se
+pide una aclaración concreta si es imprescindible para seguridad o para aplicar un cambio.
+Síntomas nuevos preocupantes bloquean la generación; no se sustituyen por una pregunta
+que permita saltarse la protección. Las revisiones antiguas conservan sus respuestas.
+Como alternativa textual se puede responder «terminé y todo bien» o «quiero ajustar algo».
 El flujo se guarda y puede reanudarse. Los cambios confirmados de entrenamiento, sueño,
 restricciones y objetivo se guardan como perfil efectivo; no se reinicia `/interview` ni se
 reescribe el informe original del entrevistador.

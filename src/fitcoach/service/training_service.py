@@ -100,6 +100,14 @@ class TrainingService:
         action = parts[1]
         value = parts[4] if len(parts) == 5 else ""
         if (
+            action in ("good", "changes")
+            and workflow.kind == "renewal"
+            and workflow.state == "reviewing"
+            and await self._next_question(chat_id, workflow)
+            in (Constants.TRAINING_CLOSURE_QUESTION, Constants.TRAINING_REVIEW_CHOICE)
+        ):
+            return await self._begin_review(chat_id, workflow, quick=action == "good")
+        if (
             action == "details"
             and workflow.draft is not None
             and workflow.state == "awaiting_confirmation"
@@ -297,6 +305,8 @@ class TrainingService:
             ):
                 raise TrainingInputError(Constants.TRAINING_CONTROLS_MESSAGE)
             workflow.answers[arguments[1]] = " ".join(arguments[2:])
+            workflow.answers.pop("quick_review", None)
+            workflow.answers.pop("clarification", None)
             workflow.answers.pop("safety_hold", None)
             workflow.review = None
             workflow.effective_profile = None
@@ -369,31 +379,83 @@ class TrainingService:
             return Constants.TRAINING_CLOSURE_QUESTION
         if workflow.answers.get("safety_hold"):
             return Constants.TRAINING_SAFETY_MESSAGE
-        for field, question in Constants.TRAINING_REVIEW_QUESTIONS.items():
-            if field not in workflow.answers:
-                return question
+        if workflow.answers.get("clarification"):
+            return workflow.answers["clarification"]
+        if workflow.answers.get("review_mode") == "open":
+            return Constants.TRAINING_OPEN_REVIEW
+        if any(field not in workflow.answers for field in Constants.TRAINING_REVIEW_QUESTIONS):
+            return Constants.TRAINING_REVIEW_CHOICE
         return Constants.TRAINING_MESSAGES["review_ready"]
+
+    async def _begin_review(
+        self, chat_id: int, workflow: TrainingWorkflow, *, quick: bool
+    ) -> list[str]:
+        # Persist the revision before closing, so concurrent/stale choices cannot close another plan.
+        workflow = await self._repository.save(chat_id, workflow)
+        cycle = await self._repository.get_cycle(chat_id)
+        if cycle is None or cycle.completed_at is None:
+            await self._repository.close_cycle(
+                chat_id, self._clock(), expected_plan_id=workflow.base_plan_id
+            )
+        workflow.answers["closed"] = "confirmed"
+        if quick:
+            has_previous_feedback = any(
+                key in workflow.answers for key in Constants.TRAINING_REVIEW_QUESTIONS
+            )
+            for key, answer in Constants.TRAINING_QUICK_REVIEW.items():
+                workflow.answers.setdefault(key, answer)
+            if not has_previous_feedback:
+                workflow.answers["quick_review"] = "true"
+        else:
+            workflow.answers["review_mode"] = "open"
+        workflow = await self._repository.save(chat_id, workflow)
+        return (
+            await self._generate(chat_id, workflow) if quick else [Constants.TRAINING_OPEN_REVIEW]
+        )
 
     async def _review_answer(
         self, chat_id: int, workflow: TrainingWorkflow, text: str
     ) -> list[str]:
+        if workflow.answers.get("safety_hold"):
+            return [Constants.TRAINING_SAFETY_MESSAGE]
+        normalized = text.lower().strip(" .!¡¿?")
+        question = await self._next_question(chat_id, workflow)
+        if question in (Constants.TRAINING_CLOSURE_QUESTION, Constants.TRAINING_REVIEW_CHOICE):
+            if normalized in ("terminé y todo bien", "todo bien", "termine y todo bien"):
+                return await self._begin_review(chat_id, workflow, quick=True)
+            if normalized in ("quiero ajustar algo", "terminé, pero quiero ajustar algo"):
+                return await self._begin_review(chat_id, workflow, quick=False)
+            if (
+                normalized in ("todavía no", "todavia no")
+                and question == Constants.TRAINING_CLOSURE_QUESTION
+            ):
+                return await self._callback(
+                    chat_id, f"tr:postpone:{workflow.id}:{workflow.revision}"
+                )
         cycle = await self._repository.get_cycle(chat_id)
         if "closed" not in workflow.answers and (cycle is None or cycle.completed_at is None):
             if text.lower().strip(" .!¡¿?") not in ("sí", "si", "terminado", "he terminado"):
                 return [Constants.TRAINING_CLOSURE_QUESTION]
-            await self._repository.close_cycle(chat_id, self._clock())
+            await self._repository.close_cycle(
+                chat_id, self._clock(), expected_plan_id=workflow.base_plan_id
+            )
             workflow.answers["closed"] = "confirmed"
             workflow = await self._repository.save(chat_id, workflow)
             return [await self._next_question(chat_id, workflow)]
-        if workflow.answers.get("safety_hold"):
-            return [Constants.TRAINING_SAFETY_MESSAGE]
-        for field in Constants.TRAINING_REVIEW_QUESTIONS:
-            if field not in workflow.answers:
-                workflow.answers[field] = text
-                workflow = await self._repository.save(chat_id, workflow)
-                if any(key not in workflow.answers for key in Constants.TRAINING_REVIEW_QUESTIONS):
-                    return [await self._next_question(chat_id, workflow)]
-                break
+        if (
+            workflow.answers.get("review_mode") == "open"
+            or question == Constants.TRAINING_REVIEW_CHOICE
+            or workflow.answers.get("clarification")
+        ):
+            previous = workflow.answers.get("open_review", "")
+            clarification = workflow.answers.get("clarification", "")
+            workflow.answers["open_review"] = f"{previous}\n{clarification}\n{text}".strip()
+            workflow.answers.pop("clarification", None)
+            workflow.answers.pop("quick_review", None)
+            workflow.answers.pop("review_mode", None)
+            for field in Constants.TRAINING_REVIEW_QUESTIONS:
+                workflow.answers.setdefault(field, Constants.TRAINING_REVIEW_UNKNOWN)
+            workflow = await self._repository.save(chat_id, workflow)
         return await self._generate(chat_id, workflow)
 
     async def _quota(self, chat_id: int) -> bool:
@@ -432,11 +494,23 @@ class TrainingService:
                     workflow.effective_profile or profile,
                     workflow.base_draft or stored.plan,
                 )
+            if workflow.review is None and workflow.answers.get("quick_review"):
+                workflow.review = TrainingReview.model_validate({
+                    key: workflow.answers[key] for key in Constants.TRAINING_REVIEW_QUESTIONS
+                })
+                workflow.effective_profile = profile
+                workflow = await self._repository.save(chat_id, workflow)
             if workflow.review is None:
                 extraction = await self._adaptation.extract_review(profile, workflow.answers)
                 await self._account(chat_id, extraction.token_usages)
+                review_fields = (
+                    extraction.result.summary.model_dump()
+                    if extraction.result.summary
+                    else {key: workflow.answers[key] for key in Constants.TRAINING_REVIEW_QUESTIONS}
+                )
                 workflow.review = TrainingReview(
-                    **{key: workflow.answers[key] for key in Constants.TRAINING_REVIEW_QUESTIONS},
+                    **review_fields,
+                    user_feedback=workflow.answers.get("open_review", ""),
                     profile_patch=extraction.result.profile_patch,
                     safety_hold=extraction.result.safety_hold,
                 )
@@ -447,14 +521,28 @@ class TrainingService:
                     workflow.state = "reviewing"
                     await self._repository.save(chat_id, workflow)
                     return [Constants.TRAINING_SAFETY_MESSAGE, extraction.result.explanation]
+                if extraction.result.clarification:
+                    workflow.review = None
+                    workflow.effective_profile = None
+                    workflow.answers["clarification"] = extraction.result.clarification
+                    workflow.state = "reviewing"
+                    await self._repository.save(chat_id, workflow)
+                    return [extraction.result.clarification]
                 workflow = await self._repository.save(chat_id, workflow)
             effective = workflow.effective_profile or profile
             try:
                 equipment = available_equipment(effective.training.equipment)
             except ValueError as error:
-                raise TrainingInputError(
-                    Constants.TRAINING_MESSAGES["equipment_clarification"]
-                ) from error
+                logger.warning(
+                    "Training equipment needs clarification for chat %s: %s", chat_id, error
+                )
+                workflow.review = None
+                workflow.effective_profile = None
+                workflow.answers.pop("quick_review", None)
+                workflow.answers["clarification"] = Constants.TRAINING_EQUIPMENT_QUESTION
+                workflow.state = "reviewing"
+                await self._repository.save(chat_id, workflow)
+                return [Constants.TRAINING_EQUIPMENT_QUESTION]
             previous = await self._retriever.get_by_ids(sorted(stored.plan.exercise_ids()))
             candidates = await self._retriever.retrieve(effective)
             catalogue = {

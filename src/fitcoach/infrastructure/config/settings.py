@@ -180,3 +180,18 @@ def get_ia_settings() -> IASettings:
 @lru_cache
 def get_usage_settings() -> UsageSettings:
     return UsageSettings()
+
+
+class TrainingSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE, env_file_encoding="utf-8", env_prefix="training_", extra="ignore"
+    )
+
+    reminders_enabled: bool = False
+    reminder_interval_seconds: int = Field(default=300, ge=10)
+    reminder_max_attempts: int = Field(default=5, ge=1, le=10)
+
+
+@lru_cache
+def get_training_settings() -> TrainingSettings:
+    return TrainingSettings()

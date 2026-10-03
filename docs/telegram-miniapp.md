@@ -21,6 +21,10 @@ El arranque registra el botón de menú y `/train` incorpora «Abrir entrenamien
 Sin `miniapp_url` se mantienen los accesos textuales; el menú del bot vuelve a comandos.
 En BotFather puede configurarse adicionalmente como Main Mini App con la misma URL.
 
+El [panel administrador de cuotas](admin-panel.md) se habilita mediante
+`miniapp_admin_chat_ids`. Comparte la Mini App y no exige un plan de entrenamiento
+para acceder; la autorización se comprueba en cada endpoint del servidor.
+
 ### Nginx Proxy Manager
 
 Usar el mismo **Proxy Host** que ya publica el webhook; no crear otro puerto

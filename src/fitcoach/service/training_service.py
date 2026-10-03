@@ -56,6 +56,7 @@ class TrainingService:
         reminder_max_attempts: int = 5,
         miniapp_url: str | None = None,
         performance_summary: Callable[[int, int], Awaitable[dict[str, object]]] | None = None,
+        quota_resolver: Callable[[int], Awaitable[UsageLimits]] | None = None,
     ) -> None:
         self._repository = repository
         self._conversation = conversation
@@ -67,6 +68,7 @@ class TrainingService:
         self._reminder_max_attempts = reminder_max_attempts
         self._miniapp_url = miniapp_url
         self._performance_summary = performance_summary
+        self._quota_resolver = quota_resolver
 
     async def profile(self, chat_id: int) -> InterviewerProfile | None:
         return await self._repository.effective_profile(
@@ -577,10 +579,13 @@ class TrainingService:
         return await self._generate(chat_id, workflow)
 
     async def _quota(self, chat_id: int) -> bool:
-        used = await self._conversation.tokens_used_since(
-            chat_id, self._clock() - self._limits.window
+        limits = (
+            await self._quota_resolver(chat_id)
+            if self._quota_resolver is not None
+            else self._limits
         )
-        return used >= self._limits.soft_tokens
+        used = await self._conversation.tokens_used_since(chat_id, self._clock() - limits.window)
+        return used >= limits.soft_tokens
 
     async def _account(self, chat_id: int, usages: list[TokenUsage]) -> None:
         for usage in usages:

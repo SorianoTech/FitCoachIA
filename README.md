@@ -33,6 +33,8 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 - **Telegram Mini App:** Consulta de semanas, registro de series, descansos, historial y
   progreso sin LLM. Cambios de ejercicio y renovación continúan en el chat con confirmación.
   Configuración y límites en [docs/telegram-miniapp.md](docs/telegram-miniapp.md).
+  Incluye [panel administrador de cuotas](docs/admin-panel.md), autorizado por
+  `miniapp_admin_chat_ids`, con límites globales y excepciones por usuario sin reiniciar.
 
 ## Estructura del Proyecto
 

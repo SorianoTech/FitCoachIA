@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot, Update
 
+from fitcoach.api.admin import get_quota_service
 from fitcoach.api.security import verify_telegram_secret
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.infrastructure.config.settings import (
@@ -37,6 +38,7 @@ from fitcoach.service.agent.training_adaptation_chain import (
     get_training_adaptation_chain,
 )
 from fitcoach.service.conversation_service import ConversationService
+from fitcoach.service.quota_service import QuotaService
 from fitcoach.service.training_service import TrainingService
 
 logger = logging.getLogger(__name__)
@@ -94,18 +96,20 @@ def get_conversation_service(
     usage_settings: UsageSettings = Depends(get_usage_settings),
     session: AsyncSession = Depends(get_session),
     adaptation: TrainingAdaptationChain = Depends(get_training_adaptation_chain),
+    quotas: QuotaService = Depends(get_quota_service),
 ) -> ConversationService:
     return ConversationService(
         bot=bot,
         interviewer=interviewer,
         conversation_repository=repository,
         usage_limits=usage_settings.to_limits(),
+        quota_resolver=quotas.resolve,
         history_window_messages=ia_settings.history_window_messages,
         trainer=trainer_deps.chain,
         exercise_retriever=trainer_deps.retriever,
         trainer_history_window_messages=ia_settings.trainer_history_window_messages,
         training_service=get_training_service(
-            repository, trainer_deps, usage_settings, session, adaptation
+            repository, trainer_deps, usage_settings, session, adaptation, quotas
         ),
     )
 
@@ -116,6 +120,7 @@ def get_training_service(
     usage_settings: UsageSettings = Depends(get_usage_settings),
     session: AsyncSession = Depends(get_session),
     adaptation: TrainingAdaptationChain = Depends(get_training_adaptation_chain),
+    quotas: QuotaService = Depends(get_quota_service),
 ) -> TrainingService:
     return TrainingService(
         PostgresTrainingRepository(session),
@@ -127,6 +132,7 @@ def get_training_service(
         reminder_max_attempts=get_training_settings().reminder_max_attempts,
         miniapp_url=get_settings().miniapp_url,
         performance_summary=PostgresWorkoutRepository(session).performance_summary,
+        quota_resolver=quotas.resolve,
     )
 
 

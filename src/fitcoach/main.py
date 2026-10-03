@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from telegram import MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 from telegram.error import BadRequest, InvalidToken, NetworkError, TelegramError
 
+from fitcoach.api.admin import admin, admin_access
 from fitcoach.api.miniapp import miniapp
 from fitcoach.api.miniapp_actions import miniapp_actions
 from fitcoach.api.webhook import webhook
@@ -54,6 +55,8 @@ app = FastAPI(title="FitCoach IA - API de Prueba", lifespan=lifespan)
 app.include_router(webhook)
 app.include_router(miniapp)
 app.include_router(miniapp_actions)
+app.include_router(admin)
+app.include_router(admin_access)
 
 
 @app.middleware("http")

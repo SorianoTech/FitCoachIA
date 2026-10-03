@@ -7,6 +7,7 @@ ha pedido, que se manda al modelo y que se le contesta al usuario) vive aqui.
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
@@ -19,7 +20,7 @@ from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.agents import AgentType
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.entities import IAInput, IAMessage
-from fitcoach.domain.rate_limiter import UsageLimits
+from fitcoach.domain.rate_limiter import UsageLimits, UsageTier
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import (
@@ -104,6 +105,7 @@ class ConversationService:
         exercise_retriever: ExerciseRetriever | None = None,
         trainer_history_window_messages: int = 10,
         training_service: TrainingService | None = None,
+        quota_resolver: Callable[[int], Awaitable[UsageLimits]] | None = None,
     ) -> None:
         self._bot = bot
         self._interviewer = interviewer
@@ -117,6 +119,7 @@ class ConversationService:
         self._trainer_history_window_messages = trainer_history_window_messages
         self._usage_limits = usage_limits
         self._training_service = training_service
+        self._quota_resolver = quota_resolver
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -796,19 +799,26 @@ class ConversationService:
 
     async def _quota_message(self, ctx: str, chat_id: int, command: Commands | None) -> str | None:
         """Mensaje de corte si el chat ha agotado su cuota; None si puede continuar."""
-        limit = self._usage_limits.limit_for(command)
+        if self._usage_limits.tier_for(command) == UsageTier.UNLIMITED:
+            return None
+        limits = (
+            await self._quota_resolver(chat_id)
+            if self._quota_resolver is not None
+            else self._usage_limits
+        )
+        limit = limits.limit_for(command)
         if limit is None:
             return None
 
-        since = datetime.now(UTC) - self._usage_limits.window
+        since = datetime.now(UTC) - limits.window
         used = await self._conversation_repository.tokens_used_since(chat_id, since)
         if used < limit:
             return None
 
-        tier = self._usage_limits.tier_for(command)
+        tier = limits.tier_for(command)
         logger.warning(f"{ctx} cuota superada: nivel={tier} consumido={used} limite={limit}")
         # Por el consumo real, no por el nivel del comando: pasado el limite duro el
         # mensaje blando prometeria una conversacion que tampoco esta disponible.
-        if used >= self._usage_limits.hard_tokens:
+        if used >= limits.hard_tokens:
             return Constants.QUOTA_EXCEEDED_MESSAGE
         return Constants.QUOTA_SOFT_MESSAGE

@@ -3,7 +3,9 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Numeric,
@@ -291,4 +293,47 @@ class WorkoutRequestRecord(Base):
     )
     plan_id: Mapped[int] = mapped_column(
         ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False
+    )
+
+
+class QuotaConfigRecord(Base):
+    """Quota configured from the admin panel. ``scope_id`` 0 is the global row; others a chat."""
+
+    __tablename__ = "quota_configs"
+    __table_args__ = (
+        CheckConstraint("scope_id >= 0", name="ck_quota_configs_scope_id"),
+        CheckConstraint(
+            "token_limit > 0 AND token_limit <= 1000000000", name="ck_quota_configs_token_limit"
+        ),
+        CheckConstraint("soft_ratio > 0 AND soft_ratio <= 1", name="ck_quota_configs_soft_ratio"),
+        CheckConstraint(
+            "window_minutes > 0 AND window_minutes <= 525600",
+            name="ck_quota_configs_window_minutes",
+        ),
+    )
+
+    scope_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    token_limit: Mapped[int] = mapped_column(nullable=False)
+    soft_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    window_minutes: Mapped[int] = mapped_column(nullable=False)
+    updated_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class QuotaAuditRecord(Base):
+    """Append-only history of quota changes. Stores ids and configs only, never user data."""
+
+    __tablename__ = "quota_audit"
+    __table_args__ = (Index("ix_quota_audit_subject_chat_id_id", "subject_chat_id", "id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    subject_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    before: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

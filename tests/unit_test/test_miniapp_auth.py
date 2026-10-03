@@ -95,3 +95,14 @@ def test_miniapp_config_is_optional_and_accepts_https() -> None:
 def test_miniapp_rejects_insecure_or_credential_urls(url: str) -> None:
     with pytest.raises(ValidationError):
         settings(miniapp_url=url)
+
+
+def test_admin_ids_csv_parsed_deduplicated_and_disabled_by_default() -> None:
+    assert settings().miniapp_admin_chat_ids == []
+    assert settings(miniapp_admin_chat_ids="99, 7,99").miniapp_admin_chat_ids == [7, 99]
+
+
+@pytest.mark.parametrize("value", ["-1", "abc", "9223372036854775808", "0"])
+def test_admin_ids_invalid_configuration_fails(value: str) -> None:
+    with pytest.raises(ValidationError):
+        settings(miniapp_admin_chat_ids=value)

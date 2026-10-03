@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, OPEN_FROM_BOT } from './api';
+import { api, ApiError, OPEN_FROM_BOT, request } from './api';
+import { AdminView } from './AdminView';
 import { formatDate, isDirty, serializeDraft, toDraft, validateCompletion, type DraftExercise } from './helpers';
 import { PlanView } from './PlanView';
 import { ProgressView } from './ProgressView';
@@ -7,7 +8,7 @@ import { SessionView } from './SessionView';
 import { Timer } from './Timer';
 import type { Bootstrap, BotAction, Progress, WorkoutSession } from './types';
 
-type View = 'plan' | 'train' | 'history' | 'progress' | 'detail';
+type View = 'plan' | 'train' | 'history' | 'progress' | 'detail' | 'admin';
 const tabs = [
   { view: 'plan', label: 'Plan', icon: '▦' },
   { view: 'train', label: 'Entrenar', icon: '▶' },
@@ -18,6 +19,8 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 
 export function App() {
   const [data, setData] = useState<Bootstrap | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminAccessError, setAdminAccessError] = useState('');
   const [loading, setLoading] = useState(true);
   const [noPlan, setNoPlan] = useState(false);
   const [error, setError] = useState('');
@@ -88,6 +91,9 @@ export function App() {
     telegram?.ready();
     telegram?.expand();
     void bootstrap();
+    void request<{ is_admin: boolean }>('/admin/access')
+      .then(result => { setIsAdmin(result.is_admin); setAdminAccessError(''); })
+      .catch(reason => setAdminAccessError(errorText(reason)));
   }, [bootstrap]);
 
   useEffect(() => {
@@ -278,6 +284,10 @@ export function App() {
       <header className="app-header">
         <a className="brand" href="#main" aria-label="FitCoach, ir al contenido">FIT<span>COACH</span><small>Entrena con intención</small></a>
         <span className="header-tag">MINI APP</span>
+        {isAdmin && <button className="secondary" disabled={busy}
+          onClick={() => navigate(view === 'admin' ? 'plan' : 'admin')}>
+          {view === 'admin' ? 'Entrenamiento' : 'Administración'}
+        </button>}
       </header>
       <main id="main" ref={heading} tabIndex={-1}>
         {view !== 'plan' && data && <button type="button" className="back-link" disabled={busy}
@@ -294,12 +304,14 @@ export function App() {
           <h1>Abre FitCoach desde Telegram</h1><p>{OPEN_FROM_BOT}</p>
           <p className="muted">No se puede iniciar sesión desde un navegador externo.</p>
         </section>}
-        {!loading && hasAuth && !data && <section className="card">
+        {adminAccessError && hasAuth && <p className="notice error" role="alert">No se pudo comprobar el acceso administrativo: {adminAccessError}</p>}
+        {view === 'admin' && isAdmin && hasAuth && <AdminView />}
+        {!loading && hasAuth && !data && view !== 'admin' && <section className="card">
           <h1>{noPlan ? 'Primero, tu plan' : 'No pudimos cargar tu plan'}</h1>
           {noPlan && <p>Vuelve al bot y envía <code>/interview</code> y después <code>/train</code> para crear tu plan. Después abre de nuevo esta Mini App.</p>}
           <button type="button" onClick={() => void bootstrap()}>Volver a intentar</button>
         </section>}
-        {!loading && data && hasAuth && <>
+        {!loading && data && hasAuth && view !== 'admin' && <>
           {view === 'plan' && <>
             {listError && <div className="notice"><p>No se pudo comprobar el estado de los días: {listError}</p>
               <button type="button" className="secondary" disabled={listLoading} onClick={() => void fetchSessions()}>Reintentar estados</button>

@@ -1,5 +1,10 @@
 # FitCoach Telegram Mini App
 
+Includes the administrator quota panel. Visibility is discovered through the signed
+`/api/miniapp/admin/access` endpoint; the server independently authorizes every admin
+request. Administrators can open the panel without a training plan. Configure
+`miniapp_admin_chat_ids` on the API; permissions cannot be granted by the frontend.
+
 Mobile-first React + TypeScript frontend. Node.js 22+ recommended.
 
 ```sh

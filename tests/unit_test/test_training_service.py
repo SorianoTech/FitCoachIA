@@ -91,6 +91,19 @@ async def test_missing_cycle_does_not_invent_recorded_performance(collaborators:
 
 
 @pytest.mark.asyncio
+async def test_trainer_reloads_database_limits_for_expensive_actions(collaborators: tuple) -> None:
+    service, _, conversation, _, _ = collaborators
+    conversation.tokens_used_since.return_value = 50
+    resolver = AsyncMock(return_value=UsageLimits(100, 40, timedelta(minutes=5)))
+    service._quota_resolver = resolver
+    assert await service._quota(7)
+    resolver.return_value = UsageLimits(100, 60, timedelta(minutes=10))
+    assert not await service._quota(7)
+    assert resolver.await_count == 2
+    assert conversation.tokens_used_since.await_args.args == (7, NOW - timedelta(minutes=10))
+
+
+@pytest.mark.asyncio
 async def test_open_review_needs_only_one_answer_and_retains_raw_feedback(
     collaborators: tuple,
 ) -> None:

@@ -29,7 +29,11 @@ nueva sesión con estado `in_progress` y pide al agente que formule la pregunta 
 
 Cuando un usuario escribe sin tener sesión, el servicio inicia una automáticamente. Si el estado
 es `completed`, los mensajes normales no reabren la entrevista: se le indica al usuario que use
-`/interview` para sustituir su perfil por una entrevista nueva.
+`/train` para generar su plan, o `/interview` para sustituir su perfil por una entrevista nueva.
+
+Una vez existe un plan de entrenamiento, esos mensajes dejan de llegar aquí y los atiende el
+agente [`trainer`](trainer-agent.md). Ten en cuenta que `/interview` borra también el plan y la
+sesión de entrenamiento: un perfil nuevo invalida el mesociclo anterior.
 
 El aislamiento es por `chat_id`: un chat nunca incorpora el historial o perfil de otro.
 
@@ -39,8 +43,8 @@ El comportamiento se define en dos recursos que se ensamblan al crear el agente:
 
 | Recurso | Responsabilidad |
 |---|---|
-| `src/fitcoach/infrastructure/prompts/interviewer/system_prompt.txt` | Rol, tono, límites de seguridad, idioma y contrato de integración. |
-| `src/fitcoach/infrastructure/ia/skills/interviewer/SKILL.md` | Orden de preguntas, validaciones, señales de riesgo y estructura del perfil. |
+| `src/fitcoach/infrastructure/prompts/interviewer/system_prompt.txt` | Rol, tono, límites de seguridad, idioma, contrato JSON y estructura del perfil. |
+| `src/fitcoach/infrastructure/ia/skills/interviewer/SKILL.md` | Orden de preguntas, validaciones, señales de riesgo y método de estimación. |
 
 La habilidad guía una entrevista ordenada de estas áreas:
 
@@ -60,10 +64,20 @@ Debe hacer una pregunta principal por mensaje, aprovechar datos adelantados por 
 repetirlos y formular aclaraciones cuando sean necesarias. El prompt exige español cuando el idioma
 no sea claro, respuestas breves aptas para Telegram y un trato no juzgador.
 
-Las instrucciones del usuario y cualquier bloque RAG se tratan como datos, nunca como instrucciones
-que puedan alterar el rol o revelar la configuración. El sistema ya deja preparado el marcador
-`{{rag_context}}`; actualmente se sustituye por un bloque vacío en cada turno, por lo que aún no hay
-un recuperador de conocimiento conectado.
+Los mensajes del usuario y el historial se tratan como datos, nunca como instrucciones que puedan
+alterar el rol o revelar la configuración. El entrevistador no usa RAG: su prompt no contiene
+`rag_context` ni consulta catálogos. El agente [`trainer`](trainer-agent.md) usa el catálogo solo
+al generar un plan.
+
+El system prompt define el contrato JSON y todos los campos del perfil para ambas variantes.
+La skill seleccionada define el flujo y las estimaciones: `interviewer` realiza la entrevista
+completa; `interviewer-dev` usa tres preguntas y declara sus valores de prueba en el informe.
+
+`initial_calculations.tolerable_volume_sets` significa techo de series de trabajo **por grupo
+muscular y por semana**, no un total para todo el cuerpo ni un presupuesto por sesión. No incluye
+calentamiento. La skill completa estima ese techo según experiencia y recuperación, justificando
+las reducciones. La variante dev usa `10` como supuesto de prueba cuando falta esa información,
+no como cálculo biométrico; respeta las limitaciones explícitas y comunica el supuesto.
 
 ## Contrato entre el modelo y la aplicación
 
@@ -114,6 +128,9 @@ PostgreSQL conserva tres tipos de información:
 | `interview_sessions` | Estado `in_progress` o `completed` y fechas. | Al comenzar, reiniciar o completar. |
 | `interviewer_profiles` | Perfil JSON final e informe. | Solo al completar la entrevista. |
 
+La columna `agent` de `conversation_messages` vale `interviewer` en estos turnos: separa el
+historial de cada agente para que el entrenador no herede la transcripción de la entrevista.
+
 La consulta de historial ordena los últimos mensajes por identificador y los devuelve en orden
 cronológico para conservar el contexto del modelo. Consulta [how-to.md](how-to.md#consultar-la-base-de-datos-con-adminer)
 para visualizar estas tablas con Adminer en desarrollo.
@@ -148,7 +165,8 @@ Reinicia el entorno con `make dev-down && make dev-up` tras cambiar la configura
 | Orquestación de comandos, Telegram y persistencia | `src/fitcoach/service/conversation_service.py` |
 | Invocación LangChain, validación y errores del modelo | `src/fitcoach/service/agent/interviewer_chain.py` |
 | Perfil y sobre de respuesta Pydantic | `src/fitcoach/domain/interviewer_profile.py` |
-| Códigos de error seguros | `src/fitcoach/domain/interviewer_errors.py` |
+| Códigos de error seguros (compartidos entre agentes) | `src/fitcoach/domain/agent_errors.py` |
+| Invocación, conteo de tokens y validación comunes | `src/fitcoach/service/agent/llm_chain.py` |
 | Repositorio PostgreSQL | `src/fitcoach/infrastructure/database/postgres_conversation_repository.py` |
 
 ## Configuración

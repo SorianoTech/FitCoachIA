@@ -25,12 +25,62 @@ def loader(tmp_path: Path) -> PromptLoader:
 
 
 class TestPromptLoader:
+    def test_loads_consultation_without_a_skill(self, tmp_path: Path) -> None:
+        prompts = tmp_path / "prompts" / "trainer"
+        prompts.mkdir(parents=True)
+        (prompts / "answer_prompt.txt").write_text("read-only", encoding="utf-8")
+        loader = PromptLoader(prompts_root=prompts.parent, skills_root=tmp_path / "missing")
+
+        assert loader.load_system_prompt("trainer", "answer_prompt.txt") == "read-only"
+
     def test_default_roots_load_the_interviewer_prompt_and_skill(self) -> None:
         result = PromptLoader().load_assembled_system_prompt("interviewer")
 
         assert "{{skill_content}}" not in result
-        assert "fitness-interviewer" in result
+        assert "name: interviewer\n" in result
+        assert "rag_context" not in result
+
+    @pytest.mark.parametrize("skill_name", ["interviewer", "interviewer-dev"])
+    def test_interviewer_variants_share_contract_without_rag(self, skill_name: str) -> None:
+        loader = PromptLoader()
+        result = loader.load_assembled_system_prompt("interviewer", skill_name)
+        skill = loader.load_skill(skill_name)
+
+        assert "selected interviewer skill" in result
+        assert "COLLECTED DATA STRUCTURE:" in result
+        assert "PER MUSCLE GROUP" in result
+        assert "rag_context" not in result
+        assert "RAG" not in result
+        assert '"status":' not in skill
+        assert "Collected Data Structure:" not in skill
+        if skill_name == "interviewer-dev":
+            assert "use `10`" in skill
+            assert "development interview" in skill
+            assert "name: interviewer-dev\n" in skill
+            assert "perder grasa, ganar masa muscular o mejorar tu rendimiento físico" in skill
+            assert "never internal enum values or field names" in skill
+            assert "`lose_fat`" not in skill
+            assert "`gain_muscle`" not in skill
+            assert "`performance`" not in skill
+
+    @pytest.mark.parametrize("skill_name", ["trainer", "trainer-dev"])
+    def test_trainer_volume_is_per_target_not_full_body(self, skill_name: str) -> None:
+        result = PromptLoader().load_assembled_system_prompt("trainer", skill_name)
+
+        assert "PER MUSCLE GROUP" in result
+        assert "full-body" in result
+        assert "separately for each" in result
         assert "{{rag_context}}" in result
+
+    def test_trainer_contract_lives_in_the_prompt_not_the_skill(self) -> None:
+        loader = PromptLoader()
+        prompt = loader.load_assembled_system_prompt("trainer")
+        skill = (loader._skills_root / "trainer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "PLAN STRUCTURE:" in prompt
+        assert '"exercise_id": 1234' in prompt
+        assert "Plan Structure" not in skill
+        assert '"exercise_id": 1234' not in skill
 
     def test_load_assembled_system_prompt_injects_skill_and_keeps_rag_placeholder(
         self, loader: PromptLoader

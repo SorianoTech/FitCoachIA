@@ -1,0 +1,405 @@
+[
+  {
+    "id": 1689,
+    "name": "push and pull bodyweight",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "body weight",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "deltoids"
+    ],
+    "instructions_en": "Start in a push-up position with your hands slightly wider than shoulder-width apart and your body in a straight line. Lower your chest towards the ground by bending your elbows, keeping your body straight. Push through your palms to extend your arms and return to the starting position. From the push-up position, pull your chest towards the ground by bending your elbows, keeping your body straight. Push through your palms to extend your arms and return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3300,
+    "name": "lean planche",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "chest",
+      "triceps"
+    ],
+    "instructions_en": "Start in a push-up position with your hands shoulder-width apart and your body straight. Engage your core and slowly shift your weight forward, bringing your shoulders past your hands. Keep your elbows slightly bent and your body straight as you lean forward. Hold this position for a few seconds, then slowly return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3679,
+    "name": "sit-up with arms on chest",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Lie flat on your back with your knees bent and feet flat on the ground. Cross your arms over your chest. Engaging your abs, lift your upper body off the ground towards your knees. Pause for a moment at the top, then slowly lower your upper body back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3124,
+    "name": "resistance band seated chest press",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "resistance band",
+    "muscle_group": "shoulders",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Sit on a chair or bench with your back straight and feet flat on the ground. Hold the resistance band handles in each hand, with your palms facing down and elbows bent at a 90-degree angle. Extend your arms forward, pushing the resistance band away from your chest. Pause for a moment at the end of the movement, then slowly return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 343,
+    "name": "dumbbell lying one arm press",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "dumbbell",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "shoulders"
+    ],
+    "instructions_en": "Lie flat on a bench with a dumbbell in one hand and your feet flat on the ground. Hold the dumbbell at shoulder level with your palm facing forward. Press the dumbbell upward until your arm is fully extended. Pause for a moment at the top, then slowly lower the dumbbell back to the starting position. Repeat for the desired number of repetitions, then switch to the other arm."
+  },
+  {
+    "id": 865,
+    "name": "lying leg-hip raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Lie flat on your back with your legs extended and your arms by your sides. Place your hands under your glutes for support. Engage your core and lift your legs off the ground, raising them towards the ceiling. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 1201,
+    "name": "dumbbell burpee",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "dumbbell",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves",
+      "shoulders",
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Start in a standing position with your feet shoulder-width apart and a dumbbell in each hand. Lower your body into a squat position, placing the dumbbells on the ground in front of you. Kick your feet back into a push-up position, keeping your body in a straight line. Perform a push-up, bending your elbows and lowering your chest towards the ground. Jump your feet back towards your hands, landing in a squat position. Stand up explosively, lifting the dumbbells off the ground and bringing them to your shoulders. Press the dumbbells overhead, fully extending your arms. Lower the dumbbells back to your shoulders and repeat the entire sequence for the desired number of repetitions."
+  },
+  {
+    "id": 1293,
+    "name": "dumbbell press on exercise ball",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "dumbbell",
+    "muscle_group": "shoulders",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Sit on an exercise ball with your feet flat on the ground and dumbbells in each hand, resting on your thighs. Slowly walk your feet forward, rolling the exercise ball until your lower back is supported on the ball and your knees are at a 90-degree angle. Raise the dumbbells to shoulder height, palms facing forward. Press the dumbbells upward until your arms are fully extended. Pause for a moment at the top, then slowly lower the dumbbells back to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3672,
+    "name": "back and forth step",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "glutes",
+      "calves"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart. Step forward with your right foot, bending your knee and lowering your body into a lunge position. Push off with your right foot and step back to the starting position. Repeat the movement with your left foot, alternating legs with each step. Continue stepping back and forth, maintaining a steady pace. Repeat for the desired duration or number of repetitions."
+  },
+  {
+    "id": 3296,
+    "name": "front lever",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "lats",
+    "target": "abs",
+    "secondary_muscles": [
+      "lats",
+      "shoulders",
+      "forearms"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with an overhand grip, hands shoulder-width apart. Engage your core and pull your shoulder blades down and back. Bend your knees and tuck them towards your chest. Simultaneously, lift your legs up and extend them straight out in front of you, keeping your body parallel to the ground. Hold this position for as long as you can, aiming for a full front lever position. To release, slowly lower your legs back down and return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3297,
+    "name": "back lever",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "body weight",
+    "muscle_group": "biceps",
+    "target": "upper back",
+    "secondary_muscles": [
+      "biceps",
+      "forearms",
+      "core"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with an overhand grip, hands slightly wider than shoulder-width apart. Engage your core and pull your shoulder blades down and back. Bend your knees and tuck them towards your chest. Slowly lift your legs up, keeping them straight, until your body is parallel to the ground. Hold this position for a few seconds, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 631,
+    "name": "muscle up",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "body weight",
+    "muscle_group": "biceps",
+    "target": "lats",
+    "secondary_muscles": [
+      "biceps",
+      "triceps",
+      "shoulders",
+      "chest"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with your palms facing away from you and your arms fully extended. Engage your core and pull your body up towards the bar, leading with your chest. As you reach the top of the movement, transition your grip so that your palms are facing towards you. Continue pulling yourself up until your chest is above the bar and your arms are fully flexed. Reverse the movement by slowly lowering yourself back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 870,
+    "name": "butt-ups",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors",
+      "lower back"
+    ],
+    "instructions_en": "Lie flat on your back with your knees bent and feet flat on the ground. Place your hands by your sides, palms facing down. Engaging your abs, lift your legs off the ground, bringing your knees towards your chest. At the top of the movement, squeeze your abs and pause for a moment. Slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 689,
+    "name": "seated leg raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Sit on a flat bench with your back straight and your feet flat on the ground. Place your hands on the sides of the bench for support. Keeping your legs straight, slowly raise them up in front of you until they are parallel to the ground. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 472,
+    "name": "hanging leg raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors"
+    ],
+    "instructions_en": "Hang from a pull-up bar with your arms fully extended and your palms facing away from you. Engage your core and lift your legs up in front of you, keeping them straight. Continue lifting until your legs are parallel to the ground or as high as you can comfortably go. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 1764,
+    "name": "hanging leg hip raise",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors",
+      "lower back"
+    ],
+    "instructions_en": "Hang from a pull-up bar with your arms fully extended and your palms facing away from you. Engage your core and lift your legs up by flexing your hips and knees until your thighs are parallel to the ground. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 570,
+    "name": "leg pull in flat bench",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "hip flexors",
+    "target": "abs",
+    "secondary_muscles": [
+      "hip flexors",
+      "lower back"
+    ],
+    "instructions_en": "Sit on a flat bench with your legs extended straight out in front of you. Place your hands on the bench beside your hips for support. Engage your abs and lift your legs off the ground, bringing your knees towards your chest. Pause for a moment at the top, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 431,
+    "name": "dumbbell step-up",
+    "category": "upper legs",
+    "body_part": "upper legs",
+    "equipment": "dumbbell",
+    "muscle_group": "quadriceps",
+    "target": "glutes",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Stand in front of a bench or step with a dumbbell in each hand, palms facing your body. Place your right foot on the bench or step, ensuring your entire foot is in contact with the surface. Push through your right heel and lift your body up onto the bench or step, straightening your right leg. Bring your left foot up onto the bench or step, standing fully upright. Step back down with your left foot, followed by your right foot, returning to the starting position. Repeat for the desired number of repetitions, then switch legs."
+  },
+  {
+    "id": 310,
+    "name": "dumbbell front raise",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "dumbbell",
+    "muscle_group": "biceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "biceps",
+      "trapezius"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a dumbbell in each hand with your palms facing your thighs. Keeping your arms straight, exhale and lift the dumbbells in front of you until they are at shoulder level. Pause for a moment at the top, then inhale and slowly lower the dumbbells back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 1700,
+    "name": "dumbbell push press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "dumbbell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a dumbbell in each hand at shoulder level. Bend your knees slightly and dip your body down, then explosively extend your legs and press the dumbbells overhead. Lock out your arms at the top of the movement, then lower the dumbbells back to shoulder level. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 392,
+    "name": "dumbbell seated front raise",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "dumbbell",
+    "muscle_group": "trapezius",
+    "target": "delts",
+    "secondary_muscles": [
+      "trapezius",
+      "biceps"
+    ],
+    "instructions_en": "Sit on a bench with your feet flat on the ground and a dumbbell in each hand, resting on your thighs. Keep your back straight and core engaged. Raise the dumbbells in front of you, with your palms facing down, until they are at shoulder level. Pause for a moment at the top, then slowly lower the dumbbells back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 376,
+    "name": "dumbbell raise",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "dumbbell",
+    "muscle_group": "traps",
+    "target": "delts",
+    "secondary_muscles": [
+      "traps",
+      "rhomboids"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart and hold a dumbbell in each hand, palms facing your body. Keep your back straight and engage your core. Raise your arms out to the sides until they are parallel to the floor, keeping a slight bend in your elbows. Pause for a moment at the top, then slowly lower your arms back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3122,
+    "name": "resistance band seated shoulder press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "resistance band",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "upper back"
+    ],
+    "instructions_en": "Sit on a chair or bench with your back straight and feet flat on the ground. Hold the resistance band with both hands, palms facing forward, and bring it up to shoulder level. Press the band overhead, extending your arms fully. Pause for a moment at the top, then slowly lower the band back down to shoulder level. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3699,
+    "name": "shoulder tap",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "body weight",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Start in a high plank position with your hands directly under your shoulders and your body in a straight line. Engage your core and lift your right hand off the ground, reaching across to tap your left shoulder. Place your right hand back on the ground and repeat with your left hand tapping your right shoulder. Continue alternating shoulder taps while keeping your hips and torso stable. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 335,
+    "name": "dumbbell lateral to front raise",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "dumbbell",
+    "muscle_group": "trapezius",
+    "target": "delts",
+    "secondary_muscles": [
+      "trapezius",
+      "biceps"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a dumbbell in each hand with your palms facing your body. Keep your back straight and engage your core. Raise your arms out to the sides until they are parallel to the ground, keeping a slight bend in your elbows. Pause for a moment at the top, then slowly lower your arms back down to the starting position. Next, raise your arms in front of you until they are parallel to the ground, again keeping a slight bend in your elbows. Pause for a moment at the top, then slowly lower your arms back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3638,
+    "name": "push to run",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Start in a push-up position with your hands shoulder-width apart and your body in a straight line. Lower your chest towards the ground by bending your elbows, keeping your body straight. Push through your hands to extend your arms and return to the starting position. Quickly bring one knee towards your chest, then quickly switch and bring the other knee towards your chest. Continue alternating knees as fast as you can while maintaining good form. Continue for the desired duration or number of repetitions."
+  },
+  {
+    "id": 685,
+    "name": "run",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Start by standing upright with your feet hip-width apart. Engage your core and keep your upper body relaxed. Begin jogging in place, lifting your knees up towards your chest and landing softly on the balls of your feet. Maintain a steady pace and continue jogging for the desired duration or distance. Remember to breathe deeply and maintain good posture throughout the exercise."
+  },
+  {
+    "id": 684,
+    "name": "run (equipment)",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Start by standing upright with your feet hip-width apart. Engage your core and keep your upper body relaxed. Begin jogging in place, lifting your knees up towards your chest and landing softly on the balls of your feet. Maintain a steady pace and continue jogging for the desired duration or distance. Remember to breathe deeply and maintain good posture throughout the exercise."
+  }
+]

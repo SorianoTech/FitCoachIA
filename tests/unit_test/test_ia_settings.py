@@ -19,7 +19,7 @@ class TestIASettings:
         assert settings.token == "test-token"  # noqa: S105
         assert settings.model == "test-model"
         assert settings.temperature == 0.5
-        assert settings.timeout_seconds == 0
+        assert settings.timeout_seconds == 60
         assert settings.max_tokens == 0
 
     def test_explicit_integer_env_vars_override_the_zero_default(

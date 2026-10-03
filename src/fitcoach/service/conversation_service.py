@@ -12,7 +12,7 @@ from typing import TypedDict
 
 from opentelemetry import trace
 from opentelemetry.trace import Span
-from telegram import Bot, InlineKeyboardMarkup, Message, Update
+from telegram import Bot, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, Update
 from telegram.error import BadRequest, RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
@@ -37,13 +37,14 @@ from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.training_service import TrainingService
+from fitcoach.service.training_view import persistent_keyboard
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
 
 
 class _MessageMarkup(TypedDict, total=False):
-    reply_markup: InlineKeyboardMarkup
+    reply_markup: InlineKeyboardMarkup | ReplyKeyboardMarkup
 
 
 def remove_emojis(text: str) -> str:
@@ -198,6 +199,15 @@ class ConversationService:
             # Nothing but emojis/whitespace survived the cleanup.
             logger.warning(f"{ctx} mensaje descartado: solo contenia emojis o espacios")
             await self._send(chat_id, message_thread_id, Constants.INVALID_TEXT_MESSAGE)
+            return
+        navigation = {
+            Constants.TRAINING_NAVIGATION["week"]: "/train semana",
+            Constants.TRAINING_NAVIGATION["plan"]: "/train ver",
+            Constants.TRAINING_NAVIGATION["swap"]: "/train cambiar",
+            Constants.TRAINING_NAVIGATION["review"]: "/train revisar",
+        }
+        if self._training_service is not None and input_text in navigation:
+            await self._training_response(ctx, chat_id, message_thread_id, navigation[input_text])
             return
 
         command = Commands.from_value(input_text.split(maxsplit=1)[0])
@@ -477,6 +487,8 @@ class ConversationService:
             elapsed_ms,
             AgentType.TRAINER.value,
         )
+        if self._training_service:
+            await self._training_response(ctx, chat_id, message_thread_id, "/train semana")
 
     async def _answer_about_plan(
         self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
@@ -533,7 +545,7 @@ class ConversationService:
                 ctx,
                 chat_id,
                 message_thread_id,
-                "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train",
+                "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train revisar",
                 swap_message=user_message if reply.turn.intent == "exercise_swap" else None,
                 swap_selection=selection,
             )
@@ -584,6 +596,16 @@ class ConversationService:
     ) -> None:
         if self._training_service is None:
             return
+        if Constants.TRAINING_ACCEPTED_MESSAGE in responses:
+            await self._send(chat_id, thread_id, Constants.TRAINING_ACCEPTED_MESSAGE)
+            responses = await self._training_service.view(chat_id, mode="week")
+        if responses and responses[0].startswith((
+            Constants.TRAINING_NAVIGATION["title"].split("{")[0],
+            Constants.TRAINING_NAVIGATION["week_title"],
+        )):
+            await self._send(
+                chat_id, thread_id, Constants.TRAINING_NAVIGATION["menu"], persistent_keyboard()
+            )
         markup = await self._training_service.keyboard(chat_id, responses)
         await self._conversation_repository.add_turn(
             chat_id, text, "\n".join(responses), AgentType.TRAINER.value
@@ -689,18 +711,26 @@ class ConversationService:
         chat_id: int,
         message_thread_id: int | None,
         text: str,
-        reply_markup: InlineKeyboardMarkup | None = None,
+        reply_markup: InlineKeyboardMarkup | ReplyKeyboardMarkup | None = None,
     ) -> None:
         """Envia al usuario, reintentando una vez si Telegram aplica control de flujo."""
-        if len(text) > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
-            for offset in range(0, len(text), Constants.TELEGRAM_MAX_MESSAGE_CHARS):
+        if len(text.encode("utf-16-le")) // 2 > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
+            chunks: list[str] = []
+            start = 0
+            size = 0
+            for index, character in enumerate(text):
+                units = 2 if ord(character) > 0xFFFF else 1
+                if size + units > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
+                    chunks.append(text[start:index])
+                    start, size = index, 0
+                size += units
+            chunks.append(text[start:])
+            for index, chunk in enumerate(chunks):
                 await self._send(
                     chat_id,
                     message_thread_id,
-                    text[offset : offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS],
-                    reply_markup
-                    if offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS >= len(text)
-                    else None,
+                    chunk,
+                    reply_markup if index == len(chunks) - 1 else None,
                 )
             return
         kwargs: _MessageMarkup = {"reply_markup": reply_markup} if reply_markup is not None else {}

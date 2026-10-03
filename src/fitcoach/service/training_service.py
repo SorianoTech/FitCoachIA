@@ -34,6 +34,7 @@ from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.agent.training_adaptation_chain import TrainingAdaptationChain
 from fitcoach.service.training_controls import training_keyboard
 from fitcoach.service.training_preview import details, preview
+from fitcoach.service.training_view import view_keyboard, view_plan
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,13 @@ class TrainingService:
         return await self._repository.get_workflow(chat_id) is not None
 
     async def keyboard(self, chat_id: int, responses: list[str]) -> InlineKeyboardMarkup | None:
+        if responses and responses[0].startswith((
+            Constants.TRAINING_NAVIGATION["title"].split("{")[0],
+            Constants.TRAINING_NAVIGATION["week_title"],
+        )):
+            stored = await self._conversation.get_current_plan(chat_id)
+            pending = await self._repository.get_workflow(chat_id)
+            return view_keyboard(stored.id, pending=pending is not None) if stored else None
         workflow = await self._repository.get_workflow(chat_id)
         if workflow is None:
             return None
@@ -92,10 +100,13 @@ class TrainingService:
             return [str(error)]
 
     async def _callback(self, chat_id: int, data: str) -> list[str]:
+        if data.startswith("tv:"):
+            return await self._view_callback(chat_id, data)
         parts = data.split(":")
         if len(parts) not in (4, 5) or parts[0] != "tr":
             logger.warning("Invalid training callback for chat %s", chat_id)
             return [Constants.TRAINING_CALLBACK_INVALID]
+
         try:
             workflow_id, revision = int(parts[2]), int(parts[3])
         except ValueError:
@@ -200,6 +211,44 @@ class TrainingService:
         logger.warning("Unsupported training callback action for chat %s", chat_id)
         return [Constants.TRAINING_CALLBACK_INVALID]
 
+    async def view(self, chat_id: int, *, mode: str = "home", week: int | None = None) -> list[str]:
+        stored = await self._conversation.get_current_plan(chat_id)
+        if stored is None:
+            return [Constants.NO_PLAN_MESSAGE]
+        cycle = await self._repository.get_cycle(chat_id)
+        return view_plan(stored, cycle, self._clock(), mode=mode, week=week)
+
+    async def _view_callback(self, chat_id: int, data: str) -> list[str]:
+        parts = data.split(":")
+        stored = await self._conversation.get_current_plan(chat_id)
+        if (
+            len(parts) not in (3, 4)
+            or not parts[1].isdigit()
+            or stored is None
+            or int(parts[1]) != stored.id
+        ):
+            logger.warning("Invalid or stale training view callback for chat %s", chat_id)
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        action = parts[2]
+        if len(parts) == 3 and action == "resume":
+            workflow = await self._repository.get_workflow(chat_id)
+            if workflow is None:
+                return [Constants.TRAINING_CALLBACK_INVALID]
+            return await self._handle(
+                chat_id,
+                "/train cambiar" if workflow.kind == "exercise_swap" else "/train revisar",
+            )
+        if len(parts) == 3 and action in ("current", "home"):
+            return await self.view(chat_id, mode="week" if action == "current" else "home")
+        if len(parts) == 4 and action == "week" and parts[3] in ("1", "2", "3", "4"):
+            return await self.view(chat_id, mode="week", week=int(parts[3]))
+        if len(parts) == 3 and action in ("swap", "review"):
+            return await self._handle(
+                chat_id, "/train cambiar" if action == "swap" else "/train revisar"
+            )
+        logger.warning("Unsupported training view callback for chat %s", chat_id)
+        return [Constants.TRAINING_CALLBACK_INVALID]
+
     async def remind_on_interaction(
         self,
         chat_id: int,
@@ -287,6 +336,8 @@ class TrainingService:
         command = tokens[0] if tokens else ""
         arguments = tokens[1:]
         action = arguments[0].lower() if command == "/train" and arguments else ""
+        if command == "/train" and action in ("", "ver", "semana"):
+            return await self.view(chat_id, mode="week" if action == "semana" else "home")
         if command == "/progress":
             return await self.status(chat_id)
         if action == "cancelar":
@@ -389,14 +440,18 @@ class TrainingService:
             if workflow.answers.get("swap_step") == "input" and command != "/train":
                 return await self._finish_swap_picker(chat_id, workflow, text)
             if workflow.answers.get("swap_clarification") and workflow.swap:
-                if command == "/train" and not arguments:
+                if (
+                    command == "/train"
+                    and action in ("", "cambiar", "revisar")
+                    and len(arguments) <= 1
+                ):
                     return [workflow.answers["swap_clarification"]]
                 if command != "/train":
                     workflow.swap.reason += f"\n{workflow.answers['swap_clarification']}\n{text}"
                     workflow = await self._repository.save(chat_id, workflow)
                     return await self._generate(chat_id, workflow)
             request_text = " ".join(arguments[1:]) if action == "cambiar" else text
-            if command == "/train" and not request_text:
+            if command == "/train" and (not request_text or action == "revisar"):
                 return await self._swap_question(chat_id, workflow.base_draft, workflow)
             return await self._prepare_swap(chat_id, workflow, request_text)
         if command == "/train":

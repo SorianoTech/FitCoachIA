@@ -106,7 +106,7 @@ async def test_essential_clarification_resumes_without_repeating_review(
     )
     assert await service.handle(7, "Entrenaré en casa, sin molestias nuevas.") == [question]
     trainer.generate_next_plan.assert_not_awaited()
-    assert await service.handle(7, "/train") == [question]
+    assert await service.handle(7, "/train revisar") == [question]
     adaptation.extract_review.return_value = AdaptationReply(
         ReviewExtraction(
             profile_patch=TrainingProfilePatch(),
@@ -260,7 +260,7 @@ def collaborators(
 @pytest.mark.asyncio
 async def test_renewal_requires_confirmed_closure(collaborators: tuple) -> None:
     service, repository, _, trainer, _ = collaborators
-    result = await service.handle(7, "/train")
+    result = await service.handle(7, "/train revisar")
     assert result == [Constants.TRAINING_CLOSURE_QUESTION]
     trainer.generate_next_plan.assert_not_awaited()
     repository.get_workflow.return_value = repository.start.return_value
@@ -397,7 +397,7 @@ async def test_swap_clarification_resumes_with_request_local_equipment_filter(
     )
     assert await service.handle(7, "/train cambiar 101 2 no tengo barra") == [question]
     service._retriever.retrieve_alternatives.assert_not_awaited()
-    assert await service.handle(7, "/train") == [question]
+    assert await service.handle(7, "/train cambiar") == [question]
     adaptation.extract_swap_constraints.return_value = AdaptationReply(
         SwapConstraints(excluded_equipment=["barbell"], safety_hold=False, clarification=None),
         [],

@@ -9,7 +9,7 @@ El sistema es capaz de transformar una entrevista inicial en un **Plan Personali
 El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquestar cuatro agentes especializados:
 
 *   **Agente 1 (Secretario):** Transcribe entrevistas y genera informes estructurados del cliente.
-*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o revisa el vigente; las renovaciones requieren aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
+*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o abre el menú del vigente; los botones permiten consultar la semana actual sin LLM. `/train revisar` inicia la renovación, que requiere aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
 

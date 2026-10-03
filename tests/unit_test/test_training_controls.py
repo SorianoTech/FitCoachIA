@@ -159,6 +159,27 @@ async def test_other_user_cannot_confirm_private_chat_proposal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_unicode_plan_chunks_preserve_text_and_last_keyboard() -> None:
+    from datetime import timedelta
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    bot = AsyncMock(spec=Bot)
+    service = ConversationService(
+        bot, AsyncMock(), AsyncMock(), UsageLimits(1000, 800, timedelta(days=1))
+    )
+    text = "🏋" * 3000
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("Week", callback_data="tv:1:current")]])
+    await service._send(7, 55, text, markup)
+    calls = bot.send_message.await_args_list
+    assert len(calls) == 2
+    assert "".join(call.kwargs["text"] for call in calls) == text
+    assert all(len(call.kwargs["text"].encode("utf-16-le")) // 2 <= 4096 for call in calls)
+    assert "reply_markup" not in calls[0].kwargs
+    assert calls[-1].kwargs["reply_markup"] == markup
+
+
+@pytest.mark.asyncio
 async def test_closure_and_postponement_buttons(collaborators: tuple) -> None:
     service, repository, _, _, _ = collaborators
     workflow = repository.start.return_value
@@ -214,7 +235,7 @@ async def test_swap_picker_validates_buttons_and_collects_reason(collaborators: 
     assert await service.callback(7, "tr:exercise:3:0:999") == [Constants.TRAINING_CALLBACK_INVALID]
     assert await service.callback(7, "tr:week:3:0:2") == [Constants.TRAINING_CALLBACK_INVALID]
     assert await service.callback(7, "tr:exercise:3:0:101") == [Constants.TRAINING_SWAP_WEEK]
-    assert await service.handle(7, "/train") == [Constants.TRAINING_SWAP_WEEK]
+    assert await service.handle(7, "/train cambiar") == [Constants.TRAINING_SWAP_WEEK]
     assert await service.callback(7, "tr:week:3:0:8") == [Constants.TRAINING_CALLBACK_INVALID]
     assert await service.callback(7, "tr:week:3:0:2") == [Constants.TRAINING_SWAP_REASON]
     assert await service.callback(7, "tr:reason:3:0:equipment") == [
@@ -400,7 +421,7 @@ async def test_preference_provenance_survives_quota_limit_and_restart(collaborat
     conversation.tokens_used_since.return_value = 0
     service._retriever.retrieve_alternatives.return_value = []
     restored.state = "generating"
-    assert await service.handle(7, "/train") == [Constants.TRAINING_NO_ALTERNATIVES_MESSAGE]
+    assert await service.handle(7, "/train cambiar") == [Constants.TRAINING_NO_ALTERNATIVES_MESSAGE]
     adaptation.extract_swap_constraints.assert_not_awaited()
     assert await service.handle(7, "101 2 Prefiero otro ejercicio") == [
         Constants.TRAINING_NO_ALTERNATIVES_MESSAGE

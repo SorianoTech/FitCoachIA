@@ -23,7 +23,7 @@ atención profesional.
 6. Valida el JSON y, además, comprueba que **todos los `exercise_id` vienen del catálogo
    recuperado**. Si no cumple, solicita una única reparación.
 7. Persiste y activa el primer plan antes de enviar el informe. Con un plan vigente,
-   `/train` abre la revisión descrita más abajo, no regenera silenciosamente.
+   `/train` abre el menú de lectura; `/train revisar` abre la revisión descrita más abajo.
 
 Los mensajes posteriores, mientras la sesión de entrenamiento está `active`, van al modo preguntas:
 se consulta en PostgreSQL el plan apuntado por `training_sessions.current_plan_id`, el perfil efectivo y el historial propio del
@@ -66,7 +66,7 @@ Al alcanzar la fecha prevista, el bot propone revisar el bloque sin asumir que s
 las sesiones. También se puede declarar su finalización antes. No hay diario de ejecución:
 el cierre y los resultados son autodeclarados, y lo desconocido sigue siendo desconocido.
 
-`/train` con plan vigente ofrece un cierre rápido. «Terminé y todo bien» confirma el
+`/train revisar` o «Terminé el mesociclo» ofrece un cierre rápido. «Terminé y todo bien» confirma el
 cierre y genera directamente un borrador conservando el perfil y las restricciones,
 sin inventar adherencia, mejoras ni cargas. Este botón confirma ausencia de molestias
 nuevas y de cambios de objetivo, horarios y material; no llama al extractor de revisión.
@@ -97,6 +97,29 @@ dos versiones. Si cambió el plan base, la propuesta no puede activarse.
 `adherence`, `results`, `recovery`, `discomfort`, `preferences` y `changes`.
 
 ## Sustituir un ejercicio
+
+### Ver el plan sin LLM
+
+Con un plan activo, `/train` abre ahora el menú del entrenamiento, **no inicia una
+renovación**. `/train ver` muestra el resumen del bloque y `/train semana` despliega
+las sesiones completas de la semana prevista, con series, repeticiones, descansos,
+RPE y notas. El teclado persistente ofrece «Ver semana actual», «Ver plan completo»,
+«Cambiar un ejercicio» y «Terminé el mesociclo» sin escribir comandos.
+Los botones inline permiten elegir otra semana y abrir cambio/revisión.
+La renovación explícita sigue disponible mediante `/train revisar`.
+
+Las vistas leen exclusivamente `training_sessions.current_plan_id`, incluso con
+borrador pendiente o cuota agotada; no llaman al LLM/RAG ni modifican el workflow.
+Los botones incluyen la identidad del plan y rechazan versiones obsoletas; siguen
+limitados al propietario del chat privado. Tras generar el primer plan o aceptar
+una propuesta se muestran la semana prevista y los accesos.
+
+La semana se calcula por días de calendario UTC desde el inicio: días 0–6, 7–13,
+14–20 y 21–27 corresponden a semanas 1–4. No prueba ejecución ni determina qué
+sesión toca hoy. Sin fecha se solicita `/train inicio AAAA-MM-DD` y se ofrece
+elección manual. Un inicio futuro muestra la semana 1 como anticipación. Después
+de 28 días o de cerrar el bloque se muestra la semana 4 con aviso explícito,
+nunca una semana 5 ni una renovación automática. Elegir otra semana no cambia fechas.
 
 ### Modelos y presupuestos por tarea
 
@@ -197,7 +220,7 @@ Los avisos automáticos requieren `training_reminders_enabled=true`; ver
 
 Los planes anteriores a esta funcionalidad conservan sus versiones, pero no se inventa
 su fecha de inicio a partir de la creación. `/train inicio AAAA-MM-DD` confirma la fecha,
-o `/train` permite confirmar que ya acabaron. Hasta entonces no reciben avisos por antigüedad.
+o `/train revisar` permite confirmar que ya acabaron. Hasta entonces no reciben avisos por antigüedad.
 
 La entrega externa es **al menos una vez**: un fallo después de enviar a Telegram y antes
 de registrar éxito puede duplicar excepcionalmente un aviso. Las reservas evitan duplicados
@@ -205,7 +228,9 @@ normales entre workers/interacciones, no prometen exactamente una entrega extern
 
 ## Comandos y estados
 
-El primer `/train` genera y activa un plan. Repetirlo abre o reanuda revisión y renovación.
+El primer `/train` genera y activa un plan. Repetirlo abre el menú; `/train revisar`
+abre o reanuda revisión y renovación. Con propuesta pendiente, el menú ofrece
+«Continuar propuesta pendiente» sin confundirla con el plan activo.
 Solo aceptar un borrador crea la versión N+1 y actualiza el puntero vigente; las versiones
 anteriores no se sobrescriben. Versión y mesociclo no son equivalentes: una sustitución
 confirmada pertenece al mismo ciclo.

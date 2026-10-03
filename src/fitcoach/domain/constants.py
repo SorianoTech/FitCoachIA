@@ -99,6 +99,24 @@ Tu nueva vida te espera, ¡Adelante!
     )
     TRAINING_REVIEW_UNKNOWN: Final = "No informado; no inferir resultados ni ejecución."
     TRAINING_SWAP_PICKER: Final = "¿Qué ejercicio quieres cambiar? Elige abajo."
+    TRAINING_NAVIGATION: Final = {
+        "week": "Ver semana actual",
+        "plan": "Ver plan completo",
+        "swap": "Cambiar un ejercicio",
+        "review": "Terminé el mesociclo",
+        "home": "Mi entrenamiento",
+        "resume": "Continuar propuesta pendiente",
+        "menu": "Tu entrenamiento, a un toque. Consultar no consume tokens ni cambia tu plan.",
+        "title": "TU PLAN ACTUAL · Versión {version}",
+        "week_title": "TU SEMANA · PLAN ACTUAL",
+        "calendar": "Semana {week} prevista por calendario (UTC), no ejecución registrada.",
+        "unknown": "Sin fecha de inicio confirmada. Indica /train inicio AAAA-MM-DD para calcular la semana. Mientras tanto puedes elegirla abajo.",
+        "future": "El bloque empieza el {date}. Vista anticipada de la semana 1.",
+        "ended": "Han pasado las 4 semanas previstas. Se muestra la semana 4; confirma el cierre solo si has terminado.",
+        "closed": "Mesociclo cerrado por ti. Se muestra la semana 4 del plan anterior.",
+        "manual": "Semana {week} seleccionada. No cambia fechas ni registra sesiones realizadas.",
+        "choose": "Elige una semana abajo.",
+    }
     TRAINING_SWAP_PICKER_WEEK: Final = "¿Qué ejercicio de la semana {week} quieres cambiar?\nElige abajo. Tu plan seguirá igual hasta que confirmes la sustitución."
     TRAINING_SWAP_WEEK: Final = (
         "¿Desde qué semana quieres aplicar el cambio? Las anteriores se conservan."
@@ -133,15 +151,16 @@ Tu nueva vida te espera, ¡Adelante!
     }
     TRAINING_DUE_MESSAGE: Final = (
         "Ha llegado la fecha prevista de cierre de tu mesociclo. Esto no significa que hayas "
-        "completado las sesiones. Envía /train para revisarlo y preparar un borrador del siguiente, "
+        "completado las sesiones. Pulsa «Terminé el mesociclo» o envía /train revisar para preparar el siguiente, "
         "/train posponer AAAA-MM-DD para posponer o /train avisos off para desactivar avisos."
     )
     TRAINING_LEGACY_MESSAGE: Final = (
         "Tu plan anterior no tiene una fecha de inicio confirmada. Indícala con "
-        "/train inicio AAAA-MM-DD, o envía /train si ya has terminado y quieres renovarlo."
+        "/train inicio AAAA-MM-DD, o envía /train revisar si ya has terminado y quieres renovarlo."
     )
     TRAINING_CONTROLS_MESSAGE: Final = (
-        "Controles: /train para revisar y renovar; /train cambiar ID SEMANA MOTIVO para "
+        "Controles: /train para ver el menú; /train semana para ver la semana actual; "
+        "/train revisar para revisar y renovar; /train cambiar ID SEMANA MOTIVO para "
         "sustituir las ocurrencias desde esa semana; /train elegir PROPUESTA OPCIÓN; "
         "/train confirmar PROPUESTA [AAAA-MM-DD]; /train cancelar; "
         "/train posponer AAAA-MM-DD; /train avisos on|off. Consulta de solo lectura: "
@@ -166,7 +185,7 @@ Tu nueva vida te espera, ¡Adelante!
     TRAINING_CANCELLED_MESSAGE: Final = "Propuesta cancelada. Tu plan vigente no ha cambiado."
     TRAINING_CONFLICT_MESSAGE: Final = (
         "La propuesta ha cambiado, está en proceso o ya no corresponde al plan vigente. "
-        "Envía /train para consultar su estado."
+        "Envía /train y pulsa «Continuar propuesta pendiente» para consultar su estado."
     )
     TRAINING_NO_ALTERNATIVES_MESSAGE: Final = (
         "No hay alternativas verificadas compatibles con el grupo muscular y material declarado. "
@@ -176,9 +195,7 @@ Tu nueva vida te espera, ¡Adelante!
     TRAINING_ACCEPTED_MESSAGE: Final = (
         "Propuesta confirmada y guardada como nueva versión de tu plan."
     )
-    TRAINING_BUSY_MESSAGE: Final = (
-        "El borrador está generándose. Usa /train para consultar su estado."
-    )
+    TRAINING_BUSY_MESSAGE: Final = "El borrador está generándose. Usa /train y «Continuar propuesta pendiente» para consultar su estado."
     TELEGRAM_MAX_MESSAGE_CHARS: Final = 4096
     TRAINING_BUTTONS: Final = {
         "start": "Empezar hoy",
@@ -246,8 +263,8 @@ Tu nueva vida te espera, ¡Adelante!
         "deload": "Descarga",
     }
     TRAINING_MESSAGES: Final = {
-        "closed": "Cierre confirmado. Envía /train para continuar la revisión del siguiente bloque.",
-        "status": "Mesociclo iniciado el {start}; cierre previsto: {end}. La ejecución no se registra automáticamente. Envía /train si ya has terminado.",
+        "closed": "Cierre confirmado. Envía /train revisar para continuar la revisión del siguiente bloque.",
+        "status": "Mesociclo iniciado el {start}; cierre previsto: {end}. La ejecución no se registra automáticamente. Envía /train revisar si ya has terminado.",
         "unknown_date": "sin confirmar",
         "reminders_saved": "Preferencia de avisos guardada.",
         "reminders_usage": "Usa /train avisos on|off.",
@@ -264,7 +281,7 @@ Tu nueva vida te espera, ¡Adelante!
         "review_ready": "Revisión recogida. Responde «generar» para reintentar el borrador o /train cancelar.",
         "equipment_clarification": "Aclara el material con /train editar changes ... antes de generar.",
         "invalid_week": "La semana actual debe estar entre 1 y 4.",
-        "closed_swap": "El ciclo está cerrado. Cancela la sustitución y usa /train para renovar.",
+        "closed_swap": "El ciclo está cerrado. Cancela la sustitución y usa /train revisar para renovar.",
         "unknown_exercise": "Ese ejercicio no pertenece al plan vigente.",
         "no_pending_occurrences": "No hay ocurrencias de ese ejercicio en las semanas pendientes indicadas.",
         "metadata_clarification": "Necesito aclarar el material o los metadatos del ejercicio antes de proponer alternativas.",

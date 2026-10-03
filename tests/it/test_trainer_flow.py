@@ -99,6 +99,63 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_persistent_navigation_reads_week_without_llm_or_workflow(
+        self,
+        client: httpx.Client,
+        app_db: asyncpg.Connection,
+        stub: httpx.Client,
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        counts = stub.get("/__counts").json()
+        plan_id = await app_db.fetchval(
+            "SELECT current_plan_id FROM training_sessions WHERE chat_id=$1", CHAT_ID
+        )
+        before = await app_db.fetchval("SELECT plan FROM training_plans WHERE id=$1", plan_id)
+        for update_id, text in enumerate(
+            ["Ver semana actual", "Ver plan completo", "/train"],
+            20,
+        ):
+            response = client.post("/webhook/response", json=_update(update_id, text))
+            assert response.status_code == 200
+        assert stub.get("/__counts").json() == counts
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM training_workflows WHERE chat_id=$1", CHAT_ID
+            )
+            == 0
+        )
+        sent = stub.get("/__sent").json()
+        menu = next(
+            message
+            for message in reversed(sent)
+            if "reply_markup" in message and "is_persistent" in message["reply_markup"]
+        )
+        assert json.loads(menu["reply_markup"])["is_persistent"]
+        keyboard = json.loads(sent[-1]["reply_markup"])["inline_keyboard"]
+        button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"] == f"tv:{plan_id}:week:2"
+        )
+        client.post("/webhook/response", json=_callback(23, button["callback_data"]))
+        assert stub.get("/__counts").json() == counts
+        assert any(
+            "SEMANA 2" in message["text"] for message in stub.get("/__sent").json()[len(sent) :]
+        )
+        assert (
+            await app_db.fetchval("SELECT plan FROM training_plans WHERE id=$1", plan_id) == before
+        )
+        client.post("/webhook/response", json=_callback(24, f"tv:{plan_id + 999}:swap"))
+        assert stub.get("/__sent").json()[-1]["text"].startswith("Este botón")
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM training_workflows WHERE chat_id=$1", CHAT_ID
+            )
+            == 0
+        )
+
     async def test_week_request_sends_only_real_selector_and_asks_reason(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:
@@ -191,7 +248,7 @@ class TestTrainerFlowIntegration:
     ) -> None:
         _complete_interview(client)
         _run_train(client)
-        client.post("/webhook/response", json=_update(20, "/train"))
+        client.post("/webhook/response", json=_update(20, "/train revisar"))
         sent = stub.get("/__sent").json()[-1]
         keyboard = json.loads(sent["reply_markup"])["inline_keyboard"]
         assert keyboard[0][0]["text"] == "Terminé y todo bien"
@@ -226,7 +283,7 @@ class TestTrainerFlowIntegration:
         )
         for update_id, text in enumerate(
             [
-                "/train",
+                "/train revisar",
                 "sí",
                 "He realizado todas las sesiones y mejoran las repeticiones. "
                 "Buena recuperación y sueño sin cambios, sin molestias nuevas. "
@@ -424,7 +481,7 @@ class TestTrainerFlowIntegration:
 
         assert {row["id"] for row in existing} == exercise_ids
 
-    async def test_a_second_train_opens_review_without_replacing_the_plan(
+    async def test_a_second_train_shows_menu_without_replacing_the_plan(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:
         _complete_interview(client)
@@ -439,7 +496,7 @@ class TestTrainerFlowIntegration:
         pending = await app_db.fetchval(
             "SELECT state FROM training_workflows WHERE chat_id = $1", CHAT_ID
         )
-        assert pending == "reviewing"
+        assert pending is None
         current = await app_db.fetchrow(
             "SELECT status, current_plan_id FROM training_sessions WHERE chat_id = $1", CHAT_ID
         )

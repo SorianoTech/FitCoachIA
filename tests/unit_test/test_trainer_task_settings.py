@@ -30,6 +30,41 @@ def test_task_defaults_preserve_existing_model_and_budgets(task: str) -> None:
     assert model.max_tokens == 4096
     assert model.request_timeout == 60
     assert model.max_retries == 0
+    assert model.temperature == 0.5
+
+
+@pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])
+@pytest.mark.parametrize("value", [0.0, 1.0, 2.0, "default"])
+def test_temperature_override_only_affects_selected_task(task: str, value: object) -> None:
+    settings = _settings(**{f"trainer_{task}_temperature": value})
+    for candidate in ("generation", "consultation", "extraction"):
+        model = build_trainer_model(settings, candidate)
+        payload = model._get_request_payload([("human", "test")])
+        if candidate == task and value == "default":
+            assert "temperature" not in payload
+        else:
+            assert payload["temperature"] == (value if candidate == task else 0.5)
+
+
+@pytest.mark.parametrize("value", [-0.1, 2.1, "invalid", "", float("inf"), float("nan")])
+@pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])
+def test_invalid_temperature_override_fails(task: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        _settings(**{f"trainer_{task}_temperature": value})
+
+
+def test_temperature_default_loaded_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ia_trainer_generation_temperature", "default")
+    monkeypatch.setenv("ia_trainer_consultation_temperature", "0")
+    settings = IASettings(
+        _env_file=None,
+        base_url="http://localhost:9999",
+        token="test",  # noqa: S106
+        model="base",
+        temperature=0.2,
+    )
+    assert settings.trainer_generation_temperature == "default"
+    assert settings.trainer_consultation_temperature == 0
 
 
 def test_overrides_are_isolated_and_consultation_has_its_own_schema() -> None:

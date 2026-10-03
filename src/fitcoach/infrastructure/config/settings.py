@@ -13,7 +13,7 @@ import os
 import re
 from datetime import timedelta
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator
@@ -22,6 +22,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from fitcoach.domain.rate_limiter import UsageLimits
 
 _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
+TaskTemperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | Literal["default"]
 
 _APP_ENV = os.getenv("APP_ENV", "dev")
 _ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or (".env", f".env.{_APP_ENV}")
@@ -126,6 +127,9 @@ class IASettings(BaseSettings):
     trainer_max_tokens: int = 4096
     trainer_history_window_messages: int = 10
     trainer_generation_model: str | None = Field(default=None, min_length=1)
+    trainer_generation_temperature: TaskTemperature | None = None
+    trainer_consultation_temperature: TaskTemperature | None = None
+    trainer_extraction_temperature: TaskTemperature | None = None
     trainer_consultation_model: str | None = Field(default=None, min_length=1)
     trainer_consultation_max_tokens: int | None = Field(default=None, gt=0)
     trainer_consultation_timeout: float | None = Field(default=None, gt=0)

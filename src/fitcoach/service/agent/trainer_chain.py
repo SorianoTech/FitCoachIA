@@ -228,6 +228,18 @@ def build_trainer_model(
     model = settings.trainer_generation_model or settings.model
     max_tokens = settings.trainer_max_tokens
     timeout: float = settings.trainer_timeout or settings.timeout_seconds
+    task_temperature = {
+        "generation": settings.trainer_generation_temperature,
+        "consultation": settings.trainer_consultation_temperature,
+        "extraction": settings.trainer_extraction_temperature,
+    }[task]
+    temperature = (
+        settings.temperature
+        if task_temperature is None
+        else None
+        if task_temperature == "default"
+        else task_temperature
+    )
     schema: type[TrainerTurn] = TrainerTurn
     if task == "consultation":
         model = settings.trainer_consultation_model or settings.model
@@ -242,7 +254,7 @@ def build_trainer_model(
         base_url=settings.base_url,
         api_key=settings.token,
         model=model,
-        temperature=settings.temperature,
+        temperature=temperature,
         # A full mesocycle needs far more room than an interview question.
         max_tokens=max_tokens or None,
         timeout=timeout,

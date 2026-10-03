@@ -155,6 +155,16 @@ cada uno usa `ia_model`. Consulta y extracción tienen overrides opcionales de
 No se activa un modelo rápido ni se recortan respuestas automáticamente.
 Las cadenas y clientes siguen cacheados; reiniciar la app aplica cambios de entorno.
 
+`ia_trainer_generation_temperature`, `ia_trainer_consultation_temperature` y
+`ia_trainer_extraction_temperature` admiten un número finito entre 0 y 2 o
+`default` para omitir el parámetro y usar el predeterminado del proveedor.
+Si se omiten, heredan `ia_temperature`. El rango local no garantiza que cada
+modelo admita ese número: algunos solo aceptan su valor predeterminado.
+Generación también configura propuestas de sustitución; extracción configura
+revisiones y restricciones. La entrevista conserva `ia_temperature`.
+Por ejemplo, `ia_trainer_generation_temperature=default` evita enviar `0.2`
+al modelo de planes sin cambiar la configuración de las otras tareas.
+
 El presupuesto nominal de una tarea con reparación es
 `2 × (1 + ia_max_retries) × timeout`; el backoff del proveedor y red pueden añadir
 tiempo. No es un deadline del workflow. Un swap por texto puede además sumar detección,

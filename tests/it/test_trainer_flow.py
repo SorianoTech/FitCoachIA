@@ -51,6 +51,7 @@ async def app_db() -> asyncpg.Connection:
     await connection.execute("DELETE FROM token_usage WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM training_sessions WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM training_plans WHERE chat_id = $1", CHAT_ID)
+    await connection.execute("DELETE FROM training_mesocycles WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM conversation_messages WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM interviewer_profiles WHERE chat_id = $1", CHAT_ID)
     await connection.execute("DELETE FROM interview_sessions WHERE chat_id = $1", CHAT_ID)
@@ -170,7 +171,7 @@ class TestTrainerFlowIntegration:
 
         assert {row["id"] for row in existing} == exercise_ids
 
-    async def test_a_second_train_appends_a_new_version(
+    async def test_a_second_train_opens_review_without_replacing_the_plan(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:
         _complete_interview(client)
@@ -181,7 +182,11 @@ class TestTrainerFlowIntegration:
             "SELECT version FROM training_plans WHERE chat_id = $1 ORDER BY version", CHAT_ID
         )
 
-        assert [row["version"] for row in versions] == [1, 2]
+        assert [row["version"] for row in versions] == [1]
+        pending = await app_db.fetchval(
+            "SELECT state FROM training_workflows WHERE chat_id = $1", CHAT_ID
+        )
+        assert pending == "reviewing"
         current = await app_db.fetchrow(
             "SELECT status, current_plan_id FROM training_sessions WHERE chat_id = $1", CHAT_ID
         )

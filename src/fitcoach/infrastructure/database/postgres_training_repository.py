@@ -1,5 +1,4 @@
 import json
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -21,17 +20,9 @@ from fitcoach.infrastructure.database.models import (
     TrainingSessionRecord,
     TrainingWorkflowRecord,
 )
-from fitcoach.repository.training_repository import TrainingConflictError
+from fitcoach.repository.training_repository import ReminderDelivery, TrainingConflictError
 
 _OPEN = ("reviewing", "generating", "awaiting_confirmation")
-
-
-@dataclass(frozen=True)
-class ReminderDelivery:
-    id: int
-    chat_id: int
-    thread_id: int | None
-    attempts: int
 
 
 class PostgresTrainingRepository:
@@ -245,6 +236,8 @@ class PostgresTrainingRepository:
         cycle = await self._cycle_record(chat_id)
         if cycle is None:
             raise TrainingConflictError("No current mesocycle")
+        if cycle.completed_at:
+            raise TrainingConflictError("A closed mesocycle cannot be postponed")
         cycle.expected_end_at = until
         occasion = await self._session.scalar(
             select(func.max(TrainingNotificationRecord.occasion)).where(
@@ -345,12 +338,62 @@ class PostgresTrainingRepository:
         await self._session.commit()
         return delivery
 
+    async def reserve_interaction_reminder(
+        self, chat_id: int, thread_id: int | None, now: datetime
+    ) -> ReminderDelivery | None:
+        await self._lock(chat_id)
+        cycle = await self._cycle_record(chat_id)
+        if (
+            cycle is None
+            or cycle.expected_end_at is None
+            or cycle.expected_end_at > now
+            or cycle.completed_at
+            or not cycle.reminders_enabled
+            or await self.get_workflow(chat_id) is not None
+        ):
+            await self._session.commit()
+            return None
+        cycle.message_thread_id = thread_id
+        await self._session.execute(
+            insert(TrainingNotificationRecord)
+            .values(mesocycle_id=cycle.id, occasion=0, due_at=now)
+            .on_conflict_do_nothing()
+        )
+        record = await self._session.scalar(
+            select(TrainingNotificationRecord)
+            .where(
+                TrainingNotificationRecord.mesocycle_id == cycle.id,
+                TrainingNotificationRecord.state.in_(("pending", "sending")),
+                TrainingNotificationRecord.due_at <= now,
+                TrainingNotificationRecord.lease_until.is_(None)
+                | (TrainingNotificationRecord.lease_until <= now),
+            )
+            .with_for_update(skip_locked=True)
+            .order_by(TrainingNotificationRecord.id)
+            .limit(1)
+        )
+        if record is None:
+            await self._session.commit()
+            return None
+        record.state = "sending"
+        record.lease_until = now + timedelta(minutes=2)
+        record.attempts += 1
+        delivery = ReminderDelivery(record.id, chat_id, thread_id, record.attempts)
+        await self._session.commit()
+        return delivery
+
     async def finish_reminder(
         self, delivery: ReminderDelivery, retry_at: datetime | None = None, failed: bool = False
     ) -> None:
-        record = await self._session.get(TrainingNotificationRecord, delivery.id)
+        record = await self._session.scalar(
+            select(TrainingNotificationRecord)
+            .where(TrainingNotificationRecord.id == delivery.id)
+            .with_for_update()
+        )
         if record is None:
             raise TrainingConflictError("Notification disappeared")
+        if record.attempts != delivery.attempts or record.state != "sending":
+            raise TrainingConflictError("Notification lease no longer owned")
         record.state = "failed" if failed else ("pending" if retry_at else "sent")
         record.lease_until = None
         if retry_at:

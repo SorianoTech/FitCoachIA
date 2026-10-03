@@ -73,6 +73,58 @@ Tu nueva vida te espera, ¡Adelante!
         "No he podido consultar el catálogo de ejercicios ahora mismo. "
         "Inténtalo de nuevo en unos minutos."
     )
+    TRAINING_REVIEW_QUESTIONS: Final = {
+        "adherence": "¿Cuántas sesiones has realizado frente a las previstas? Puedes decir que no lo sabes.",
+        "results": "¿Qué mejoras, estancamientos o dificultades has notado? Indica resultados concretos si los tienes.",
+        "recovery": "¿Cómo han sido la fatiga, el descanso y el esfuerzo? ¿Ha cambiado tu sueño?",
+        "discomfort": "¿Has tenido dolor o molestias nuevas? Indica restricciones actuales; no entrenes con dolor.",
+        "preferences": "¿Qué ejercicios quieres mantener o cambiar, y por qué?",
+        "changes": "¿Han cambiado tu objetivo, días disponibles, minutos por sesión, entorno o material? Si no, responde «sin cambios».",
+    }
+    TRAINING_CLOSURE_QUESTION: Final = (
+        "¿Has terminado el mesociclo, incluida la descarga? Responde «sí» para iniciar "
+        "la revisión o usa /train posponer AAAA-MM-DD si aún no has terminado."
+    )
+    TRAINING_DUE_MESSAGE: Final = (
+        "Ha llegado la fecha prevista de cierre de tu mesociclo. Esto no significa que hayas "
+        "completado las sesiones. Envía /train para revisarlo y preparar un borrador del siguiente, "
+        "/train posponer AAAA-MM-DD para posponer o /train avisos off para desactivar avisos."
+    )
+    TRAINING_LEGACY_MESSAGE: Final = (
+        "Tu plan anterior no tiene una fecha de inicio confirmada. Indícala con "
+        "/train inicio AAAA-MM-DD, o envía /train si ya has terminado y quieres renovarlo."
+    )
+    TRAINING_CONTROLS_MESSAGE: Final = (
+        "Controles: /train para revisar y renovar; /train cambiar ID SEMANA MOTIVO para "
+        "sustituir las ocurrencias desde esa semana; /train elegir PROPUESTA OPCIÓN; "
+        "/train confirmar PROPUESTA [AAAA-MM-DD]; /train cancelar; "
+        "/train posponer AAAA-MM-DD; /train avisos on|off. Consulta de solo lectura: "
+        "envía /train consulta seguido de tu pregunta."
+        " Para corregir la revisión: /train editar CAMPO TEXTO "
+        "(adherence, results, recovery, discomfort, preferences, changes)."
+    )
+    TRAINING_SWAP_QUESTION: Final = (
+        "Indica el ID del ejercicio, la semana actual (1-4) y el motivo, por ejemplo "
+        "«101 2 no dispongo de barra». Se propondrá cambiar sus ocurrencias desde esa "
+        "semana; las anteriores no cambian."
+    )
+    TRAINING_SAFETY_MESSAGE: Final = (
+        "Con dolor nuevo o síntomas preocupantes, detén la actividad afectada y consulta "
+        "a un profesional cualificado. No generaré una sustitución como tratamiento. "
+        "Usa /train cancelar para cerrar esta propuesta."
+    )
+    TRAINING_CANCELLED_MESSAGE: Final = "Propuesta cancelada. Tu plan vigente no ha cambiado."
+    TRAINING_CONFLICT_MESSAGE: Final = (
+        "La propuesta ha cambiado, está en proceso o ya no corresponde al plan vigente. "
+        "Envía /train para consultar su estado."
+    )
+    TRAINING_NO_ALTERNATIVES_MESSAGE: Final = (
+        "No hay alternativas verificadas compatibles con el grupo muscular y material declarado. "
+        "Tu plan no ha cambiado; aclara el material o cancela la propuesta."
+    )
+    TRAINING_GENERATING_MESSAGE: Final = "Estoy preparando un borrador; tu plan vigente no cambia."
+    TRAINING_ACCEPTED_MESSAGE: Final = "Propuesta confirmada y guardada como nueva versión de tu plan."
+    TRAINING_BUSY_MESSAGE: Final = "El borrador está generándose. Usa /train para consultar su estado."
 
     # --- Mensaje con el que se siembra la conversacion del modelo ---
     INTERVIEW_SEED_MESSAGE: Final = (
@@ -93,8 +145,8 @@ Tu nueva vida te espera, ¡Adelante!
     UNKNOWN_USER: Final = "desconocido"
 
     QUOTA_SOFT_MESSAGE: Final = (
-        "No puedes iniciar una entrevista nueva por hoy, "
-        "pero puedes seguir con la conversación actual."
+        "Has alcanzado la cuota para iniciar entrevistas o generar planes y sustituciones. "
+        "Puedes continuar las consultas y confirmar o cancelar propuestas pendientes."
     )
     QUOTA_EXCEEDED_MESSAGE: Final = (
         "Has alcanzado el límite de uso por hoy. Vuelve a intentarlo más tarde."

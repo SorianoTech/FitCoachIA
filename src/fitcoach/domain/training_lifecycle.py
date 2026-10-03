@@ -17,6 +17,7 @@ from fitcoach.domain.interviewer_profile import (
 )
 from fitcoach.domain.trainer_plan import (
     MESOCYCLE_WEEKS,
+    RPE_CAPS,
     PlanModel,
     PlannedExercise,
     TrainingPlan,
@@ -87,7 +88,14 @@ class SwapOption(PlanModel):
 
 
 class SwapProposal(PlanModel):
-    options: list[SwapOption] = Field(min_length=1, max_length=3)
+    options: list[SwapOption] = Field(max_length=3)
+    safety_hold: bool = Field(default_factory=lambda: False)
+
+    @model_validator(mode="after")
+    def validate_safety(self) -> "SwapProposal":
+        if self.safety_hold == bool(self.options):
+            raise ValueError("Safe proposals need options; safety holds prohibit them")
+        return self
 
 
 class TrainingWorkflow(PlanModel):
@@ -147,6 +155,19 @@ def apply_swap(
 ) -> TrainingPlan:
     data = plan.model_dump(mode="json")
     updated = plan.model_copy(deep=True)
+    reference = next(
+        (
+            item
+            for week in plan.weeks
+            if week.week >= request.from_week
+            for day in week.days
+            for item in day.exercises
+            if item.exercise_id == request.exercise_id
+        ),
+        None,
+    )
+    if reference is None:
+        raise ValueError("No pending occurrences match the exercise")
     changed = False
     for week in updated.weeks:
         if week.week < request.from_week:
@@ -154,7 +175,17 @@ def apply_swap(
         for day in week.days:
             for index, exercise in enumerate(day.exercises):
                 if exercise.exercise_id == request.exercise_id:
-                    day.exercises[index] = replacement.model_copy(deep=True)
+                    item = replacement.model_copy(deep=True)
+                    item.sets = max(
+                        1, min(10, round(replacement.sets * exercise.sets / reference.sets))
+                    )
+                    caps = [
+                        value
+                        for value in (item.rpe, exercise.rpe, RPE_CAPS.get(week.week))
+                        if value is not None
+                    ]
+                    item.rpe = min(caps) if caps else None
+                    day.exercises[index] = item
                     changed = True
             ids = [exercise.exercise_id for exercise in day.exercises]
             if len(ids) != len(set(ids)):

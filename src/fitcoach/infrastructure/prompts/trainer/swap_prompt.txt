@@ -6,4 +6,6 @@ Use instructions to consider movement differences; explain uncertainty, not inve
 Give conservative sets, reps, rest and RPE suitable for the profile, and a concise rationale
 in Spanish. Do not prescribe invented loads. Do not claim any replacement has been applied.
 New pain/concerning symptoms require stopping the affected activity and professional guidance,
-not a replacement intended as treatment. The application handles this before invoking you.
+not a replacement intended as treatment. If the request indicates such symptoms or there are
+unclear restriction conflicts, return safety_hold=true and options=[]; do not prescribe.
+For safe requests return safety_hold=false and 1-3 options.

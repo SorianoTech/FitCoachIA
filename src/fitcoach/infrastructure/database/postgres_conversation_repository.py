@@ -30,6 +30,7 @@ from fitcoach.infrastructure.database.models import (
     TrainingSessionRecord,
 )
 from fitcoach.repository.conversation_repository import StoredTrainingPlan
+from fitcoach.repository.training_repository import TrainingConflictError
 
 logger = logging.getLogger(__name__)
 
@@ -259,16 +260,22 @@ class PostgresConversationRepository:
         user_content: str,
         assistant_content: str,
         trace: TrainerGenerationTrace | None,
+        initial_only: bool = False,
     ) -> int:
         """Append version N+1 and point the session at it. Older plans are kept."""
         await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
+        existing = await self._session.get(TrainingSessionRecord, chat_id)
+        if initial_only and existing is not None and existing.current_plan_id is not None:
+            await self._session.rollback()
+            raise TrainingConflictError("Another request already activated the first plan")
         current_version = await self._session.scalar(
             select(func.max(TrainingPlanRecord.version)).where(
                 TrainingPlanRecord.chat_id == chat_id
             )
         )
+        start = utc_now()
         cycle = TrainingMesocycleRecord(
-            chat_id=chat_id, started_at=utc_now(), expected_end_at=expected_end(utc_now())
+            chat_id=chat_id, started_at=start, expected_end_at=expected_end(start)
         )
         self._session.add(cycle)
         await self._session.flush()

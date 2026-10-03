@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
@@ -7,6 +8,14 @@ from fitcoach.domain.training_lifecycle import Mesocycle, TrainingWorkflow
 
 class TrainingConflictError(RuntimeError):
     """The proposal is stale or another request owns its generation."""
+
+
+@dataclass(frozen=True)
+class ReminderDelivery:
+    id: int
+    chat_id: int
+    thread_id: int | None
+    attempts: int
 
 
 class TrainingRepository(Protocol):
@@ -22,3 +31,9 @@ class TrainingRepository(Protocol):
     async def set_reminders(self, chat_id: int, enabled: bool) -> None: ...
     async def postpone(self, chat_id: int, until: datetime) -> None: ...
     async def effective_profile(self, chat_id: int) -> InterviewerProfile | None: ...
+    async def reserve_interaction_reminder(
+        self, chat_id: int, thread_id: int | None, now: datetime
+    ) -> ReminderDelivery | None: ...
+    async def finish_reminder(
+        self, delivery: ReminderDelivery, retry_at: datetime | None = None, failed: bool = False
+    ) -> None: ...

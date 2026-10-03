@@ -54,7 +54,43 @@
     {
       "id": 7, "title": "B2, B3 y B4 pendientes", "type": "text",
       "gridPos": {"x": 12, "y": 22, "w": 12, "h": 6},
-      "options": {"mode": "markdown", "content": "**B2:** no se persiste distancia top-1. **B3:** falta datasource/lectura de estadísticas pgVector y muestreo de contadores para diferencias diarias; peticiones ×7 no equivale a queries actuales (swaps/renovaciones varían). **B4:** trazas de planes no representan todas las recuperaciones ni aportan el catálogo total. No se publica porcentaje ficticio de ejercicios nunca recuperados."}
+      "options": {"mode": "markdown", "content": "**B2:** distancia del mejor resultado disponible en los nuevos logs de ranking; no se persiste en planes. Es similitud semántica, no calidad ni seguridad. **B3:** falta datasource/lectura de estadísticas pgVector y muestreo de contadores para diferencias diarias; peticiones ×7 no equivale a queries actuales (swaps/renovaciones varían). **B4:** trazas de planes no representan todas las recuperaciones ni aportan el catálogo total. No se publica porcentaje ficticio de ejercicios nunca recuperados."}
+    },
+    {
+      "id": 8, "title": "Opciones recuperadas por grupo · media", "type": "timeseries",
+      "description": "Media de count por evento RAG ranking y grupo. Incluye consultas de generación/renovación y alternativas de sustitución; no distingue acciones ni mide relevancia. Solo eventos posteriores al despliegue de las trazas.",
+      "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ group }}", "expr": "avg_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` | unwrap count | __error__=\"\" [$__interval]) by (group)"}]
+    },
+    {
+      "id": 9, "title": "Consultas sin opciones por grupo (%)", "type": "table",
+      "description": "Eventos RAG ranking con count=0 / todos los rankings del mismo grupo en el rango. No cuenta los WARNING adicionales. Sin eventos no hay porcentaje; un cero significa consultas observadas sin vacíos.",
+      "gridPos": {"x": 12, "y": 28, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "100 * (sum by (group) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` | count=\"0\" [$__range])) or on (group) (0 * sum by (group) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` [$__range])))) / on (group) sum by (group) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` [$__range]))"}],
+      "transformations": [{"id": "labelsToFields", "options": {"mode": "columns"}}]
+    },
+    {
+      "id": 10, "title": "Distancia del mejor resultado por grupo · media", "type": "timeseries",
+      "description": "Media de distance_min en rankings no vacíos. Distancia coseno 0–2; menor significa mayor similitud semántica, no mejor calidad ni seguridad clínica. No comparar grupos como puntuaciones de calidad ni fijar umbrales sin etiquetas. Sin resultados no se inventa una distancia.",
+      "gridPos": {"x": 0, "y": 36, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"min": 0, "max": 2, "unit": "short"}},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ group }}", "expr": "avg_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+) distance_min=(?P<distance_min>[^ ]+)` | count!=\"0\" | unwrap distance_min | __error__=\"\" [$__interval]) by (group)"}]
+    },
+    {
+      "id": 11, "title": "Últimos rankings de recuperación", "type": "table",
+      "description": "Eventos por consulta, no por plan. Fecha, grupo, opciones y distancias mínima/máxima. None significa catálogo vacío. La cantidad visible está limitada por maxLines; no representa todos los eventos del rango. No contiene perfiles, mensajes ni vectores.",
+      "gridPos": {"x": 12, "y": 36, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "range", "maxLines": 100, "expr": "{service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+) distance_min=(?P<distance_min>[0-9.eE+-]+|None) distance_max=(?P<distance_max>[0-9.eE+-]+|None)` | line_format `{\"group\":\"{{.group}}\",\"count\":\"{{.count}}\",\"distance_min\":\"{{.distance_min}}\",\"distance_max\":\"{{.distance_max}}\"}`"}],
+      "transformations": [
+        {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": true, "keepTime": true}},
+        {"id": "sortBy", "options": {"fields": {}, "sort": [{"field": "Time", "desc": true}]}}
+      ]
     }
   ]
 }

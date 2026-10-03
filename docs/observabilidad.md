@@ -172,6 +172,17 @@ Detalle y matriz de métricas:
 Los nuevos paneles Loki usan exclusivamente la etiqueta `environment` de Alloy
 para evitar doble recuento con OTLP; no muestran texto de usuarios.
 
+**RAG y catálogo** incorpora cuatro paneles basados en `RAG ranking` (nivel INFO):
+media de opciones por grupo, porcentaje de consultas vacías por grupo, media de
+distancia del mejor resultado y tabla de los últimos 100 eventos como máximo.
+Incluyen búsquedas generales y alternativas de sustitución, sin distinguir acción.
+El porcentaje vacío cuenta `count=0` sobre rankings del grupo; no suma el WARNING
+adicional. Sin eventos no hay porcentaje. Las distancias excluyen rankings vacíos:
+menor distancia implica mayor similitud semántica, no calidad ni seguridad.
+Solo hay datos desde el despliegue de las trazas; se aplica la retención de Loki.
+No se requieren DEBUG, migraciones ni cambios de negocio. Grafana recarga los JSON
+provisionados automáticamente; estos paneles no modifican planes ni cuotas.
+
 Dashboard provisionado: **FitCoachIA - Conversaciones**
 (`infra/observability/config/grafana/provisioning/dashboards/json/fitcoach-conversations.json`),
 con variables de filtro dinámicas y paneles organizados en capas de complejidad creciente.

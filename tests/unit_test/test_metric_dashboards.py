@@ -57,3 +57,17 @@ def test_cost_and_catalogue_panels_expose_coverage_instead_of_silent_defaults() 
     catalogue = next(panel for panel in rag["panels"] if panel["id"] == 5)
     assert "('initial','renewal')" in catalogue["targets"][0]["rawSql"]
     assert "used_outside_catalogue" in catalogue["targets"][0]["rawSql"]
+
+
+def test_rag_rankings_do_not_present_similarity_as_quality() -> None:
+    dashboard = json.loads((DASHBOARDS / "fitcoach-rag.json").read_text())
+    panels = {panel["id"]: panel for panel in dashboard["panels"]}
+    for panel_id in (8, 9, 10, 11):
+        assert "RAG ranking " in panels[panel_id]["targets"][0]["expr"]
+    assert 'count="0"' in panels[9]["targets"][0]["expr"]
+    assert "or on (group)" in panels[9]["targets"][0]["expr"]
+    assert "WARNING" not in panels[9]["targets"][0]["expr"]
+    assert 'count!="0"' in panels[10]["targets"][0]["expr"]
+    assert "no mejor calidad" in panels[10]["description"]
+    assert "thresholds" not in panels[10]["fieldConfig"]["defaults"]
+    assert panels[11]["targets"][0]["maxLines"] == 100

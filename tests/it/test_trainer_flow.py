@@ -40,6 +40,24 @@ def _update(update_id: int, text: str) -> dict[str, object]:
     }
 
 
+def _callback(update_id: int, data: str) -> dict[str, object]:
+    return {
+        "update_id": update_id,
+        "callback_query": {
+            "id": f"click-{update_id}",
+            "chat_instance": "test-chat",
+            "data": data,
+            "from": {"id": CHAT_ID, "is_bot": False, "first_name": "Ana"},
+            "message": {
+                "message_id": 100,
+                "date": 0,
+                "text": "propuesta",
+                "chat": {"id": CHAT_ID, "type": "private"},
+            },
+        },
+    }
+
+
 @pytest_asyncio.fixture
 async def app_db() -> asyncpg.Connection:
     connection = await asyncpg.connect(APP_DB_URL)
@@ -146,11 +164,28 @@ class TestTrainerFlowIntegration:
         )
         client.post("/webhook/response", json=_update(20, "/train cambiar 1 2 preferencia"))
         flow = await app_db.fetchrow(
-            "SELECT id, state FROM training_workflows WHERE chat_id = $1", CHAT_ID
+            "SELECT id, state, payload FROM training_workflows WHERE chat_id = $1", CHAT_ID
         )
         assert flow["state"] == "awaiting_confirmation"
-        client.post("/webhook/response", json=_update(21, f"/train elegir {flow['id']} 1"))
-        client.post("/webhook/response", json=_update(22, f"/train confirmar {flow['id']}"))
+        revision = json.loads(flow["payload"])["revision"]
+        controls = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])
+        assert (
+            controls["inline_keyboard"][0][0]["callback_data"]
+            == f"tr:select:{flow['id']}:{revision}:1"
+        )
+        client.post("/webhook/response", json=_callback(21, f"tr:select:{flow['id']}:{revision}:1"))
+        payload = json.loads(
+            await app_db.fetchval("SELECT payload FROM training_workflows WHERE id=$1", flow["id"])
+        )
+        stale = f"tr:accept:{flow['id']}:{revision}"
+        client.post("/webhook/response", json=_callback(23, stale))
+        assert (
+            await app_db.fetchval("SELECT count(*) FROM training_plans WHERE chat_id=$1", CHAT_ID)
+            == 1
+        )
+        data = f"tr:accept:{flow['id']}:{payload['revision']}"
+        client.post("/webhook/response", json=_callback(22, data))
+        client.post("/webhook/response", json=_callback(24, data))
         after = await app_db.fetchrow(
             "SELECT version, plan, mesocycle_id FROM training_plans WHERE chat_id = $1 ORDER BY version DESC LIMIT 1",
             CHAT_ID,

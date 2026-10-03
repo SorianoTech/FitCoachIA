@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
+from telegram import InlineKeyboardMarkup
 from telegram.error import RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError
@@ -29,6 +30,7 @@ from fitcoach.service.agent.exercise_retriever import ExerciseRetriever, availab
 from fitcoach.service.agent.plan_evaluator import Severity, estimate_session_minutes, evaluate_turn
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.agent.training_adaptation_chain import TrainingAdaptationChain
+from fitcoach.service.training_controls import training_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,113 @@ class TrainingService:
 
     async def has_workflow(self, chat_id: int) -> bool:
         return await self._repository.get_workflow(chat_id) is not None
+
+    async def keyboard(self, chat_id: int, responses: list[str]) -> InlineKeyboardMarkup | None:
+        workflow = await self._repository.get_workflow(chat_id)
+        return training_keyboard(workflow, responses) if workflow else None
+
+    async def callback(self, chat_id: int, data: str) -> list[str]:
+        try:
+            return await self._callback(chat_id, data)
+        except TrainingConflictError:
+            logger.warning("Training callback conflict for chat %s", chat_id, exc_info=True)
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        except TrainingInputError as error:
+            logger.warning("Training callback needs clarification for chat %s: %s", chat_id, error)
+            return [str(error)]
+
+    async def _callback(self, chat_id: int, data: str) -> list[str]:
+        parts = data.split(":")
+        if len(parts) not in (4, 5) or parts[0] != "tr":
+            logger.warning("Invalid training callback for chat %s", chat_id)
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        try:
+            workflow_id, revision = int(parts[2]), int(parts[3])
+        except ValueError:
+            logger.warning("Invalid callback identifiers for chat %s", chat_id)
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        workflow = await self._repository.get_workflow(chat_id)
+        if workflow is None or workflow.id != workflow_id or workflow.revision != revision:
+            logger.warning("Stale training callback for chat %s", chat_id)
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        action = parts[1]
+        value = parts[4] if len(parts) == 5 else ""
+        if (
+            action == "accept"
+            and workflow.draft is not None
+            and workflow.state == "awaiting_confirmation"
+        ):
+            await self._repository.accept(
+                chat_id, workflow.id, self._clock(), expected_revision=revision
+            )
+            return [Constants.TRAINING_ACCEPTED_MESSAGE]
+        if action == "cancel":
+            workflow.state = "cancelled"
+            await self._repository.save(chat_id, workflow)
+            return [Constants.TRAINING_CANCELLED_MESSAGE]
+        if action == "select" and value.isdigit():
+            return await self._select(chat_id, workflow, workflow.id, int(value))
+        if action == "swap" and workflow.draft is not None:
+            if workflow.kind == "exercise_swap":
+                workflow.draft = None
+                workflow.report = None
+                workflow.options = []
+                workflow.swap = None
+                workflow.state = "reviewing"
+                await self._repository.save(chat_id, workflow)
+                return await self._swap_question(chat_id)
+            workflow.base_draft = workflow.draft
+            workflow.base_report = workflow.report
+            workflow.draft = None
+            workflow.answers.pop("date_request", None)
+            workflow.state = "reviewing"
+            await self._repository.save(chat_id, workflow)
+            return await self._swap_question(chat_id, workflow.base_draft)
+        if (
+            action == "close"
+            and await self._next_question(chat_id, workflow) == Constants.TRAINING_CLOSURE_QUESTION
+        ):
+            workflow = await self._repository.save(chat_id, workflow)
+            await self._repository.close_cycle(
+                chat_id, self._clock(), expected_plan_id=workflow.base_plan_id
+            )
+            workflow.answers["closed"] = "confirmed"
+            workflow = await self._repository.save(chat_id, workflow)
+            return [await self._next_question(chat_id, workflow)]
+        if (
+            action == "postpone"
+            and await self._next_question(chat_id, workflow) == Constants.TRAINING_CLOSURE_QUESTION
+        ):
+            workflow.state = "cancelled"
+            await self._repository.save(chat_id, workflow)
+            until = self._date(str((self._clock() + timedelta(days=7)).date()))
+            await self._repository.postpone(chat_id, until, expected_plan_id=workflow.base_plan_id)
+            return await self.status(chat_id)
+        if (
+            workflow.state == "awaiting_confirmation"
+            and workflow.draft is not None
+            and workflow.kind == "renewal"
+        ):
+            if action == "dates" or (action == "date" and value == "other"):
+                workflow.answers["date_request"] = "choose" if action == "dates" else "input"
+                try:
+                    await self._repository.save(chat_id, workflow)
+                except TrainingConflictError:
+                    return [Constants.TRAINING_CALLBACK_INVALID]
+                return [
+                    Constants.TRAINING_DATE_PICKER
+                    if action == "dates"
+                    else Constants.TRAINING_DATE_INPUT
+                ]
+            if action == "date" and value in ("tomorrow", "monday"):
+                days = 1 if value == "tomorrow" else (7 - self._clock().weekday())
+                date = (self._clock() + timedelta(days=days)).date()
+                await self._repository.accept(
+                    chat_id, workflow.id, self._date(str(date)), expected_revision=revision
+                )
+                return [Constants.TRAINING_ACCEPTED_MESSAGE]
+        logger.warning("Unsupported training callback action for chat %s", chat_id)
+        return [Constants.TRAINING_CALLBACK_INVALID]
 
     async def remind_on_interaction(
         self,
@@ -170,6 +279,8 @@ class TrainingService:
             await self._repository.accept(chat_id, self._integer(arguments[1]), start)
             return [Constants.TRAINING_ACCEPTED_MESSAGE]
         workflow = await self._repository.get_workflow(chat_id)
+        if workflow and workflow.answers.get("date_request") == "input" and command != "/train":
+            return await self._handle(chat_id, f"/train confirmar {workflow.id} {text.strip()}")
         if action == "editar":
             if (
                 workflow is None
@@ -211,6 +322,7 @@ class TrainingService:
             workflow.base_report = workflow.report or workflow.base_report
             workflow.draft = None
             workflow.state = "reviewing"
+            workflow.answers.pop("date_request", None)
             workflow = await self._repository.save(chat_id, workflow)
         if workflow.state == "awaiting_confirmation":
             return self._proposal_messages(workflow)

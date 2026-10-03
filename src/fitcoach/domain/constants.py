@@ -134,6 +134,26 @@ Tu nueva vida te espera, ¡Adelante!
         "El borrador está generándose. Usa /train para consultar su estado."
     )
     TELEGRAM_MAX_MESSAGE_CHARS: Final = 4096
+    TRAINING_BUTTONS: Final = {
+        "start": "Empezar hoy",
+        "apply": "Aplicar cambio",
+        "date": "Elegir fecha",
+        "swap": "Cambiar un ejercicio",
+        "cancel": "Descartar borrador",
+        "finished": "Sí, he terminado",
+        "not_yet": "Todavía no (recordar en 7 días)",
+        "tomorrow": "Mañana",
+        "monday": "Próximo lunes",
+        "other": "Otra fecha",
+    }
+    TRAINING_DATE_PICKER: Final = "¿Cuándo quieres empezar el nuevo mesociclo?"
+    TRAINING_DATE_INPUT: Final = "Escribe la fecha de inicio con formato AAAA-MM-DD (UTC)."
+    TRAINING_CALLBACK_INVALID: Final = (
+        "Este botón ya no corresponde a la propuesta vigente. Envía /train para verla."
+    )
+    TRAINING_CALLBACK_PRIVATE: Final = (
+        "Solo el propietario puede confirmar propuestas en su chat privado."
+    )
     TRAINING_MESSAGES: Final = {
         "closed": "Cierre confirmado. Envía /train para continuar la revisión del siguiente bloque.",
         "status": "Mesociclo iniciado el {start}; cierre previsto: {end}. La ejecución no se registra automáticamente. Envía /train si ya has terminado.",
@@ -161,11 +181,11 @@ Tu nueva vida te espera, ¡Adelante!
         "swap_report": "Sustitución: {source} → {name}, desde la semana {week}. {reason} Prescripción de referencia: {sets} series, {reps} repeticiones, {rest}s de descanso; RPE {rpe}. Las series se adaptan a la progresión de cada semana y se conserva la descarga.",
         "unspecified_rpe": "no indicado",
         "alternatives_header": "Alternativas propuestas; todavía no se ha modificado el plan:\n",
-        "choose": "Elige con /train elegir {id} OPCIÓN o /train cancelar.",
+        "choose": "Elige una alternativa con los botones. También puedes usar /train elegir {id} OPCIÓN o /train cancelar.",
         "draft": "Borrador {id} (no activo):\n{report}",
         "context": "Contexto propuesto: objetivo {goal}; {days} días/semana, {minutes} min/sesión; entorno {environment}; material {equipment}; sueño {sleep} h; restricciones {injuries}. Confirma solo si refleja tu situación actual.",
         "no_injuries": "sin lesiones declaradas",
-        "confirm_draft": "Revisa los cambios y el contexto antes de aceptar. Usa /train confirmar {id} [AAAA-MM-DD] para indicar el inicio del nuevo bloque, o /train cancelar. Las sustituciones conservan las fechas del bloque.",
+        "confirm_draft": "Revisa los cambios y el contexto y usa los botones para confirmar, elegir fecha o descartar. Como alternativa: /train confirmar {id} (inicio hoy) o /train cancelar. Las sustituciones conservan las fechas del bloque.",
     }
 
     # --- Mensaje con el que se siembra la conversacion del modelo ---

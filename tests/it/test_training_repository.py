@@ -164,6 +164,25 @@ async def test_changed_base_plan_marks_proposal_stale(
 
 
 @pytest.mark.asyncio
+async def test_callback_accept_checks_revision_inside_transaction(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with training_factory() as session:
+        training = PostgresTrainingRepository(session)
+        flow = await training.start(CHAT_ID, "exercise_swap")
+        flow.draft = (await PostgresConversationRepository(session).get_current_plan(CHAT_ID)).plan
+        flow.report = "swap"
+        flow.state = "awaiting_confirmation"
+        await training.save(CHAT_ID, flow)
+        with pytest.raises(TrainingConflictError, match="revision changed"):
+            await training.accept(CHAT_ID, flow.id, datetime.now(UTC), expected_revision=0)
+        await session.rollback()
+        assert await training.accept(
+            CHAT_ID, flow.id, datetime.now(UTC), expected_revision=flow.revision
+        )
+
+
+@pytest.mark.asyncio
 async def test_confirmation_is_atomic_and_swap_preserves_dates() -> None:
     url = os.getenv(
         "IT_DB_URL",

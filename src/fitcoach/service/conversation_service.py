@@ -8,11 +8,12 @@ import asyncio
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from typing import TypedDict
 
 from opentelemetry import trace
 from opentelemetry.trace import Span
-from telegram import Bot, Message, Update
-from telegram.error import RetryAfter
+from telegram import Bot, InlineKeyboardMarkup, Message, Update
+from telegram.error import BadRequest, RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.agents import AgentType
@@ -33,6 +34,10 @@ from fitcoach.service.training_service import TrainingService
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
+
+
+class _MessageMarkup(TypedDict, total=False):
+    reply_markup: InlineKeyboardMarkup
 
 
 def remove_emojis(text: str) -> str:
@@ -120,10 +125,53 @@ class ConversationService:
                 # (or already answered): processing it again is the retry loop.
                 logger.warning(f"{ctx} update duplicado, se ignora")
                 return
+            if update.callback_query is not None:
+                await self._handle_callback(update, ctx)
+                return
             await self._process(update, message, ctx)
         except Exception:
             logger.exception(f"{ctx} error inesperado procesando el update")
             await self._notify_server_error(message, ctx)
+
+    async def _handle_callback(self, update: Update, ctx: str) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        message = query.message
+        if (
+            not isinstance(message, Message)
+            or message.chat.type != "private"
+            or query.from_user.id != message.chat_id
+            or self._training_service is None
+        ):
+            await self._bot.answer_callback_query(
+                query.id, text=Constants.TRAINING_CALLBACK_PRIVATE, show_alert=True
+            )
+            return
+        await self._bot.answer_callback_query(query.id)
+        try:
+            responses = await self._training_service.callback(message.chat_id, query.data or "")
+        except AgentError as error:
+            logger.warning("%s controlled callback error: %s", ctx, error.code)
+            await self._send(
+                message.chat_id,
+                message.message_thread_id,
+                self._message_for_agent_error(error.code),
+            )
+            return
+        if (
+            Constants.TRAINING_CALLBACK_INVALID not in responses
+            and Constants.TRAINING_CONFLICT_MESSAGE not in responses
+        ):
+            try:
+                await self._bot.edit_message_reply_markup(
+                    chat_id=message.chat_id, message_id=message.message_id, reply_markup=None
+                )
+            except BadRequest:
+                logger.warning("%s could not retire original inline keyboard", ctx, exc_info=True)
+        await self._deliver_training_responses(
+            message.chat_id, message.message_thread_id, query.data or "", responses
+        )
 
     async def _process(self, update: Update, message: Message | None, ctx: str) -> None:
         edited = " (editado)" if update.edited_message is not None else ""
@@ -495,11 +543,22 @@ class ConversationService:
             logger.warning("%s controlled training error: %s", ctx, error.code)
             await self._send(chat_id, thread_id, self._message_for_agent_error(error.code))
             return
+        await self._deliver_training_responses(chat_id, thread_id, text, responses)
+
+    async def _deliver_training_responses(
+        self, chat_id: int, thread_id: int | None, text: str, responses: list[str]
+    ) -> None:
+        if self._training_service is None:
+            return
+        markup = await self._training_service.keyboard(chat_id, responses)
         await self._conversation_repository.add_turn(
             chat_id, text, "\n".join(responses), AgentType.TRAINER.value
         )
-        for response in responses:
-            await self._send(chat_id, thread_id, response)
+        for index, response in enumerate(responses):
+            if markup is not None and index == len(responses) - 1:
+                await self._send(chat_id, thread_id, response, markup)
+            else:
+                await self._send(chat_id, thread_id, response)
 
     async def _record_trainer_error(
         self,
@@ -590,7 +649,13 @@ class ConversationService:
             IAMessage(message=user_message),
         ])
 
-    async def _send(self, chat_id: int, message_thread_id: int | None, text: str) -> None:
+    async def _send(
+        self,
+        chat_id: int,
+        message_thread_id: int | None,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
         """Envia al usuario, reintentando una vez si Telegram aplica control de flujo."""
         if len(text) > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
             for offset in range(0, len(text), Constants.TELEGRAM_MAX_MESSAGE_CHARS):
@@ -598,11 +663,15 @@ class ConversationService:
                     chat_id,
                     message_thread_id,
                     text[offset : offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS],
+                    reply_markup
+                    if offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS >= len(text)
+                    else None,
                 )
             return
+        kwargs: _MessageMarkup = {"reply_markup": reply_markup} if reply_markup is not None else {}
         try:
             await self._bot.send_message(
-                chat_id=chat_id, message_thread_id=message_thread_id, text=text
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text, **kwargs
             )
         except RetryAfter as exc:
             # PTB lo declara como int | timedelta, aunque la API devuelva segundos.
@@ -618,7 +687,7 @@ class ConversationService:
             logger.warning(f"control de flujo de Telegram: reintento en {espera}s")
             await asyncio.sleep(espera)
             await self._bot.send_message(
-                chat_id=chat_id, message_thread_id=message_thread_id, text=text
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text, **kwargs
             )
 
     async def _send_reminder(self, chat_id: int, thread_id: int | None, text: str) -> None:

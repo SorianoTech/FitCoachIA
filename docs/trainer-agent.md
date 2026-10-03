@@ -38,6 +38,20 @@ Durante una revisión abierta, `/train consulta PREGUNTA` permite consultar sin 
 
 ## Continuidad, revisión y confirmación
 
+La interacción principal usa **botones inline**: «Empezar hoy», «Elegir fecha»,
+«Cambiar un ejercicio» y «Descartar borrador». No hace falta escribir el identificador.
+Elegir fecha ofrece mañana, próximo lunes u otra fecha; solo esta última pide escribir
+`AAAA-MM-DD`. Para una sustitución se muestra «Aplicar cambio» y cada alternativa
+se puede seleccionar con su propio botón. El cierre ofrece «Sí, he terminado» o
+«Todavía no (recordar en 7 días)». Los comandos siguientes siguen como alternativa.
+
+El webhook admite `callback_query` y responde inmediatamente a las pulsaciones.
+Cada botón lleva el id y revisión del flujo; las acciones comprueban el chat propietario
+y rechazan controles obsoletos. La aceptación verifica también la revisión dentro de
+la transacción. Los botones consumidos se retiran del mensaje original.
+Las confirmaciones por botón están limitadas a chats privados del propietario; no
+se admite que otra persona confirme una propuesta desde un grupo o un mensaje reenviado.
+
 El ciclo dura cuatro semanas desde el inicio confirmado, no desde la creación del borrador.
 Al alcanzar la fecha prevista, el bot propone revisar el bloque sin asumir que se realizaron
 las sesiones. También se puede declarar su finalización antes. No hay diario de ejecución:

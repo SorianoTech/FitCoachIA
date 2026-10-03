@@ -137,7 +137,9 @@ class PostgresTrainingRepository:
         workflow.generation_key = str(uuid4())
         return await self.save(chat_id, workflow)
 
-    async def accept(self, chat_id: int, workflow_id: int, start: datetime) -> int:
+    async def accept(
+        self, chat_id: int, workflow_id: int, start: datetime, expected_revision: int | None = None
+    ) -> int:
         await self._lock(chat_id)
         record = await self._session.get(
             TrainingWorkflowRecord, workflow_id, populate_existing=True
@@ -145,6 +147,8 @@ class PostgresTrainingRepository:
         if record is None or record.chat_id != chat_id:
             raise TrainingConflictError("Unknown proposal")
         workflow = self._decode(record)
+        if expected_revision is not None and workflow.revision != expected_revision:
+            raise TrainingConflictError("Proposal revision changed")
         if workflow.state == "accepted":
             accepted_id = workflow.answers.get("accepted_plan_id")
             if accepted_id is None:
@@ -222,8 +226,19 @@ class PostgresTrainingRepository:
             workflow.state = "cancelled"
             await self.save(chat_id, workflow)
 
-    async def close_cycle(self, chat_id: int, now: datetime) -> None:
+    async def _check_current_plan(self, chat_id: int, expected_plan_id: int | None) -> None:
+        if expected_plan_id is not None:
+            session = await self._session.get(
+                TrainingSessionRecord, chat_id, populate_existing=True
+            )
+            if session is None or session.current_plan_id != expected_plan_id:
+                raise TrainingConflictError("Callback base plan is no longer current")
+
+    async def close_cycle(
+        self, chat_id: int, now: datetime, expected_plan_id: int | None = None
+    ) -> None:
         await self._lock(chat_id)
+        await self._check_current_plan(chat_id, expected_plan_id)
         cycle = await self._cycle_record(chat_id)
         if cycle is None:
             raise TrainingConflictError("No current mesocycle")
@@ -247,8 +262,11 @@ class PostgresTrainingRepository:
         cycle.reminders_enabled = enabled
         await self._session.commit()
 
-    async def postpone(self, chat_id: int, until: datetime) -> None:
+    async def postpone(
+        self, chat_id: int, until: datetime, expected_plan_id: int | None = None
+    ) -> None:
         await self._lock(chat_id)
+        await self._check_current_plan(chat_id, expected_plan_id)
         cycle = await self._cycle_record(chat_id)
         if cycle is None:
             raise TrainingConflictError("No current mesocycle")

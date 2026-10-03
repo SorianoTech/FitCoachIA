@@ -16,6 +16,7 @@ from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import PlannedExercise, SwapSelection, TrainerTurn, TrainingPlan
 from fitcoach.domain.training_lifecycle import (
+    SwapReasonSource,
     SwapRequest,
     TrainingAdaptationContext,
     TrainingReview,
@@ -24,7 +25,7 @@ from fitcoach.domain.training_lifecycle import (
     prescribed_summary,
     utc_now,
 )
-from fitcoach.infrastructure.observability.latency import latency_phase, timed
+from fitcoach.infrastructure.observability.latency import latency_action, latency_phase, timed
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.repository.training_repository import TrainingConflictError, TrainingRepository
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever, available_equipment
@@ -524,8 +525,17 @@ class TrainingService:
                 conversation_message_id=None,
             )
 
-    @timed("workflow", action="renewal")
     async def _generate(self, chat_id: int, workflow: TrainingWorkflow) -> list[str]:
+        action = (
+            "exercise_swap"
+            if workflow.kind == "exercise_swap" or workflow.base_draft is not None
+            else "renewal"
+        )
+        with latency_action(action):
+            return await self._generate_workflow(chat_id, workflow)
+
+    @timed("workflow")
+    async def _generate_workflow(self, chat_id: int, workflow: TrainingWorkflow) -> list[str]:
         if await self._quota(chat_id):
             return [Constants.QUOTA_SOFT_MESSAGE]
         workflow = await self._repository.claim_generation(chat_id, workflow.id)
@@ -747,7 +757,10 @@ class TrainingService:
                 message = Constants.TRAINING_SWAP_REASON_INPUT
             else:
                 return await self._finish_swap_picker(
-                    chat_id, workflow, Constants.TRAINING_SWAP_REASONS[value]
+                    chat_id,
+                    workflow,
+                    Constants.TRAINING_SWAP_REASONS[value],
+                    reason_source="preference_button" if value == "preference" else "free_text",
                 )
         else:
             return [Constants.TRAINING_CALLBACK_INVALID]
@@ -764,18 +777,32 @@ class TrainingService:
         return [Constants.TRAINING_SWAP_REASON]
 
     async def _finish_swap_picker(
-        self, chat_id: int, workflow: TrainingWorkflow, reason: str
+        self,
+        chat_id: int,
+        workflow: TrainingWorkflow,
+        reason: str,
+        *,
+        reason_source: SwapReasonSource = "free_text",
     ) -> list[str]:
         original = workflow.answers.pop("swap_user_text", "")
+        if original:
+            reason_source = "free_text"
         if original and original != reason:
             reason = f"{original}\n{reason}"
         request = f"{workflow.answers['swap_exercise']} {workflow.answers['swap_week']} {reason}"
         workflow.answers.pop("swap_step", None)
         workflow.answers.pop("swap_message", None)
         workflow = await self._repository.save(chat_id, workflow)
-        return await self._prepare_swap(chat_id, workflow, request)
+        return await self._prepare_swap(chat_id, workflow, request, reason_source=reason_source)
 
-    async def _prepare_swap(self, chat_id: int, workflow: TrainingWorkflow, text: str) -> list[str]:
+    async def _prepare_swap(
+        self,
+        chat_id: int,
+        workflow: TrainingWorkflow,
+        text: str,
+        *,
+        reason_source: SwapReasonSource = "free_text",
+    ) -> list[str]:
         parts = text.split(maxsplit=2)
         if len(parts) != 3:
             return await self._swap_question(chat_id, workflow.base_draft, workflow)
@@ -798,11 +825,13 @@ class TrainingService:
             for item in day.exercises
         ):
             raise TrainingInputError(Constants.TRAINING_MESSAGES["no_pending_occurrences"])
-        workflow.swap = SwapRequest(exercise_id=exercise_id, from_week=week, reason=parts[2])
+        workflow.swap = SwapRequest(
+            exercise_id=exercise_id, from_week=week, reason=parts[2], reason_source=reason_source
+        )
         workflow = await self._repository.save(chat_id, workflow)
         return await self._generate(chat_id, workflow)
 
-    @timed("workflow", action="exercise_swap")
+    @timed("swap", action="exercise_swap")
     async def _generate_swap(
         self,
         chat_id: int,
@@ -813,19 +842,40 @@ class TrainingService:
         request = workflow.swap
         if request is None:
             raise TrainingInputError(Constants.TRAINING_SWAP_QUESTION)
-        constraints = await self._adaptation.extract_swap_constraints(profile, request)
-        await self._account(chat_id, constraints.token_usages)
-        if constraints.result.safety_hold:
-            workflow.answers["safety_hold"] = "true"
-            workflow.state = "reviewing"
-            await self._repository.save(chat_id, workflow)
-            return [Constants.TRAINING_SAFETY_MESSAGE]
-        if constraints.result.clarification:
-            workflow.answers["swap_clarification"] = constraints.result.clarification
-            workflow.state = "reviewing"
-            await self._repository.save(chat_id, workflow)
-            return [constraints.result.clarification]
-        request.excluded_equipment = constraints.result.excluded_equipment
+        trusted_preference = (
+            request.reason_source == "preference_button"
+            and request.reason == Constants.TRAINING_SWAP_REASONS["preference"]
+            and not profile.injuries
+            and not profile.flags.red
+            and not workflow.review
+            and not any(
+                workflow.answers.get(key)
+                for key in (
+                    "swap_user_text",
+                    "swap_message",
+                    "swap_clarification",
+                    "safety_hold",
+                    "open_review",
+                    "discomfort",
+                )
+            )
+        )
+        if trusted_preference:
+            request.excluded_equipment = []
+        else:
+            constraints = await self._adaptation.extract_swap_constraints(profile, request)
+            await self._account(chat_id, constraints.token_usages)
+            if constraints.result.safety_hold:
+                workflow.answers["safety_hold"] = "true"
+                workflow.state = "reviewing"
+                await self._repository.save(chat_id, workflow)
+                return [Constants.TRAINING_SAFETY_MESSAGE]
+            if constraints.result.clarification:
+                workflow.answers["swap_clarification"] = constraints.result.clarification
+                workflow.state = "reviewing"
+                await self._repository.save(chat_id, workflow)
+                return [constraints.result.clarification]
+            request.excluded_equipment = constraints.result.excluded_equipment
         workflow.answers.pop("swap_clarification", None)
         source = await self._retriever.get_by_ids([request.exercise_id])
         if len(source) != 1:

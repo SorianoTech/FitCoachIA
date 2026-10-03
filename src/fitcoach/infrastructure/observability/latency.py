@@ -18,6 +18,15 @@ T = TypeVar("T")
 
 
 @contextmanager
+def latency_action(action: str) -> Iterator[None]:
+    token = _action.set(action)
+    try:
+        yield
+    finally:
+        _action.reset(token)
+
+
+@contextmanager
 def latency_phase(phase: str, *, model: str | None = None) -> Iterator[None]:
     started = time.perf_counter()
     result = "ok"

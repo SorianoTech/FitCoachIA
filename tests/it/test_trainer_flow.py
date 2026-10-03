@@ -140,6 +140,7 @@ class TestTrainerFlowIntegration:
         _complete_interview(client)
         _run_train(client)
         text = "Quiero cambiar el press de banca, prefiero otro ejercicio"
+        calls_before = stub.get("/__counts").json()["llm"]
         client.post("/webhook/response", json=_update(20, text if natural else "/train cambiar"))
         sent = stub.get("/__sent").json()[-1]
         assert sent["text"] == "¿Qué ejercicio quieres cambiar? Elige abajo."
@@ -177,6 +178,9 @@ class TestTrainerFlowIntegration:
         payload = json.loads(flow["payload"])
         assert payload["swap"]["reason"] == (text if natural else "Prefiero otro ejercicio")
         assert payload["swap"]["from_week"] == 2
+        assert payload["swap"]["reason_source"] == ("free_text" if natural else "preference_button")
+        calls_after = stub.get("/__counts").json()["llm"]
+        assert calls_after - calls_before == (3 if natural else 1)
         assert (
             await app_db.fetchval("SELECT count(*) FROM training_plans WHERE chat_id=$1", CHAT_ID)
             == 1

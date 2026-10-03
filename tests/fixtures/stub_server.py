@@ -27,7 +27,7 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 
 # Mensajes enviados por la app, para que el test pueda inspeccionarlos.
 SENT_MESSAGES: list[dict[str, object]] = []
-REQUEST_COUNTS = {"embed": 0}
+REQUEST_COUNTS = {"embed": 0, "llm": 0}
 REGISTERED_WEBHOOK_URL = ""
 
 _INTERVIEW_PROFILE = {
@@ -179,6 +179,7 @@ class StubHandler(BaseHTTPRequestHandler):
         elif self.path == "/__reset":
             SENT_MESSAGES.clear()
             REQUEST_COUNTS["embed"] = 0
+            REQUEST_COUNTS["llm"] = 0
             self._respond({"ok": True})
         else:
             self._respond({"error": "not found"}, status=404)
@@ -189,6 +190,7 @@ class StubHandler(BaseHTTPRequestHandler):
         body = self._parse_body(raw_body, self.headers.get("Content-Type", ""))
 
         if self.path.startswith("/v1/chat/completions"):
+            REQUEST_COUNTS["llm"] += 1
             self._respond(_completion(self._turn_for(body)))
             return
         if self.path.startswith("/embed"):

@@ -155,6 +155,16 @@ el perfil. Si la petición es ambigua, hace una pregunta concreta y guarda la re
 los síntomas preocupantes bloquean el flujo hasta cancelarlo y obtener orientación adecuada.
 Esta interpretación añade una llamada al LLM, contabilizada y sujeta a la cuota de generación.
 
+La única excepción es «Prefiero otro ejercicio» elegido por botón, con procedencia
+`preference_button` persistida por el backend. Sin texto natural, revisión previa,
+aclaración, bloqueo, lesiones declaradas o flags rojas, omite la extracción y pasa
+directamente al RAG y a la propuesta validada: una llamada LLM en vez de dos.
+La propuesta conserva su comprobación de síntomas y el evaluador del plan completo.
+Escribir el mismo texto no habilita la excepción. Los workflows antiguos y motivos
+de dificultad/material/otros usan siempre la interpretación completa. Los modelos
+actuales siguen siendo los mismos por defecto; no se presupone una reducción de
+latencia del proveedor, solo se elimina una llamada en el caso seguro.
+
 El modelo de alternativas recibe las sesiones afectadas completas, sus prescripciones
 pendientes, el resumen semanal de series por target y metadatos/instrucciones del catálogo.
 Prioriza función y patrón de movimiento cuando las instrucciones lo permiten, evita

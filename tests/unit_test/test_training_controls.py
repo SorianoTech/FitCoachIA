@@ -5,6 +5,7 @@ import pytest
 from telegram import Bot, Update
 
 from fitcoach.domain.constants import Constants
+from fitcoach.domain.interviewer_profile import Injury
 from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.trainer_plan import SwapSelection
 from fitcoach.domain.training_lifecycle import TrainingWorkflow
@@ -329,6 +330,84 @@ async def test_invalid_model_exercise_is_not_used_to_hide_all_choices(collaborat
     assert "swap_filter_exercise" not in flow.answers
     markup = await service.keyboard(7, messages)
     assert markup.inline_keyboard[0][0].callback_data == "tr:exercise:3:0:101"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "risk", ["none", "message", "injury", "red", "difficulty", "legacy", "clarification"]
+)
+async def test_only_trusted_preference_without_risk_skips_extraction(
+    collaborators: tuple,
+    risk: str,
+) -> None:
+    service, repository, conversation, _, adaptation = collaborators
+    flow = TrainingWorkflow(
+        id=3,
+        kind="exercise_swap",
+        base_plan_id=10,
+        state="reviewing",
+        answers={"swap_step": "reason", "swap_exercise": "101", "swap_week": "2"},
+    )
+    repository.start.return_value = flow
+    repository.claim_generation.return_value = flow
+    repository.get_workflow.return_value = flow
+    profile = conversation.get_interviewer_profile.return_value
+    if risk == "message":
+        flow.answers["swap_user_text"] = "Tengo dolor y quiero cambiar"
+    elif risk == "injury":
+        profile.injuries = [
+            Injury(
+                location="rodilla", type="molestia", age="reciente", restriction="evitar impacto"
+            )
+        ]
+    elif risk == "red":
+        profile.flags.red = ["evaluación profesional pendiente"]
+    elif risk == "clarification":
+        flow.answers["swap_clarification"] = "¿Hay molestias nuevas?"
+    service._retriever.retrieve_alternatives.return_value = []
+    if risk == "legacy":
+        await service.handle(7, "/train cambiar 101 2 Prefiero otro ejercicio")
+    else:
+        await service.callback(
+            7, f"tr:reason:3:0:{'difficulty' if risk == 'difficulty' else 'preference'}"
+        )
+    if risk == "none":
+        adaptation.extract_swap_constraints.assert_not_awaited()
+        assert flow.swap.reason_source == "preference_button"
+    else:
+        adaptation.extract_swap_constraints.assert_awaited_once()
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_preference_provenance_survives_quota_limit_and_restart(collaborators: tuple) -> None:
+    service, repository, conversation, _, adaptation = collaborators
+    flow = TrainingWorkflow(
+        id=3,
+        kind="exercise_swap",
+        base_plan_id=10,
+        state="reviewing",
+        answers={"swap_step": "reason", "swap_exercise": "101", "swap_week": "2"},
+    )
+    repository.get_workflow.return_value = flow
+    conversation.tokens_used_since.return_value = 900
+    assert await service.callback(7, "tr:reason:3:0:preference") == [Constants.QUOTA_SOFT_MESSAGE]
+    adaptation.extract_swap_constraints.assert_not_awaited()
+    restored = TrainingWorkflow.model_validate_json(flow.model_dump_json())
+    assert restored.swap.reason_source == "preference_button"
+    repository.get_workflow.return_value = restored
+    repository.claim_generation.return_value = restored
+    conversation.tokens_used_since.return_value = 0
+    service._retriever.retrieve_alternatives.return_value = []
+    restored.state = "generating"
+    assert await service.handle(7, "/train") == [Constants.TRAINING_NO_ALTERNATIVES_MESSAGE]
+    adaptation.extract_swap_constraints.assert_not_awaited()
+    assert await service.handle(7, "101 2 Prefiero otro ejercicio") == [
+        Constants.TRAINING_NO_ALTERNATIVES_MESSAGE
+    ]
+    # A typed command/string never inherits the button's provenance.
+    assert restored.swap.reason_source == "free_text"
+    adaptation.extract_swap_constraints.assert_awaited_once()
 
 
 @pytest.mark.asyncio

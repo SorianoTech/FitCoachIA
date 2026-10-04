@@ -5,6 +5,7 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Numeric,
@@ -235,6 +236,42 @@ class ProcessedUpdateRecord(Base):
     )
 
 
+class ExerciseSubmissionRecord(Base):
+    __tablename__ = "exercise_submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_exercise_submissions_status",
+        ),
+        Index("ix_exercise_submissions_status_id", "status", "id"),
+        Index(
+            "uq_exercise_submissions_draft_chat",
+            "chat_id",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_thread_id: Mapped[int | None] = mapped_column(BigInteger)
+    raw_description: Mapped[str] = mapped_column(Text, nullable=False)
+    proposal: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="draft")
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    duplicate_exercise_id: Mapped[int | None] = mapped_column(BigInteger)
+    moderation_notes: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger)
+    published_exercise_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ModelPriceRecord(Base):
     __tablename__ = "model_prices"
 
@@ -273,6 +310,112 @@ class TokenUsageRecord(Base):
     cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
     latency_ms: Mapped[int] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class WorkoutSessionRecord(Base):
+    __tablename__ = "workout_sessions"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "request_id", name="uq_workout_sessions_request"),
+        Index(
+            "uq_workout_sessions_cycle_slot",
+            "chat_id",
+            "mesocycle_id",
+            "week",
+            "day",
+            unique=True,
+            postgresql_where=text("mesocycle_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_workout_sessions_legacy_slot",
+            "chat_id",
+            "plan_id",
+            "week",
+            "day",
+            unique=True,
+            postgresql_where=text("mesocycle_id IS NULL"),
+        ),
+        Index("ix_workout_sessions_chat_id_id", "chat_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    mesocycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="CASCADE")
+    )
+    week: Mapped[int] = mapped_column(nullable=False)
+    day: Mapped[int] = mapped_column(nullable=False)
+    revision: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="in_progress", server_default="in_progress"
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    prescription: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    exercises: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+
+
+class WorkoutRequestRecord(Base):
+    """Every start/resume UUID retains its original payload, including after swaps."""
+
+    __tablename__ = "workout_requests"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("workout_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False
+    )
+
+
+class QuotaConfigRecord(Base):
+    """Quota configured from the admin panel. ``scope_id`` 0 is the global row; others a chat."""
+
+    __tablename__ = "quota_configs"
+    __table_args__ = (
+        CheckConstraint("scope_id >= 0", name="ck_quota_configs_scope_id"),
+        CheckConstraint(
+            "token_limit > 0 AND token_limit <= 1000000000", name="ck_quota_configs_token_limit"
+        ),
+        CheckConstraint("soft_ratio > 0 AND soft_ratio <= 1", name="ck_quota_configs_soft_ratio"),
+        CheckConstraint(
+            "window_minutes > 0 AND window_minutes <= 525600",
+            name="ck_quota_configs_window_minutes",
+        ),
+    )
+
+    scope_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    token_limit: Mapped[int] = mapped_column(nullable=False)
+    soft_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    window_minutes: Mapped[int] = mapped_column(nullable=False)
+    updated_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class QuotaAuditRecord(Base):
+    """Append-only history of quota changes. Stores ids and configs only, never user data."""
+
+    __tablename__ = "quota_audit"
+    __table_args__ = (Index("ix_quota_audit_subject_chat_id_id", "subject_chat_id", "id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    subject_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    before: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

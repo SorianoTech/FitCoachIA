@@ -11,11 +11,13 @@ from telegram.error import RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError
 from fitcoach.domain.constants import Constants
+from fitcoach.domain.exercise_catalogue import available_equipment, normalize_equipment
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.token_usage import TokenUsage
-from fitcoach.domain.trainer_plan import PlannedExercise, TrainerTurn, TrainingPlan
+from fitcoach.domain.trainer_plan import PlannedExercise, SwapSelection, TrainerTurn, TrainingPlan
 from fitcoach.domain.training_lifecycle import (
+    SwapReasonSource,
     SwapRequest,
     TrainingAdaptationContext,
     TrainingReview,
@@ -24,14 +26,16 @@ from fitcoach.domain.training_lifecycle import (
     prescribed_summary,
     utc_now,
 )
+from fitcoach.infrastructure.observability.latency import latency_action, latency_phase, timed
 from fitcoach.repository.conversation_repository import ConversationRepository
 from fitcoach.repository.training_repository import TrainingConflictError, TrainingRepository
-from fitcoach.service.agent.exercise_retriever import ExerciseRetriever, available_equipment
+from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.plan_evaluator import Severity, estimate_session_minutes, evaluate_turn
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.agent.training_adaptation_chain import TrainingAdaptationChain
 from fitcoach.service.training_controls import training_keyboard
 from fitcoach.service.training_preview import details, preview
+from fitcoach.service.training_view import view_keyboard, view_plan
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,9 @@ class TrainingService:
         limits: UsageLimits,
         clock: Callable[[], datetime] = utc_now,
         reminder_max_attempts: int = 5,
+        miniapp_url: str | None = None,
+        performance_summary: Callable[[int, int], Awaitable[dict[str, object]]] | None = None,
+        quota_resolver: Callable[[int], Awaitable[UsageLimits]] | None = None,
     ) -> None:
         self._repository = repository
         self._conversation = conversation
@@ -60,6 +67,9 @@ class TrainingService:
         self._limits = limits
         self._clock = clock
         self._reminder_max_attempts = reminder_max_attempts
+        self._miniapp_url = miniapp_url
+        self._performance_summary = performance_summary
+        self._quota_resolver = quota_resolver
 
     async def profile(self, chat_id: int) -> InterviewerProfile | None:
         return await self._repository.effective_profile(
@@ -70,8 +80,25 @@ class TrainingService:
         return await self._repository.get_workflow(chat_id) is not None
 
     async def keyboard(self, chat_id: int, responses: list[str]) -> InlineKeyboardMarkup | None:
+        if responses and responses[0].startswith((
+            Constants.TRAINING_NAVIGATION["title"].split("{")[0],
+            Constants.TRAINING_NAVIGATION["week_title"],
+        )):
+            stored = await self._conversation.get_current_plan(chat_id)
+            pending = await self._repository.get_workflow(chat_id)
+            return (
+                view_keyboard(stored.id, pending=pending is not None, miniapp_url=self._miniapp_url)
+                if stored
+                else None
+            )
         workflow = await self._repository.get_workflow(chat_id)
-        return training_keyboard(workflow, responses) if workflow else None
+        if workflow is None:
+            return None
+        plan = workflow.base_draft
+        if workflow.answers.get("swap_step") and plan is None:
+            stored = await self._conversation.get_current_plan(chat_id)
+            plan = stored.plan if stored else None
+        return training_keyboard(workflow, responses, plan)
 
     async def callback(self, chat_id: int, data: str) -> list[str]:
         try:
@@ -84,10 +111,13 @@ class TrainingService:
             return [str(error)]
 
     async def _callback(self, chat_id: int, data: str) -> list[str]:
+        if data.startswith("tv:"):
+            return await self._view_callback(chat_id, data)
         parts = data.split(":")
         if len(parts) not in (4, 5) or parts[0] != "tr":
             logger.warning("Invalid training callback for chat %s", chat_id)
             return [Constants.TRAINING_CALLBACK_INVALID]
+
         try:
             workflow_id, revision = int(parts[2]), int(parts[3])
         except ValueError:
@@ -99,6 +129,8 @@ class TrainingService:
             return [Constants.TRAINING_CALLBACK_INVALID]
         action = parts[1]
         value = parts[4] if len(parts) == 5 else ""
+        if action in ("exercise", "page", "week", "reason"):
+            return await self._swap_button(chat_id, workflow, action, value)
         if (
             action in ("good", "changes")
             and workflow.kind == "renewal"
@@ -136,14 +168,14 @@ class TrainingService:
                 workflow.swap = None
                 workflow.state = "reviewing"
                 await self._repository.save(chat_id, workflow)
-                return await self._swap_question(chat_id)
+                return await self._swap_question(chat_id, workflow=workflow)
             workflow.base_draft = workflow.draft
             workflow.base_report = workflow.report
             workflow.draft = None
             workflow.answers.pop("date_request", None)
             workflow.state = "reviewing"
             await self._repository.save(chat_id, workflow)
-            return await self._swap_question(chat_id, workflow.base_draft)
+            return await self._swap_question(chat_id, workflow.base_draft, workflow)
         if (
             action == "close"
             and await self._next_question(chat_id, workflow) == Constants.TRAINING_CLOSURE_QUESTION
@@ -188,6 +220,52 @@ class TrainingService:
                 )
                 return [Constants.TRAINING_ACCEPTED_MESSAGE]
         logger.warning("Unsupported training callback action for chat %s", chat_id)
+        return [Constants.TRAINING_CALLBACK_INVALID]
+
+    async def view(self, chat_id: int, *, mode: str = "home", week: int | None = None) -> list[str]:
+        stored = await self._conversation.get_current_plan(chat_id)
+        if stored is None:
+            return [Constants.NO_PLAN_MESSAGE]
+        cycle = await self._repository.get_cycle(chat_id)
+        return view_plan(stored, cycle, self._clock(), mode=mode, week=week)
+
+    async def _view_callback(self, chat_id: int, data: str) -> list[str]:
+        parts = data.split(":")
+        stored = await self._conversation.get_current_plan(chat_id)
+        if (
+            len(parts) not in (3, 4)
+            or not parts[1].isdigit()
+            or stored is None
+            or int(parts[1]) != stored.id
+        ):
+            logger.warning("Invalid or stale training view callback for chat %s", chat_id)
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        action = parts[2]
+        if len(parts) == 3 and action == "notes":
+            return [
+                Constants.TRAINING_NAVIGATION["week_title"]
+                + "\n\n"
+                + Constants.TRAINING_PREVIEW["progression_notes"]
+                + "\n"
+                + stored.plan.progression_notes
+            ]
+        if len(parts) == 3 and action == "resume":
+            workflow = await self._repository.get_workflow(chat_id)
+            if workflow is None:
+                return [Constants.TRAINING_CALLBACK_INVALID]
+            return await self._handle(
+                chat_id,
+                "/train cambiar" if workflow.kind == "exercise_swap" else "/train revisar",
+            )
+        if len(parts) == 3 and action in ("current", "home"):
+            return await self.view(chat_id, mode="week" if action == "current" else "home")
+        if len(parts) == 4 and action == "week" and parts[3] in ("1", "2", "3", "4"):
+            return await self.view(chat_id, mode="week", week=int(parts[3]))
+        if len(parts) == 3 and action in ("swap", "review"):
+            return await self._handle(
+                chat_id, "/train cambiar" if action == "swap" else "/train revisar"
+            )
+        logger.warning("Unsupported training view callback for chat %s", chat_id)
         return [Constants.TRAINING_CALLBACK_INVALID]
 
     async def remind_on_interaction(
@@ -246,9 +324,18 @@ class TrainingService:
             )
         ]
 
-    async def handle(self, chat_id: int, text: str) -> list[str]:
+    async def handle(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        swap_message: str | None = None,
+        swap_selection: SwapSelection | None = None,
+    ) -> list[str]:
         try:
-            return await self._handle(chat_id, text)
+            return await self._handle(
+                chat_id, text, swap_message=swap_message, swap_selection=swap_selection
+            )
         except TrainingConflictError:
             logger.warning("Training proposal conflict for chat %s", chat_id, exc_info=True)
             return [Constants.TRAINING_CONFLICT_MESSAGE]
@@ -256,11 +343,20 @@ class TrainingService:
             logger.warning("Training action needs clarification for chat %s: %s", chat_id, error)
             return [str(error)]
 
-    async def _handle(self, chat_id: int, text: str) -> list[str]:
+    async def _handle(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        swap_message: str | None = None,
+        swap_selection: SwapSelection | None = None,
+    ) -> list[str]:
         tokens = text.split()
         command = tokens[0] if tokens else ""
         arguments = tokens[1:]
         action = arguments[0].lower() if command == "/train" and arguments else ""
+        if command == "/train" and action in ("", "ver", "semana"):
+            return await self.view(chat_id, mode="week" if action == "semana" else "home")
         if command == "/progress":
             return await self.status(chat_id)
         if action == "cancelar":
@@ -332,6 +428,16 @@ class TrainingService:
             workflow = await self._repository.start(
                 chat_id, "exercise_swap" if action == "cambiar" else "renewal"
             )
+        if swap_message:
+            workflow.answers["swap_user_text"] = swap_message
+            if swap_selection is None or swap_selection.reason:
+                workflow.answers["swap_message"] = swap_message
+            if swap_selection and swap_selection.week:
+                workflow.answers["swap_week"] = str(swap_selection.week)
+                workflow.answers["swap_filter_week"] = str(swap_selection.week)
+            if swap_selection and swap_selection.exercise_id:
+                workflow.answers["swap_filter_exercise"] = str(swap_selection.exercise_id)
+            workflow = await self._repository.save(chat_id, workflow)
         if action == "cambiar" and workflow.kind == "renewal":
             if workflow.draft is None and workflow.base_draft is None:
                 raise TrainingInputError(Constants.TRAINING_MESSAGES["pending_review"])
@@ -350,16 +456,22 @@ class TrainingService:
         if workflow.kind == "exercise_swap" or workflow.base_draft is not None:
             if workflow.answers.get("safety_hold"):
                 return [Constants.TRAINING_SAFETY_MESSAGE]
+            if workflow.answers.get("swap_step") == "input" and command != "/train":
+                return await self._finish_swap_picker(chat_id, workflow, text)
             if workflow.answers.get("swap_clarification") and workflow.swap:
-                if command == "/train" and not arguments:
+                if (
+                    command == "/train"
+                    and action in ("", "cambiar", "revisar")
+                    and len(arguments) <= 1
+                ):
                     return [workflow.answers["swap_clarification"]]
                 if command != "/train":
                     workflow.swap.reason += f"\n{workflow.answers['swap_clarification']}\n{text}"
                     workflow = await self._repository.save(chat_id, workflow)
                     return await self._generate(chat_id, workflow)
             request_text = " ".join(arguments[1:]) if action == "cambiar" else text
-            if command == "/train" and not request_text:
-                return await self._swap_question(chat_id, workflow.base_draft)
+            if command == "/train" and (not request_text or action == "revisar"):
+                return await self._swap_question(chat_id, workflow.base_draft, workflow)
             return await self._prepare_swap(chat_id, workflow, request_text)
         if command == "/train":
             return [await self._next_question(chat_id, workflow)]
@@ -468,10 +580,13 @@ class TrainingService:
         return await self._generate(chat_id, workflow)
 
     async def _quota(self, chat_id: int) -> bool:
-        used = await self._conversation.tokens_used_since(
-            chat_id, self._clock() - self._limits.window
+        limits = (
+            await self._quota_resolver(chat_id)
+            if self._quota_resolver is not None
+            else self._limits
         )
-        return used >= self._limits.soft_tokens
+        used = await self._conversation.tokens_used_since(chat_id, self._clock() - limits.window)
+        return used >= limits.soft_tokens
 
     async def _account(self, chat_id: int, usages: list[TokenUsage]) -> None:
         for usage in usages:
@@ -488,6 +603,16 @@ class TrainingService:
             )
 
     async def _generate(self, chat_id: int, workflow: TrainingWorkflow) -> list[str]:
+        action = (
+            "exercise_swap"
+            if workflow.kind == "exercise_swap" or workflow.base_draft is not None
+            else "renewal"
+        )
+        with latency_action(action):
+            return await self._generate_workflow(chat_id, workflow)
+
+    @timed("workflow")
+    async def _generate_workflow(self, chat_id: int, workflow: TrainingWorkflow) -> list[str]:
         if await self._quota(chat_id):
             return [Constants.QUOTA_SOFT_MESSAGE]
         workflow = await self._repository.claim_generation(chat_id, workflow.id)
@@ -555,18 +680,27 @@ class TrainingService:
             previous = await self._retriever.get_by_ids(sorted(stored.plan.exercise_ids()))
             candidates = await self._retriever.retrieve(effective)
             catalogue = {
-                item.id: item for item in [*previous, *candidates] if item.equipment in equipment
+                item.id: item
+                for item in [*previous, *candidates]
+                if item.equipment and normalize_equipment(item.equipment) in equipment
             }
             if not catalogue:
                 raise TrainingInputError(Constants.TRAINER_UNAVAILABLE_MESSAGE)
             if workflow.review is None:
                 raise TrainingConflictError("Validated review disappeared during generation")
+            cycle = await self._repository.get_cycle(chat_id)
+            recorded = (
+                await self._performance_summary(chat_id, cycle.id)
+                if self._performance_summary is not None and cycle is not None
+                else {}
+            )
             context = TrainingAdaptationContext(
                 profile=effective,
                 previous_plan=stored.plan,
                 previous_version=stored.version,
                 review=workflow.review,
                 prescribed_summary=prescribed_summary(stored.plan, previous),
+                recorded_performance=recorded,
             )
             reply = await self._trainer.generate_next_plan(context, list(catalogue.values()))
             await self._account(chat_id, reply.token_usages)
@@ -599,28 +733,165 @@ class TrainingService:
         except TrainingConflictError:
             logger.warning("Generation lease no longer owned for chat %s", chat_id)
 
-    async def _swap_question(self, chat_id: int, draft: TrainingPlan | None = None) -> list[str]:
+    async def _swap_question(
+        self,
+        chat_id: int,
+        draft: TrainingPlan | None = None,
+        workflow: TrainingWorkflow | None = None,
+    ) -> list[str]:
         stored = await self._conversation.get_current_plan(chat_id)
         if stored is None and draft is None:
             return [Constants.NO_PLAN_MESSAGE]
         plan = draft or (stored.plan if stored else None)
         if plan is None:
             raise TrainingConflictError("Missing plan for exercise selection")
-        names = {
-            exercise.exercise_id: exercise.name
+        workflow = workflow or await self._repository.get_workflow(chat_id)
+        if workflow is None:
+            raise TrainingConflictError("Missing exercise selection workflow")
+        filter_week = workflow.answers.get("swap_filter_week")
+        eligible = {
+            item.exercise_id
             for week in plan.weeks
+            if not filter_week or str(week.week) == filter_week
             for day in week.days
-            for exercise in day.exercises
+            for item in day.exercises
         }
-        return [
-            Constants.TRAINING_DRAFT_SWAP_QUESTION if draft else Constants.TRAINING_SWAP_QUESTION,
-            "\n".join(f"{key}: {name}" for key, name in names.items()),
-        ]
+        exercise_filter = workflow.answers.get("swap_filter_exercise")
+        if exercise_filter and int(exercise_filter) not in eligible:
+            logger.warning("Ignoring invalid model exercise selection for chat %s", chat_id)
+            workflow.answers.pop("swap_filter_exercise", None)
+        picker = (
+            Constants.TRAINING_SWAP_PICKER_WEEK.format(week=filter_week)
+            if filter_week
+            else Constants.TRAINING_SWAP_PICKER
+        )
+        prompts = {
+            "exercise": picker,
+            "week": Constants.TRAINING_SWAP_WEEK,
+            "reason": Constants.TRAINING_SWAP_REASON,
+            "input": Constants.TRAINING_SWAP_REASON_INPUT,
+        }
+        if workflow.answers.get("swap_step") in prompts:
+            return [prompts[workflow.answers["swap_step"]]]
+        workflow.answers["swap_step"] = "exercise"
+        workflow.answers["swap_page"] = "0"
+        await self._repository.save(chat_id, workflow)
+        return [picker]
 
-    async def _prepare_swap(self, chat_id: int, workflow: TrainingWorkflow, text: str) -> list[str]:
+    async def _swap_button(
+        self, chat_id: int, workflow: TrainingWorkflow, action: str, value: str
+    ) -> list[str]:
+        if workflow.state != "reviewing" or workflow.answers.get("safety_hold"):
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        stored = await self._conversation.get_current_plan(chat_id)
+        plan = workflow.base_draft or (stored.plan if stored else None)
+        if plan is None:
+            raise TrainingConflictError("Missing swap plan")
+        step = workflow.answers.get("swap_step")
+        if action == "page" and step == "exercise" and value.isdigit():
+            page = int(value)
+            if page * 8 >= len(plan.exercise_ids()):
+                return [Constants.TRAINING_CALLBACK_INVALID]
+            workflow.answers["swap_page"] = value
+            await self._repository.save(chat_id, workflow)
+            return await self._swap_question(chat_id, workflow.base_draft, workflow)
+        elif (
+            action == "exercise"
+            and step == "exercise"
+            and value.isdigit()
+            and int(value) in plan.exercise_ids()
+            and (
+                not workflow.answers.get("swap_filter_exercise")
+                or value == workflow.answers["swap_filter_exercise"]
+            )
+            and any(
+                not workflow.answers.get("swap_filter_week")
+                or str(week.week) == workflow.answers["swap_filter_week"]
+                for week in plan.weeks
+                if any(
+                    item.exercise_id == int(value) for day in week.days for item in day.exercises
+                )
+            )
+        ):
+            workflow.answers["swap_exercise"] = value
+            if workflow.base_draft is not None:
+                workflow.answers.setdefault("swap_week", "1")
+                return await self._swap_reason(chat_id, workflow)
+            if workflow.answers.get("swap_filter_week"):
+                return await self._swap_reason(chat_id, workflow)
+            workflow.answers["swap_step"] = "week"
+            message = Constants.TRAINING_SWAP_WEEK
+        elif (
+            action == "week"
+            and step == "week"
+            and value.isdigit()
+            and any(
+                week.week == int(value)
+                and any(
+                    item.exercise_id == int(workflow.answers["swap_exercise"])
+                    for day in week.days
+                    for item in day.exercises
+                )
+                for week in plan.weeks
+            )
+        ):
+            workflow.answers["swap_week"] = value
+            return await self._swap_reason(chat_id, workflow)
+        elif action == "reason" and step == "reason" and value in Constants.TRAINING_SWAP_REASONS:
+            if value in ("equipment", "other"):
+                workflow.answers["swap_step"] = "input"
+                message = Constants.TRAINING_SWAP_REASON_INPUT
+            else:
+                return await self._finish_swap_picker(
+                    chat_id,
+                    workflow,
+                    Constants.TRAINING_SWAP_REASONS[value],
+                    reason_source="preference_button" if value == "preference" else "free_text",
+                )
+        else:
+            return [Constants.TRAINING_CALLBACK_INVALID]
+        await self._repository.save(chat_id, workflow)
+        return [message]
+
+    async def _swap_reason(self, chat_id: int, workflow: TrainingWorkflow) -> list[str]:
+        if workflow.answers.get("swap_message"):
+            return await self._finish_swap_picker(
+                chat_id, workflow, workflow.answers["swap_message"]
+            )
+        workflow.answers["swap_step"] = "reason"
+        await self._repository.save(chat_id, workflow)
+        return [Constants.TRAINING_SWAP_REASON]
+
+    async def _finish_swap_picker(
+        self,
+        chat_id: int,
+        workflow: TrainingWorkflow,
+        reason: str,
+        *,
+        reason_source: SwapReasonSource = "free_text",
+    ) -> list[str]:
+        original = workflow.answers.pop("swap_user_text", "")
+        if original:
+            reason_source = "free_text"
+        if original and original != reason:
+            reason = f"{original}\n{reason}"
+        request = f"{workflow.answers['swap_exercise']} {workflow.answers['swap_week']} {reason}"
+        workflow.answers.pop("swap_step", None)
+        workflow.answers.pop("swap_message", None)
+        workflow = await self._repository.save(chat_id, workflow)
+        return await self._prepare_swap(chat_id, workflow, request, reason_source=reason_source)
+
+    async def _prepare_swap(
+        self,
+        chat_id: int,
+        workflow: TrainingWorkflow,
+        text: str,
+        *,
+        reason_source: SwapReasonSource = "free_text",
+    ) -> list[str]:
         parts = text.split(maxsplit=2)
         if len(parts) != 3:
-            return await self._swap_question(chat_id, workflow.base_draft)
+            return await self._swap_question(chat_id, workflow.base_draft, workflow)
         exercise_id = self._integer(parts[0])
         week = self._integer(parts[1])
         if week > 4:
@@ -640,10 +911,13 @@ class TrainingService:
             for item in day.exercises
         ):
             raise TrainingInputError(Constants.TRAINING_MESSAGES["no_pending_occurrences"])
-        workflow.swap = SwapRequest(exercise_id=exercise_id, from_week=week, reason=parts[2])
+        workflow.swap = SwapRequest(
+            exercise_id=exercise_id, from_week=week, reason=parts[2], reason_source=reason_source
+        )
         workflow = await self._repository.save(chat_id, workflow)
         return await self._generate(chat_id, workflow)
 
+    @timed("swap", action="exercise_swap")
     async def _generate_swap(
         self,
         chat_id: int,
@@ -654,19 +928,40 @@ class TrainingService:
         request = workflow.swap
         if request is None:
             raise TrainingInputError(Constants.TRAINING_SWAP_QUESTION)
-        constraints = await self._adaptation.extract_swap_constraints(profile, request)
-        await self._account(chat_id, constraints.token_usages)
-        if constraints.result.safety_hold:
-            workflow.answers["safety_hold"] = "true"
-            workflow.state = "reviewing"
-            await self._repository.save(chat_id, workflow)
-            return [Constants.TRAINING_SAFETY_MESSAGE]
-        if constraints.result.clarification:
-            workflow.answers["swap_clarification"] = constraints.result.clarification
-            workflow.state = "reviewing"
-            await self._repository.save(chat_id, workflow)
-            return [constraints.result.clarification]
-        request.excluded_equipment = constraints.result.excluded_equipment
+        trusted_preference = (
+            request.reason_source == "preference_button"
+            and request.reason == Constants.TRAINING_SWAP_REASONS["preference"]
+            and not profile.injuries
+            and not profile.flags.red
+            and not workflow.review
+            and not any(
+                workflow.answers.get(key)
+                for key in (
+                    "swap_user_text",
+                    "swap_message",
+                    "swap_clarification",
+                    "safety_hold",
+                    "open_review",
+                    "discomfort",
+                )
+            )
+        )
+        if trusted_preference:
+            request.excluded_equipment = []
+        else:
+            constraints = await self._adaptation.extract_swap_constraints(profile, request)
+            await self._account(chat_id, constraints.token_usages)
+            if constraints.result.safety_hold:
+                workflow.answers["safety_hold"] = "true"
+                workflow.state = "reviewing"
+                await self._repository.save(chat_id, workflow)
+                return [Constants.TRAINING_SAFETY_MESSAGE]
+            if constraints.result.clarification:
+                workflow.answers["swap_clarification"] = constraints.result.clarification
+                workflow.state = "reviewing"
+                await self._repository.save(chat_id, workflow)
+                return [constraints.result.clarification]
+            request.excluded_equipment = constraints.result.excluded_equipment
         workflow.answers.pop("swap_clarification", None)
         source = await self._retriever.get_by_ids([request.exercise_id])
         if len(source) != 1:
@@ -682,7 +977,11 @@ class TrainingService:
         if not candidates:
             raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)
         candidates = [
-            item for item in candidates if item.equipment not in request.excluded_equipment
+            item
+            for item in candidates
+            if item.equipment
+            and normalize_equipment(item.equipment)
+            not in {normalize_equipment(value) for value in request.excluded_equipment}
         ]
         if not candidates:
             raise TrainingInputError(Constants.TRAINING_NO_ALTERNATIVES_MESSAGE)
@@ -700,7 +999,8 @@ class TrainingService:
         valid = []
         for option in proposal.result.options:
             try:
-                draft = self._swap_draft(plan, request, option.exercise)
+                with latency_phase("patch_validation"):
+                    draft = self._swap_draft(plan, request, option.exercise)
             except ValueError:
                 logger.warning("Rejected invalid swap for chat %s", chat_id, exc_info=True)
                 continue

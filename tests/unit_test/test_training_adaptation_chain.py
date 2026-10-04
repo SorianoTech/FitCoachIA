@@ -156,6 +156,7 @@ async def test_renewal_uses_profile_previous_plan_and_review(profile: Interviewe
             changes="sin cambios",
         ),
         prescribed_summary={"1": {"pectorals": 3}},
+        recorded_performance={"completed_sessions": 2, "source": "self_recorded"},
     )
     catalogue = [
         Exercise(1, "barbell bench press", target="pectorals", equipment="barbell"),
@@ -169,6 +170,9 @@ async def test_renewal_uses_profile_previous_plan_and_review(profile: Interviewe
     messages = model.ainvoke.await_args.args[0]
     assert "previous_version" in messages[1].content
     assert "mejoras" in messages[1].content
+    payload = json.loads(messages[1].content.split("\n", 1)[1])
+    assert payload["recorded_performance"]["completed_sessions"] == 2
+    assert "Missing sessions are NOT proof" in messages[0].content
     assert result.trace is not None
     turn["plan"]["weeks"][3]["days"][0]["exercises"][0]["rpe"] = 9.0
     model.ainvoke.return_value = AIMessage(content=json.dumps(turn))

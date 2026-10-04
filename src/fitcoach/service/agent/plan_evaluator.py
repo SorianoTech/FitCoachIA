@@ -19,6 +19,11 @@ from enum import StrEnum
 from typing import Any
 
 from fitcoach.domain.exercise import Exercise
+from fitcoach.domain.exercise_catalogue import (
+    MUSCLE_TARGETS,
+    available_equipment,
+    normalize_equipment,
+)
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.trainer_plan import (
     RPE_CAPS,
@@ -44,15 +49,7 @@ GOAL_REPS = {"lose_fat": (8, 20), "gain_muscle": (5, 15), "performance": (1, 10)
 GOAL_REST = {"lose_fat": (30, 90), "gain_muscle": (60, 240), "performance": (90, 300)}
 
 # Exercise ``target`` values in the corpus, grouped the way a split talks about them.
-MUSCLE_GROUPS: dict[str, frozenset[str]] = {
-    "chest": frozenset({"pectorals"}),
-    "back": frozenset({"lats", "upper back", "traps", "spine"}),
-    "legs": frozenset({"quads", "hamstrings", "glutes", "calves", "adductors", "abductors"}),
-    "shoulders": frozenset({"delts"}),
-    "arms": frozenset({"biceps", "triceps", "forearms"}),
-    "core": frozenset({"abs", "serratus anterior"}),
-    "cardio": frozenset({"cardiovascular system"}),
-}
+MUSCLE_GROUPS = MUSCLE_TARGETS
 ESSENTIAL_GROUPS = ("chest", "back", "legs")
 
 # Injury location keywords -> exercise-name patterns that usually conflict with it.
@@ -178,6 +175,7 @@ def evaluate_plan(
     checks = (
         _check_profile_echo,
         _check_names,
+        _check_equipment,
         _check_days,
         _check_volume,
         _check_periodization,
@@ -192,6 +190,38 @@ def evaluate_plan(
         check(evaluation, plan, profile, by_id)
     evaluation.metrics.update(_metrics(plan, profile, by_id))
     return evaluation
+
+
+def evaluate_constraints(
+    plan: TrainingPlan, profile: InterviewerProfile, catalogue: Sequence[Exercise]
+) -> PlanEvaluation:
+    """Only exact identity, availability, profile and declared session constraints."""
+    evaluation = PlanEvaluation()
+    by_id = {exercise.id: exercise for exercise in catalogue}
+    for check in (_check_profile_echo, _check_names, _check_equipment, _check_days):
+        check(evaluation, plan, profile, by_id)
+    return evaluation
+
+
+def _check_equipment(
+    evaluation: PlanEvaluation,
+    plan: TrainingPlan,
+    profile: InterviewerProfile,
+    by_id: dict[int, Exercise],
+) -> None:
+    available = available_equipment(profile.training.equipment)
+    for where, item in _exercises(plan):
+        exercise = by_id.get(item.exercise_id)
+        if exercise is not None and (
+            not exercise.equipment or normalize_equipment(exercise.equipment) not in available
+        ):
+            _add(
+                evaluation,
+                "unavailable_equipment",
+                Severity.ERROR,
+                f"Exercise {item.exercise_id} requires unconfirmed equipment",
+                where,
+            )
 
 
 def _add(

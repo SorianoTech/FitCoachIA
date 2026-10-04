@@ -11,6 +11,13 @@ atención profesional.
 
 ## Flujo de una generación de plan
 
+Las operaciones del modelo muestran «escribiendo…» en Telegram si tardan más
+de 300 ms. El indicador se renueva cada cuatro segundos y se detiene al finalizar,
+fallar o cancelar la operación, conservando el thread del mensaje. Incluye entrevista,
+consulta, generación y flujos de revisión/sustitución desde texto, botones o Mini App.
+No transmite fragmentos del JSON ni altera validación o confirmación. Un fallo de
+este indicador se registra y no interrumpe la respuesta principal.
+
 1. El usuario envía `/train` y Telegram entrega el update en `POST /webhook/response`.
 2. `ConversationService` busca el perfil del `chat_id` en `interviewer_profiles`. Si no existe,
    responde que hace falta `/interview` y termina.
@@ -20,10 +27,12 @@ atención profesional.
    `embedder` y busca en pgVector por distancia coseno.
 5. `TrainerChain` compone el prompt de sistema con el catálogo recuperado en `{{rag_context}}`, le
    añade el perfil y hace **una** llamada al modelo.
-6. Valida el JSON y, además, comprueba que **todos los `exercise_id` vienen del catálogo
-   recuperado**. Si no cumple, solicita una única reparación.
+6. Valida el JSON, IDs del catálogo y nombres canónicos, material confirmado, objetivo,
+   entorno, días y duración declarada frente al perfil, y ausencia de ejercicios duplicados
+   en una sesión. Si no cumple, solicita una única reparación. Las estimaciones de tiempo
+   y heurísticas de lesiones no se convierten en validaciones clínicas bloqueantes.
 7. Persiste y activa el primer plan antes de enviar el informe. Con un plan vigente,
-   `/train` abre la revisión descrita más abajo, no regenera silenciosamente.
+   `/train` abre el menú de lectura; `/train revisar` abre la revisión descrita más abajo.
 
 Los mensajes posteriores, mientras la sesión de entrenamiento está `active`, van al modo preguntas:
 se consulta en PostgreSQL el plan apuntado por `training_sessions.current_plan_id`, el perfil efectivo y el historial propio del
@@ -35,6 +44,12 @@ seguridad. Si falta información, el entrenador no debe inventarla. Las consulta
 no sustituyen ejercicios, no ajustan el plan ni crean versiones. Una intención de renovación o
 sustitución abre un flujo independiente; nunca autoriza por sí misma una modificación.
 Durante una revisión abierta, `/train consulta PREGUNTA` permite consultar sin responder la revisión.
+
+La recuperación usa grupos derivados del `target` anatómico y material declarado
+en todos los entornos. Las renovaciones conservan ejercicios anteriores solo si
+su material sigue disponible; las sustituciones filtran por el mismo target,
+no por el `muscle_group` original del volcado. No se amplían restricciones
+para rellenar un catálogo vacío. Véanse clasificación y trazas en [vector-db.md](vector-db.md).
 
 ## Continuidad, revisión y confirmación
 
@@ -63,10 +78,11 @@ se admite que otra persona confirme una propuesta desde un grupo o un mensaje re
 
 El ciclo dura cuatro semanas desde el inicio confirmado, no desde la creación del borrador.
 Al alcanzar la fecha prevista, el bot propone revisar el bloque sin asumir que se realizaron
-las sesiones. También se puede declarar su finalización antes. No hay diario de ejecución:
-el cierre y los resultados son autodeclarados, y lo desconocido sigue siendo desconocido.
+las sesiones. También se puede declarar su finalización antes. La Mini App permite
+registrar sesiones y series; estos registros, el cierre y los resultados siguen siendo
+autodeclarados, y lo desconocido sigue siendo desconocido.
 
-`/train` con plan vigente ofrece un cierre rápido. «Terminé y todo bien» confirma el
+`/train revisar` o «Terminé el mesociclo» ofrece un cierre rápido. «Terminé y todo bien» confirma el
 cierre y genera directamente un borrador conservando el perfil y las restricciones,
 sin inventar adherencia, mejoras ni cargas. Este botón confirma ausencia de molestias
 nuevas y de cambios de objetivo, horarios y material; no llama al extractor de revisión.
@@ -82,7 +98,10 @@ restricciones y objetivo se guardan como perfil efectivo; no se reinicia `/inter
 reescribe el informe original del entrevistador.
 
 La renovación recibe el perfil efectivo, el plan previo, sus series prescritas por target/semana
-y la revisión. Con buena adherencia y recuperación conserva ejercicios útiles y progresa
+y la revisión. También recibe un resumen acotado de sesiones finalizadas registradas
+en la Mini App para el mismo mesociclo, incluyendo versiones por sustitución. Los registros
+se separan de las series prescritas; ausencia de registro no prueba inasistencia, ni
+una carga máxima aislada demuestra mejora. Con buena adherencia y recuperación conserva ejercicios útiles y progresa
 gradualmente; con baja adherencia simplifica, y con fatiga reduce o mantiene estímulo.
 El estancamiento no implica subir siempre el volumen. La descarga no es la base del nuevo bloque.
 No se inventan cargas realizadas ni se garantiza mejoría. Nuevos síntomas preocupantes bloquean
@@ -98,7 +117,91 @@ dos versiones. Si cambió el plan base, la propuesta no puede activarse.
 
 ## Sustituir un ejercicio
 
-`/train cambiar` muestra los ids del plan y pide el ejercicio, la semana actual y el motivo.
+### Ver el plan sin LLM
+
+Con `miniapp_url` configurada, «Abrir entrenamiento» abre la interfaz visual dentro
+de Telegram. Permite consultar semanas, registrar lo realizado y revisar historial;
+no cambia el plan ni consume LLM. Sustituciones y revisión se abren en el chat,
+conservando RAG y confirmación. Ver [telegram-miniapp.md](telegram-miniapp.md).
+
+Con un plan activo, `/train` abre ahora el menú del entrenamiento, **no inicia una
+renovación**. `/train ver` muestra el resumen del bloque y `/train semana` despliega
+las sesiones completas de la semana prevista, con series, repeticiones, descansos,
+RPE y notas. El teclado persistente ofrece «Ver semana actual», «Ver plan completo»,
+«Cambiar un ejercicio» y «Terminé el mesociclo» sin escribir comandos.
+Los botones inline permiten elegir otra semana y abrir cambio/revisión.
+La renovación explícita sigue disponible mediante `/train revisar`.
+
+La semana se presenta en un único mensaje con bloques separados por día. Si supera
+4096 unidades UTF-16 de Telegram, se divide preferentemente entre sesiones; una
+sesión que por sí sola exceda el límite se divide mediante el transporte existente,
+sin perder texto. Los botones se adjuntan al último mensaje. Las indicaciones generales
+de progresión se consultan con «Ver indicaciones», sin un mensaje adicional automático
+ni llamada al LLM; las notas específicas de los ejercicios siguen visibles.
+
+Las vistas leen exclusivamente `training_sessions.current_plan_id`, incluso con
+borrador pendiente o cuota agotada; no llaman al LLM/RAG ni modifican el workflow.
+Los botones incluyen la identidad del plan y rechazan versiones obsoletas; siguen
+limitados al propietario del chat privado. Tras generar el primer plan o aceptar
+una propuesta se muestran la semana prevista y los accesos.
+
+La semana se calcula por días de calendario UTC desde el inicio: días 0–6, 7–13,
+14–20 y 21–27 corresponden a semanas 1–4. No prueba ejecución ni determina qué
+sesión toca hoy. Sin fecha se solicita `/train inicio AAAA-MM-DD` y se ofrece
+elección manual. Un inicio futuro muestra la semana 1 como anticipación. Después
+de 28 días o de cerrar el bloque se muestra la semana 4 con aviso explícito,
+nunca una semana 5 ni una renovación automática. Elegir otra semana no cambia fechas.
+
+### Modelos y presupuestos por tarea
+
+`ia_trainer_generation_model` selecciona el modelo de planes y propuestas de sustitución.
+`ia_trainer_consultation_model` y `ia_trainer_extraction_model` seleccionan consulta/
+detección e interpretación de revisión/restricciones respectivamente. Si se omiten,
+cada uno usa `ia_model`. Consulta y extracción tienen overrides opcionales de
+`max_tokens` y `timeout` con los mismos prefijos; sin overrides heredan
+`ia_trainer_max_tokens` y `ia_trainer_timeout` (o `ia_timeout_seconds`).
+No se activa un modelo rápido ni se recortan respuestas automáticamente.
+Las cadenas y clientes siguen cacheados; reiniciar la app aplica cambios de entorno.
+
+`ia_trainer_generation_temperature`, `ia_trainer_consultation_temperature` y
+`ia_trainer_extraction_temperature` admiten un número finito entre 0 y 2 o
+`default` para omitir el parámetro y usar el predeterminado del proveedor.
+Si se omiten, heredan `ia_temperature`. El rango local no garantiza que cada
+modelo admita ese número: algunos solo aceptan su valor predeterminado.
+Generación también configura propuestas de sustitución; extracción configura
+revisiones y restricciones. La entrevista conserva `ia_temperature`.
+Por ejemplo, `ia_trainer_generation_temperature=default` evita enviar `0.2`
+al modelo de planes sin cambiar la configuración de las otras tareas.
+
+El presupuesto nominal de una tarea con reparación es
+`2 × (1 + ia_max_retries) × timeout`; el backoff del proveedor y red pueden añadir
+tiempo. No es un deadline del workflow. Un swap por texto puede además sumar detección,
+extracción y propuesta. Mantener `ia_max_retries=0` y dimensionar presupuestos por
+acción antes de elevarlos. Las llamadas fallidas y de reparación conservan tokens
+y modelo en `token_usage`; no hay fallback silencioso a otro modelo.
+Los valores comentados de `.env.example` son ejemplos, no límites de calidad validados.
+Antes de activarlos, comparar salidas máximas, síntomas, material, esquemas y latencia
+con los casos de línea base; ante regresión, retirar los overrides.
+
+`/train cambiar` muestra un selector por botones con nombres y sesión de referencia,
+paginado en grupos de ocho. Después permite elegir la semana y el motivo; solo solicita
+texto para concretar material o un motivo libre. Las semanas ofrecidas contienen el
+ejercicio seleccionado. En un borrador nuevo aplica desde la semana 1 por defecto.
+Los callbacks verifican identidad, revisión, paso y pertenencia al plan.
+Los mensajes naturales («quiero cambiar el press de banca», «no tengo barra, ¿podemos
+sustituirlo?») se detectan en la consulta mediante `intent="exercise_swap"` y abren
+el mismo selector, conservando el mensaje como motivo. No se exige un ID ni se ejecuta
+una modificación por decisión del modelo. Se reutiliza la salida estructurada existente,
+en lugar de añadir una tool con permisos de escritura; preguntas hipotéticas no deben
+iniciar un cambio. El usuario confirma el ejercicio, el alcance y la propuesta.
+Para intenciones de cambio/renovación no se muestra el texto libre del modelo:
+el servicio envía exclusivamente el siguiente paso real. `swap_selection` recoge
+semana explícita, ejercicio inequívoco del plan y motivo (o null si no se aportan).
+Una semana indicada filtra los botones y evita preguntarla de nuevo; un ejercicio
+identificado todavía requiere confirmación por botón. Los IDs ajenos al plan se
+descartan con aviso en logs. Sin motivo explícito se ofrecen los botones de motivo,
+en vez de tratar «quiero cambiar» como justificación. Se conserva el texto original
+para las comprobaciones de seguridad y se contabiliza la llamada de detección.
 También se puede usar `/train cambiar ID SEMANA MOTIVO`, por ejemplo
 `/train cambiar 101 2 no dispongo de barra`.
 La semana no se deduce como ejecución real a partir del calendario.
@@ -115,6 +218,16 @@ El material excluido se aplica como filtro estricto del RAG, sin modificar perma
 el perfil. Si la petición es ambigua, hace una pregunta concreta y guarda la respuesta;
 los síntomas preocupantes bloquean el flujo hasta cancelarlo y obtener orientación adecuada.
 Esta interpretación añade una llamada al LLM, contabilizada y sujeta a la cuota de generación.
+
+La única excepción es «Prefiero otro ejercicio» elegido por botón, con procedencia
+`preference_button` persistida por el backend. Sin texto natural, revisión previa,
+aclaración, bloqueo, lesiones declaradas o flags rojas, omite la extracción y pasa
+directamente al RAG y a la propuesta validada: una llamada LLM en vez de dos.
+La propuesta conserva su comprobación de síntomas y el evaluador del plan completo.
+Escribir el mismo texto no habilita la excepción. Los workflows antiguos y motivos
+de dificultad/material/otros usan siempre la interpretación completa. Los modelos
+actuales siguen siendo los mismos por defecto; no se presupone una reducción de
+latencia del proveedor, solo se elimina una llamada en el caso seguro.
 
 El modelo de alternativas recibe las sesiones afectadas completas, sus prescripciones
 pendientes, el resumen semanal de series por target y metadatos/instrucciones del catálogo.
@@ -148,7 +261,7 @@ Los avisos automáticos requieren `training_reminders_enabled=true`; ver
 
 Los planes anteriores a esta funcionalidad conservan sus versiones, pero no se inventa
 su fecha de inicio a partir de la creación. `/train inicio AAAA-MM-DD` confirma la fecha,
-o `/train` permite confirmar que ya acabaron. Hasta entonces no reciben avisos por antigüedad.
+o `/train revisar` permite confirmar que ya acabaron. Hasta entonces no reciben avisos por antigüedad.
 
 La entrega externa es **al menos una vez**: un fallo después de enviar a Telegram y antes
 de registrar éxito puede duplicar excepcionalmente un aviso. Las reservas evitan duplicados
@@ -189,7 +302,9 @@ lote. `RetryAfter` espera lo que pide Telegram; `BadRequest`/`Forbidden` marcan 
 
 ## Comandos y estados
 
-El primer `/train` genera y activa un plan. Repetirlo abre o reanuda revisión y renovación.
+El primer `/train` genera y activa un plan. Repetirlo abre el menú; `/train revisar`
+abre o reanuda revisión y renovación. Con propuesta pendiente, el menú ofrece
+«Continuar propuesta pendiente» sin confundirla con el plan activo.
 Solo aceptar un borrador crea la versión N+1 y actualiza el puntero vigente; las versiones
 anteriores no se sobrescriben. Versión y mesociclo no son equivalentes: una sustitución
 confirmada pertenece al mismo ciclo.

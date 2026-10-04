@@ -30,7 +30,7 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 SENT_MESSAGES: list[dict[str, object]] = []
 SENT_POLLS: list[dict[str, object]] = []
 STOPPED_POLLS: list[dict[str, object]] = []
-REQUEST_COUNTS = {"embed": 0}
+REQUEST_COUNTS = {"embed": 0, "llm": 0}
 REGISTERED_WEBHOOK_URL = ""
 
 _INTERVIEW_PROFILE = {
@@ -104,7 +104,7 @@ _TRAINER_TURN = {
                         "exercises": [
                             {
                                 "exercise_id": exercise_id,
-                                "name": f"fixture exercise {exercise_id}",
+                                "name": {1: "barbell bench press", 2: "barbell row"}[exercise_id],
                                 "sets": 3,
                                 "reps": "8-10",
                                 "rest_seconds": 120,
@@ -186,6 +186,7 @@ class StubHandler(BaseHTTPRequestHandler):
             SENT_POLLS.clear()
             STOPPED_POLLS.clear()
             REQUEST_COUNTS["embed"] = 0
+            REQUEST_COUNTS["llm"] = 0
             self._respond({"ok": True})
         else:
             self._respond({"error": "not found"}, status=404)
@@ -196,6 +197,7 @@ class StubHandler(BaseHTTPRequestHandler):
         body = self._parse_body(raw_body, self.headers.get("Content-Type", ""))
 
         if self.path.startswith("/v1/chat/completions"):
+            REQUEST_COUNTS["llm"] += 1
             self._respond(_completion(self._turn_for(body)))
             return
         if self.path.startswith("/embed"):
@@ -276,6 +278,23 @@ class StubHandler(BaseHTTPRequestHandler):
         # los agentes siguientes. Hay que mirar la linea de ROLE.
         if "You are the Trainer" in system:
             if "This is a read-only consultation" in system:
+                if (
+                    messages
+                    and isinstance(messages[-1], dict)
+                    and "quiero cambiar" in str(messages[-1].get("content", "")).lower()
+                ):
+                    return {
+                        "status": "answer",
+                        "reply": "Elige el ejercicio con los botones.",
+                        "report": None,
+                        "plan": None,
+                        "intent": "exercise_swap",
+                        "swap_selection": (
+                            {"week": 1, "exercise_id": None, "reason": None}
+                            if "semana 1" in str(messages[-1].get("content", "")).lower()
+                            else None
+                        ),
+                    }
                 return {
                     "status": "answer",
                     "reply": "El plan indica 120 segundos de descanso.",

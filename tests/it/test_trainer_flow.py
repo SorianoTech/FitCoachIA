@@ -99,12 +99,156 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_persistent_navigation_reads_week_without_llm_or_workflow(
+        self,
+        client: httpx.Client,
+        app_db: asyncpg.Connection,
+        stub: httpx.Client,
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        counts = stub.get("/__counts").json()
+        plan_id = await app_db.fetchval(
+            "SELECT current_plan_id FROM training_sessions WHERE chat_id=$1", CHAT_ID
+        )
+        before = await app_db.fetchval("SELECT plan FROM training_plans WHERE id=$1", plan_id)
+        for update_id, text in enumerate(
+            ["Ver semana actual", "Ver plan completo", "/train"],
+            20,
+        ):
+            response = client.post("/webhook/response", json=_update(update_id, text))
+            assert response.status_code == 200
+        assert stub.get("/__counts").json() == counts
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM training_workflows WHERE chat_id=$1", CHAT_ID
+            )
+            == 0
+        )
+        sent = stub.get("/__sent").json()
+        menu = next(
+            message
+            for message in reversed(sent)
+            if "reply_markup" in message and "is_persistent" in message["reply_markup"]
+        )
+        assert json.loads(menu["reply_markup"])["is_persistent"]
+        keyboard = json.loads(sent[-1]["reply_markup"])["inline_keyboard"]
+        button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"] == f"tv:{plan_id}:week:2"
+        )
+        client.post("/webhook/response", json=_callback(23, button["callback_data"]))
+        assert stub.get("/__counts").json() == counts
+        assert any(
+            "SEMANA 2" in message["text"] for message in stub.get("/__sent").json()[len(sent) :]
+        )
+        assert (
+            await app_db.fetchval("SELECT plan FROM training_plans WHERE id=$1", plan_id) == before
+        )
+        client.post("/webhook/response", json=_callback(24, f"tv:{plan_id + 999}:swap"))
+        assert stub.get("/__sent").json()[-1]["text"].startswith("Este botón")
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM training_workflows WHERE chat_id=$1", CHAT_ID
+            )
+            == 0
+        )
+
+    async def test_week_request_sends_only_real_selector_and_asks_reason(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        before = len(stub.get("/__sent").json())
+        client.post(
+            "/webhook/response", json=_update(20, "quiero cambiar un ejercicio de la semana 1")
+        )
+        messages = stub.get("/__sent").json()[before:]
+        assert len(messages) == 1
+        assert "¿Qué ejercicio de la semana 1 quieres cambiar?" in messages[0]["text"]
+        assert "exercise_swap" not in messages[0]["text"]
+        keyboard = json.loads(messages[0]["reply_markup"])["inline_keyboard"]
+        button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:exercise:")
+        )
+        client.post("/webhook/response", json=_callback(21, button["callback_data"]))
+        assert stub.get("/__sent").json()[-1]["text"] == "¿Por qué quieres cambiarlo?"
+        payload = json.loads(
+            await app_db.fetchval(
+                "SELECT payload FROM training_workflows WHERE chat_id=$1", CHAT_ID
+            )
+        )
+        assert payload["answers"]["swap_week"] == "1"
+        assert payload["swap"] is None
+
+    @pytest.mark.parametrize("natural", [True, False])
+    async def test_swap_request_uses_buttons_and_keeps_current_plan(
+        self,
+        client: httpx.Client,
+        app_db: asyncpg.Connection,
+        stub: httpx.Client,
+        natural: bool,
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        text = "Quiero cambiar el press de banca, prefiero otro ejercicio"
+        calls_before = stub.get("/__counts").json()["llm"]
+        client.post("/webhook/response", json=_update(20, text if natural else "/train cambiar"))
+        sent = stub.get("/__sent").json()[-1]
+        assert sent["text"] == "¿Qué ejercicio quieres cambiar? Elige abajo."
+        keyboard = json.loads(sent["reply_markup"])["inline_keyboard"]
+        button = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:exercise:")
+            and button["callback_data"].endswith(":1")
+        )
+        client.post("/webhook/response", json=_callback(21, button["callback_data"]))
+        keyboard = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])["inline_keyboard"]
+        week = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:week:")
+            and button["callback_data"].endswith(":2")
+        )
+        client.post("/webhook/response", json=_callback(22, week["callback_data"]))
+        if not natural:
+            keyboard = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])["inline_keyboard"]
+            reason = next(
+                button
+                for row in keyboard
+                for button in row
+                if button["callback_data"].endswith(":preference")
+            )
+            client.post("/webhook/response", json=_callback(23, reason["callback_data"]))
+        flow = await app_db.fetchrow(
+            "SELECT state, payload FROM training_workflows WHERE chat_id=$1", CHAT_ID
+        )
+        assert flow["state"] == "awaiting_confirmation"
+        payload = json.loads(flow["payload"])
+        assert payload["swap"]["reason"] == (text if natural else "Prefiero otro ejercicio")
+        assert payload["swap"]["from_week"] == 2
+        assert payload["swap"]["reason_source"] == ("free_text" if natural else "preference_button")
+        calls_after = stub.get("/__counts").json()["llm"]
+        assert calls_after - calls_before == (3 if natural else 1)
+        assert (
+            await app_db.fetchval("SELECT count(*) FROM training_plans WHERE chat_id=$1", CHAT_ID)
+            == 1
+        )
+
     async def test_quick_closure_generates_draft_with_one_button(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:
         _complete_interview(client)
         _run_train(client)
-        client.post("/webhook/response", json=_update(20, "/train"))
+        client.post("/webhook/response", json=_update(20, "/train revisar"))
         sent = stub.get("/__sent").json()[-1]
         keyboard = json.loads(sent["reply_markup"])["inline_keyboard"]
         assert keyboard[0][0]["text"] == "Terminé y todo bien"
@@ -139,7 +283,7 @@ class TestTrainerFlowIntegration:
         )
         for update_id, text in enumerate(
             [
-                "/train",
+                "/train revisar",
                 "sí",
                 "He realizado todas las sesiones y mejoran las repeticiones. "
                 "Buena recuperación y sueño sin cambios, sin molestias nuevas. "
@@ -337,7 +481,7 @@ class TestTrainerFlowIntegration:
 
         assert {row["id"] for row in existing} == exercise_ids
 
-    async def test_a_second_train_opens_review_without_replacing_the_plan(
+    async def test_a_second_train_shows_menu_without_replacing_the_plan(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:
         _complete_interview(client)
@@ -352,7 +496,7 @@ class TestTrainerFlowIntegration:
         pending = await app_db.fetchval(
             "SELECT state FROM training_workflows WHERE chat_id = $1", CHAT_ID
         )
-        assert pending == "reviewing"
+        assert pending is None
         current = await app_db.fetchrow(
             "SELECT status, current_plan_id FROM training_sessions WHERE chat_id = $1", CHAT_ID
         )

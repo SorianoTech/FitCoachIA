@@ -125,9 +125,16 @@ class TrainerTurn(PlanModel):
         return self
 
 
+class SwapSelection(PlanModel):
+    week: int | None = Field(default=None, ge=1, le=4)
+    exercise_id: int | None = Field(default=None, ge=1)
+    reason: str | None = Field(default=None, min_length=1)
+
+
 class TrainerAnswerTurn(TrainerTurn):
     """Read-only follow-up: never accepts a generated or modified plan."""
 
     status: Literal[TrainerAction.ANSWER_PLAN]
     report: None = None
     plan: None = None
+    swap_selection: SwapSelection | None = Field(default_factory=lambda: None)

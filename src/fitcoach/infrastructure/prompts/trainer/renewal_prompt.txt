@@ -3,6 +3,12 @@ Design the NEXT mesocycle, not a random regeneration of the first plan.
 The context contains the effective profile, previous prescription and self-reported review.
 Prescription is NOT execution. Unknown performance remains unknown. Never invent achieved
 loads, repetitions, adherence or improvements. The summary describes prescribed sets only.
+recorded_performance, when present, contains self-recorded completed sessions from the
+previous mesocycle across its plan versions. These are different from prescribed_summary.
+Missing sessions are NOT proof of missed training. Skipped exercises are not performed sets.
+Compare only the same exercise with compatible load/repetition units; do not infer
+improvement from a single result, max weight alone, or totals across different prescriptions.
+Use these observations alongside the review, without replacing safety or closure confirmation.
 
 Keep useful main exercises across blocks when tolerated and available in the catalogue.
 Use weeks 1-3 and the reported tolerance as the reference, never the low week-4 deload.

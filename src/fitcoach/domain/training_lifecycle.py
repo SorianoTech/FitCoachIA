@@ -27,6 +27,7 @@ WorkflowState = Literal[
     "reviewing", "generating", "awaiting_confirmation", "accepted", "cancelled", "stale"
 ]
 ChangeKind = Literal["initial", "renewal", "exercise_swap"]
+SwapReasonSource = Literal["free_text", "preference_button"]
 
 
 class TrainingProfilePatch(PlanModel):
@@ -87,6 +88,7 @@ class SwapRequest(PlanModel):
     from_week: int = Field(ge=1, le=MESOCYCLE_WEEKS)
     reason: str = Field(min_length=1)
     excluded_equipment: list[str] = Field(default_factory=list)
+    reason_source: SwapReasonSource = "free_text"
 
 
 class SwapConstraints(PlanModel):
@@ -138,6 +140,7 @@ class TrainingAdaptationContext(PlanModel):
     previous_version: int
     review: TrainingReview
     prescribed_summary: dict[str, dict[str, int]]
+    recorded_performance: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def no_unsafe_generation(self) -> "TrainingAdaptationContext":

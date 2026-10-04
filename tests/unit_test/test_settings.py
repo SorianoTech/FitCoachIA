@@ -87,6 +87,16 @@ class TestSettingsBotTelegramCommands:
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
 
+    def test_parses_and_deduplicates_exercise_moderator_ids(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_valid_bot_env(monkeypatch)
+        monkeypatch.setenv("bot_telegram_exercise_admin_ids", "9, 3, 9")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.bot_telegram_exercise_admin_ids == [3, 9]
+
 
 class TestIASettings:
     def test_defaults_history_window_to_twenty_messages(self) -> None:
@@ -167,6 +177,18 @@ class TestVectorDatabaseSettings:
 
         with pytest.raises(ValidationError):
             VectorDatabaseSettings(_env_file=None)
+
+    def test_writer_url_is_optional_and_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("vector_database_url", "postgresql+asyncpg://reader@db/catalogue")
+        monkeypatch.delenv("vector_database_writer_url", raising=False)
+
+        assert VectorDatabaseSettings(_env_file=None).writer_url is None
+
+        monkeypatch.setenv("vector_database_writer_url", "postgresql+asyncpg://writer@db/catalogue")
+        assert (
+            VectorDatabaseSettings(_env_file=None).writer_url
+            == "postgresql+asyncpg://writer@db/catalogue"
+        )
 
 
 class TestEmbedderSettings:

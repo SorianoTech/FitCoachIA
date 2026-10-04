@@ -62,6 +62,26 @@ nginx proxy manager pueda llegar a Grafana por nombre de contenedor
 
 ## 3. Qué información se recoge
 
+### Latencia del entrenador
+
+Los spans `training.*` y logs `training_latency` miden acción, fase, resultado
+y duración en ms, sin incluir argumentos, mensajes, perfiles ni textos de errores.
+Incluyen consulta/detección, extracción, generación, llamadas LLM, reparación,
+validación, embeddings, recuperación, búsqueda vectorial, catálogo, persistencia
+y entrega Telegram. `llm.model` identifica el modelo en el span de cada llamada.
+Los tiempos de etapas anidadas no se suman: una reparación contiene otra llamada LLM.
+`training.workflow` mide generación del borrador, no el tiempo entre respuestas humanas.
+
+Para establecer la línea base, repetir consultas locales/globales, renovación rápida/
+abierta y swaps por botones/texto/material ambiguo/síntomas, con datos sintéticos.
+Separar por acción y comparar p50/p95, tokens, número de llamadas y reparaciones,
+errores y duración total hasta el mensaje útil. La duración de `training.llm` incluye
+red y espera del proveedor; no identifica su cola interna. Correlacionar fases por
+traza, no por texto de usuario. Los stubs de IT verifican rutas y contadores, pero
+no son una medición de latencia real ni prueban el objetivo de mejora del 20%.
+Antes de cambiar un modelo, recoger una muestra comparable con el proveedor autorizado,
+misma carga y configuración; conservar los resultados fuera del repositorio.
+
 ### 3.1 Logs (app → stdout, JSON)
 
 `fitcoach.infrastructure.config.logging_config.JsonFormatter` escribe cada
@@ -148,6 +168,35 @@ consultas «consumo por usuario en el tiempo» y «consumo por agente en el
 tiempo» del dashboard.
 
 ## 4. Qué se puede visualizar en Grafana
+
+Además de la vista general, se provisionan seis dashboards independientes:
+**Negocio y activación**, **Entrevistas**, **Telegram y backend**, **Agentes y LLM**
+y **RAG y catálogo**, además de **Moderación de ejercicios**. Cada uno tiene selector
+único `environment=dev|prod` que selecciona el datasource SQL y los logs del mismo
+entorno. Los paneles explican su denominador, cobertura y limitaciones; los KPIs sin
+datos fiables quedan pendientes, no se sustituyen por cifras engañosas.
+Detalle y matriz de métricas:
+[metricas-negogio-y-tecnicas.md](plan/metricas-negogio-y-tecnicas.md).
+Los nuevos paneles Loki usan exclusivamente la etiqueta `environment` de Alloy
+para evitar doble recuento con OTLP; no muestran texto de usuarios.
+
+**RAG y catálogo** incorpora cuatro paneles basados en `RAG ranking` (nivel INFO):
+media de opciones por grupo, porcentaje de consultas vacías por grupo, media de
+distancia del mejor resultado y tabla de los últimos 100 eventos como máximo.
+Incluyen búsquedas generales y alternativas de sustitución, sin distinguir acción.
+El porcentaje vacío cuenta `count=0` sobre rankings del grupo; no suma el WARNING
+adicional. Sin eventos no hay porcentaje. Las distancias excluyen rankings vacíos:
+menor distancia implica mayor similitud semántica, no calidad ni seguridad.
+Solo hay datos desde el despliegue de las trazas; se aplica la retención de Loki.
+No se requieren DEBUG, migraciones ni cambios de negocio. Grafana recarga los JSON
+provisionados automáticamente; estos paneles no modifican planes ni cuotas.
+
+**Moderación de ejercicios** consulta `exercise_submissions` directamente desde el
+PostgreSQL del entorno seleccionado. Muestra la cola pendiente completa, antigüedad,
+posibles duplicados, valoración del curator y métricas históricas de aprobación,
+rechazo y tiempo de revisión. No expone IDs de Telegram ni descripciones originales.
+Es un dashboard de solo lectura: aprobar y rechazar continúa requiriendo los comandos
+administrativos del bot.
 
 Dashboard provisionado: **FitCoachIA - Conversaciones**
 (`infra/observability/config/grafana/provisioning/dashboards/json/fitcoach-conversations.json`),

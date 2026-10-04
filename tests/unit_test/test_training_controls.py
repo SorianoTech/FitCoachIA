@@ -5,7 +5,9 @@ import pytest
 from telegram import Bot, Update
 
 from fitcoach.domain.constants import Constants
+from fitcoach.domain.interviewer_profile import Injury
 from fitcoach.domain.rate_limiter import UsageLimits
+from fitcoach.domain.trainer_plan import SwapSelection
 from fitcoach.domain.training_lifecycle import TrainingWorkflow
 from fitcoach.service.conversation_service import ConversationService
 from fitcoach.service.training_controls import training_keyboard
@@ -157,6 +159,27 @@ async def test_other_user_cannot_confirm_private_chat_proposal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_unicode_plan_chunks_preserve_text_and_last_keyboard() -> None:
+    from datetime import timedelta
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    bot = AsyncMock(spec=Bot)
+    service = ConversationService(
+        bot, AsyncMock(), AsyncMock(), UsageLimits(1000, 800, timedelta(days=1))
+    )
+    text = "🏋" * 3000
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("Week", callback_data="tv:1:current")]])
+    await service._send(7, 55, text, markup)
+    calls = bot.send_message.await_args_list
+    assert len(calls) == 2
+    assert "".join(call.kwargs["text"] for call in calls) == text
+    assert all(len(call.kwargs["text"].encode("utf-16-le")) // 2 <= 4096 for call in calls)
+    assert "reply_markup" not in calls[0].kwargs
+    assert calls[-1].kwargs["reply_markup"] == markup
+
+
+@pytest.mark.asyncio
 async def test_closure_and_postponement_buttons(collaborators: tuple) -> None:
     service, repository, _, _, _ = collaborators
     workflow = repository.start.return_value
@@ -197,6 +220,215 @@ async def test_details_button_does_not_modify_or_activate_the_draft(collaborator
     assert workflow.model_dump_json() == before
     repository.accept.assert_not_awaited()
     repository.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_swap_picker_validates_buttons_and_collects_reason(collaborators: tuple) -> None:
+    service, repository, _, _, adaptation = collaborators
+    flow = TrainingWorkflow(id=3, kind="exercise_swap", base_plan_id=10, state="reviewing")
+    repository.start.return_value = flow
+    repository.claim_generation.return_value = flow
+    repository.get_workflow.return_value = flow
+    assert await service.handle(7, "/train cambiar") == [Constants.TRAINING_SWAP_PICKER]
+    markup = await service.keyboard(7, [Constants.TRAINING_SWAP_PICKER])
+    assert "barbell bench press" in markup.inline_keyboard[0][0].text
+    assert await service.callback(7, "tr:exercise:3:0:999") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:week:3:0:2") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:exercise:3:0:101") == [Constants.TRAINING_SWAP_WEEK]
+    assert await service.handle(7, "/train cambiar") == [Constants.TRAINING_SWAP_WEEK]
+    assert await service.callback(7, "tr:week:3:0:8") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:week:3:0:2") == [Constants.TRAINING_SWAP_REASON]
+    assert await service.callback(7, "tr:reason:3:0:equipment") == [
+        Constants.TRAINING_SWAP_REASON_INPUT
+    ]
+    service._retriever.retrieve_alternatives.return_value = []
+    await service.handle(7, "No dispongo de barra")
+    assert flow.swap.exercise_id == 101
+    assert flow.swap.from_week == 2
+    assert flow.swap.reason == "No dispongo de barra"
+    adaptation.extract_swap_constraints.assert_awaited_once()
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_natural_request_preserves_reason_and_draft_defaults_to_week_one(
+    collaborators: tuple,
+) -> None:
+    service, repository, conversation, _, adaptation = collaborators
+    flow = repository.start.return_value
+    flow.state = "awaiting_confirmation"
+    flow.draft = conversation.get_current_plan.return_value.plan
+    repository.get_workflow.return_value = flow
+    text = "Quiero cambiar el press porque no tengo barra"
+    assert await service.handle(7, "/train cambiar", swap_message=text) == [
+        Constants.TRAINING_SWAP_PICKER
+    ]
+    service._retriever.retrieve_alternatives.return_value = []
+    await service.callback(7, "tr:exercise:1:0:101")
+    assert flow.swap.from_week == 1
+    assert flow.swap.reason == text
+    adaptation.extract_swap_constraints.assert_awaited_once()
+    repository.accept.assert_not_awaited()
+
+
+def test_swap_picker_paginates_and_weeks_exclude_missing_exercise() -> None:
+    from fitcoach.domain.trainer_plan import TrainingPlan
+    from tests.unit_test.conftest import build_plan_payload
+
+    plan = TrainingPlan.model_validate(build_plan_payload())
+    template = plan.weeks[0].days[0].exercises[0]
+    plan.weeks[0].days[0].exercises = [
+        template.model_copy(update={"exercise_id": index, "name": f"Exercise {index}"})
+        for index in range(1, 12)
+    ]
+    flow = TrainingWorkflow(
+        id=9,
+        revision=2,
+        kind="exercise_swap",
+        base_plan_id=10,
+        state="reviewing",
+        answers={"swap_step": "exercise"},
+    )
+    markup = training_keyboard(flow, [Constants.TRAINING_SWAP_PICKER], plan)
+    assert len(markup.inline_keyboard) == 10
+    assert markup.inline_keyboard[-2][0].callback_data == "tr:page:9:2:1"
+    flow.answers["swap_page"] = "1"
+    markup = training_keyboard(flow, [], plan)
+    assert markup.inline_keyboard[-2][0].text == "Anterior"
+    assert all(
+        len(button.callback_data.encode()) <= 64 for row in markup.inline_keyboard for button in row
+    )
+    flow.answers.update({"swap_step": "week", "swap_exercise": "1"})
+    markup = training_keyboard(flow, [], plan)
+    assert markup.inline_keyboard[0][0].callback_data == "tr:week:9:2:1"
+    assert len(markup.inline_keyboard) == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_week_is_used_without_repeating_week_or_inventing_reason(
+    collaborators: tuple,
+) -> None:
+    service, repository, conversation, _, _ = collaborators
+    flow = TrainingWorkflow(id=3, kind="exercise_swap", base_plan_id=10, state="reviewing")
+    repository.start.return_value = flow
+    repository.get_workflow.return_value = flow
+    plan = conversation.get_current_plan.return_value.plan
+    plan.weeks[1].days[0].exercises[0] = (
+        plan.weeks[1].days[0].exercises[0].model_copy(update={"exercise_id": 222})
+    )
+    messages = await service.handle(
+        7,
+        "/train cambiar",
+        swap_message="quiero cambiar un ejercicio de la semana 1",
+        swap_selection=SwapSelection(week=1),
+    )
+    assert messages == [Constants.TRAINING_SWAP_PICKER_WEEK.format(week=1)]
+    markup = await service.keyboard(7, messages)
+    assert all(
+        button.callback_data != "tr:exercise:3:0:222"
+        for row in markup.inline_keyboard
+        for button in row
+    )
+    assert await service.callback(7, "tr:exercise:3:0:222") == [Constants.TRAINING_CALLBACK_INVALID]
+    assert await service.callback(7, "tr:exercise:3:0:101") == [Constants.TRAINING_SWAP_REASON]
+    assert flow.answers["swap_week"] == "1"
+    assert "swap_message" not in flow.answers
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_model_exercise_is_not_used_to_hide_all_choices(collaborators: tuple) -> None:
+    service, repository, _, _, _ = collaborators
+    flow = TrainingWorkflow(id=3, kind="exercise_swap", base_plan_id=10, state="reviewing")
+    repository.start.return_value = flow
+    repository.get_workflow.return_value = flow
+    messages = await service.handle(
+        7,
+        "/train cambiar",
+        swap_message="quiero cambiar un ejercicio",
+        swap_selection=SwapSelection(week=1, exercise_id=999),
+    )
+    assert "swap_filter_exercise" not in flow.answers
+    markup = await service.keyboard(7, messages)
+    assert markup.inline_keyboard[0][0].callback_data == "tr:exercise:3:0:101"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "risk", ["none", "message", "injury", "red", "difficulty", "legacy", "clarification"]
+)
+async def test_only_trusted_preference_without_risk_skips_extraction(
+    collaborators: tuple,
+    risk: str,
+) -> None:
+    service, repository, conversation, _, adaptation = collaborators
+    flow = TrainingWorkflow(
+        id=3,
+        kind="exercise_swap",
+        base_plan_id=10,
+        state="reviewing",
+        answers={"swap_step": "reason", "swap_exercise": "101", "swap_week": "2"},
+    )
+    repository.start.return_value = flow
+    repository.claim_generation.return_value = flow
+    repository.get_workflow.return_value = flow
+    profile = conversation.get_interviewer_profile.return_value
+    if risk == "message":
+        flow.answers["swap_user_text"] = "Tengo dolor y quiero cambiar"
+    elif risk == "injury":
+        profile.injuries = [
+            Injury(
+                location="rodilla", type="molestia", age="reciente", restriction="evitar impacto"
+            )
+        ]
+    elif risk == "red":
+        profile.flags.red = ["evaluación profesional pendiente"]
+    elif risk == "clarification":
+        flow.answers["swap_clarification"] = "¿Hay molestias nuevas?"
+    service._retriever.retrieve_alternatives.return_value = []
+    if risk == "legacy":
+        await service.handle(7, "/train cambiar 101 2 Prefiero otro ejercicio")
+    else:
+        await service.callback(
+            7, f"tr:reason:3:0:{'difficulty' if risk == 'difficulty' else 'preference'}"
+        )
+    if risk == "none":
+        adaptation.extract_swap_constraints.assert_not_awaited()
+        assert flow.swap.reason_source == "preference_button"
+    else:
+        adaptation.extract_swap_constraints.assert_awaited_once()
+    repository.accept.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_preference_provenance_survives_quota_limit_and_restart(collaborators: tuple) -> None:
+    service, repository, conversation, _, adaptation = collaborators
+    flow = TrainingWorkflow(
+        id=3,
+        kind="exercise_swap",
+        base_plan_id=10,
+        state="reviewing",
+        answers={"swap_step": "reason", "swap_exercise": "101", "swap_week": "2"},
+    )
+    repository.get_workflow.return_value = flow
+    conversation.tokens_used_since.return_value = 900
+    assert await service.callback(7, "tr:reason:3:0:preference") == [Constants.QUOTA_SOFT_MESSAGE]
+    adaptation.extract_swap_constraints.assert_not_awaited()
+    restored = TrainingWorkflow.model_validate_json(flow.model_dump_json())
+    assert restored.swap.reason_source == "preference_button"
+    repository.get_workflow.return_value = restored
+    repository.claim_generation.return_value = restored
+    conversation.tokens_used_since.return_value = 0
+    service._retriever.retrieve_alternatives.return_value = []
+    restored.state = "generating"
+    assert await service.handle(7, "/train cambiar") == [Constants.TRAINING_NO_ALTERNATIVES_MESSAGE]
+    adaptation.extract_swap_constraints.assert_not_awaited()
+    assert await service.handle(7, "101 2 Prefiero otro ejercicio") == [
+        Constants.TRAINING_NO_ALTERNATIVES_MESSAGE
+    ]
+    # A typed command/string never inherits the button's provenance.
+    assert restored.swap.reason_source == "free_text"
+    adaptation.extract_swap_constraints.assert_awaited_once()
 
 
 @pytest.mark.asyncio

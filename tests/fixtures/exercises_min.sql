@@ -52,3 +52,25 @@ GRANT CONNECT ON DATABASE fitcoach TO fitcoach_ro;
 GRANT USAGE ON SCHEMA public TO fitcoach_ro;
 GRANT SELECT ON public.exercises TO fitcoach_ro;
 GRANT SELECT ON public.exercise_media TO fitcoach_ro;
+
+-- Publicación moderada, igual que 003_2026-10-04_exercise-writer.sql.
+CREATE SEQUENCE public.exercises_id_seq START WITH 11;
+ALTER TABLE public.exercises
+    ALTER COLUMN id SET DEFAULT nextval('public.exercises_id_seq');
+
+CREATE TABLE public.exercise_publications (
+    submission_id bigint PRIMARY KEY,
+    exercise_id bigint NOT NULL UNIQUE REFERENCES public.exercises(id) ON DELETE RESTRICT,
+    created_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE ROLE fitcoach_writer LOGIN PASSWORD 'fitcoach_writer_dev';
+GRANT CONNECT ON DATABASE fitcoach TO fitcoach_writer;
+GRANT USAGE ON SCHEMA public TO fitcoach_writer;
+GRANT USAGE, SELECT ON SEQUENCE public.exercises_id_seq TO fitcoach_writer;
+GRANT SELECT (id) ON public.exercises TO fitcoach_writer;
+GRANT INSERT (
+    name, category, body_part, equipment, muscle_group, target,
+    secondary_muscles, instructions_en, instructions_tr, created_at, metadata_vector
+) ON public.exercises TO fitcoach_writer;
+GRANT SELECT, INSERT ON public.exercise_publications TO fitcoach_writer;

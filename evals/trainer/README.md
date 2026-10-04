@@ -44,4 +44,9 @@ Los catálogos reflejan la recuperación del momento en que se congelaron. Si un
 el catálogo no ofrece buenas opciones (por ejemplo, ningún ejercicio de espalda), el problema está
 en la recuperación, no en el prompt: el evaluador lo indica en la cobertura del catálogo.
 
+Los catálogos actuales son anteriores a los filtros por target y equipamiento confirmado.
+Se conservan para comparar el comportamiento histórico; no representan la recuperación nueva.
+No sobrescribas el baseline al evaluar los cambios. La validación de material puede detectar
+candidatos incompatibles en estos catálogos antiguos.
+
 Los perfiles son ficticios: no añadas aquí datos de usuarios reales.

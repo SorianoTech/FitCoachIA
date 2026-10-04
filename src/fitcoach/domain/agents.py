@@ -12,6 +12,7 @@ class AgentType(Enum):
 
     INTERVIEWER = "interviewer"
     TRAINER = "trainer"
+    EXERCISE_CURATOR = "exercise_curator"
     NUTRITIONIST = "nutritionist"
     COACH = "coach"
 
@@ -51,3 +52,10 @@ class TrainerAgent(Agent):
 
     def __init__(self, system_prompt: str) -> None:
         super().__init__(system_prompt, AgentType.TRAINER)
+
+
+class ExerciseCuratorAgent(Agent):
+    """Agent that converts a user's description into a catalogue proposal."""
+
+    def __init__(self, system_prompt: str) -> None:
+        super().__init__(system_prompt, AgentType.EXERCISE_CURATOR)

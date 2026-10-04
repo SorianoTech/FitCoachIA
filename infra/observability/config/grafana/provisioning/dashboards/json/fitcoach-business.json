@@ -1,0 +1,64 @@
+{
+  "uid": "fitcoach-business",
+  "title": "FitCoachIA - Negocio y activación",
+  "schemaVersion": 39,
+  "tags": ["fitcoach", "negocio"],
+  "timezone": "browser",
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "5m",
+  "templating": {"list": [
+    {"name": "environment", "label": "Entorno", "type": "custom", "query": "dev,prod", "current": {"text": "dev", "value": "dev"}, "includeAll": false, "multi": false},
+    {"name": "expire_days", "label": "Caducidad estimada (días)", "type": "custom", "query": "7,14,30", "current": {"text": "14", "value": "14"}, "includeAll": false, "multi": false}
+  ]},
+  "panels": [
+    {
+      "id": 1, "title": "N1 · Entrevistas completadas (%)", "type": "stat",
+      "description": "Cohorte por started_at en el rango. Solo el último intento conservado por chat; el reset elimina los intentos anteriores. Incluye en curso y caducadas en el denominador. Sin entrevistas: sin datos, no 0%.",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE status='completed') / NULLIF(count(*),0) AS completion_pct FROM interview_sessions WHERE $__timeFilter(started_at)"}]
+    },
+    {
+      "id": 2, "title": "N2 · Perfiles con plan confirmado (%)", "type": "stat",
+      "description": "Perfiles finalizados en el rango con al menos un plan confirmado actualmente conservado. EXISTS evita duplicar usuarios por versiones. No es histórico de solicitudes ni valoración del plan.",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE EXISTS (SELECT 1 FROM training_plans p WHERE p.chat_id=f.chat_id)) / NULLIF(count(*),0) AS profiles_with_plan_pct FROM interviewer_profiles f WHERE $__timeFilter(f.completed_at)"}]
+    },
+    {
+      "id": 3, "title": "N3 · Agentes distintos por usuario activo", "type": "stat",
+      "description": "Media en el rango elegido, 30 días por defecto; solo usuarios con llamadas success. No incluye servicios deterministas/Mini App. No presupone agentes todavía no implementados.",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT avg(agents) AS agents_per_active_user FROM (SELECT chat_id,count(DISTINCT agent) AS agents FROM token_usage WHERE status='success' AND $__timeFilter(created_at) GROUP BY chat_id) u"}]
+    },
+    {
+      "id": 4, "title": "N1 · Estado de la última entrevista", "type": "table",
+      "description": "Caducada es una clasificación analítica, no una mutación de estado. Se evalúa respecto a ahora, no al fin del rango histórico.",
+      "gridPos": {"x": 0, "y": 5, "w": 12, "h": 7},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT CASE WHEN status='completed' THEN 'completed' WHEN status='in_progress' AND started_at < now()-make_interval(days => ${expire_days:raw}::int) THEN 'expired_estimate' ELSE status END AS state, count(*) AS interviews FROM interview_sessions WHERE $__timeFilter(started_at) GROUP BY 1 ORDER BY 1"}]
+    },
+    {
+      "id": 5, "title": "N3 · Usuarios activos por agente", "type": "table",
+      "description": "Usuarios con al menos una llamada success en el rango; no sumar agentes para obtener usuarios únicos.",
+      "gridPos": {"x": 12, "y": 5, "w": 12, "h": 7},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT agent,count(DISTINCT chat_id) AS active_users FROM token_usage WHERE status='success' AND $__timeFilter(created_at) GROUP BY agent ORDER BY active_users DESC"}]
+    },
+    {
+      "id": 6, "title": "N5b · Coste conocido por usuario con plan creado en el periodo (USD)", "type": "table",
+      "description": "Ratio operativo, NO CAC ni coste de cohorte causal: todo el coste LLM conocido del periodo / usuarios distintos con algún plan confirmado en el periodo (incluye swaps/renovaciones). El precio desconocido queda NULL, nunca se supone gratis. Leer junto a cobertura.",
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 7},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "WITH costs AS (SELECT sum(cost_usd) AS known_cost_usd,count(*) AS calls,count(cost_usd) AS priced_calls FROM token_usage WHERE $__timeFilter(created_at)), users AS (SELECT count(DISTINCT chat_id) AS users_with_plan FROM training_plans WHERE $__timeFilter(created_at)) SELECT known_cost_usd,users_with_plan,known_cost_usd/NULLIF(users_with_plan,0) AS known_usd_per_user,100.0*priced_calls/NULLIF(calls,0) AS price_coverage_pct FROM costs CROSS JOIN users"}]
+    },
+    {
+      "id": 7, "title": "Métricas de negocio pendientes", "type": "text",
+      "gridPos": {"x": 0, "y": 19, "w": 24, "h": 5},
+      "options": {"mode": "markdown", "content": "**N4 satisfacción:** falta encuesta; confirmar un borrador no equivale a valorarlo. **N5a coste por plan:** falta atribuir cada llamada a una acción y evento de generación; coste medio por llamada NO es coste por plan. No se añaden eventos, tablas de negocio ni cambios en flujos para estos dashboards."}
+    }
+  ]
+}

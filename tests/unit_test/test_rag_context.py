@@ -13,19 +13,21 @@ from fitcoach.service.agent.rag_context import (
 
 class TestBuildQueryText:
     def test_uses_the_loaders_pipe_separated_shape(self, profile: InterviewerProfile) -> None:
-        # Must match build_metadata_text() in infra/vector-db/loader/loader.py,
-        # or the query lands in a different region of the embedding space.
         query = build_query_text(profile, "chest")
 
         assert query.startswith("muscle_group: chest | ")
         assert " | " in query
-        assert "target: gain muscle" in query
+        assert "target: pectorals" in query
+        assert "gain muscle" not in query
+        assert "category: gym" not in query
         assert "equipment: barbell" in query
 
 
 class TestEquipmentFilter:
-    def test_does_not_restrict_a_gym_member(self, profile: InterviewerProfile) -> None:
-        assert equipment_filter(profile) is None
+    def test_restricts_a_gym_member_to_confirmed_equipment(
+        self, profile: InterviewerProfile
+    ) -> None:
+        assert equipment_filter(profile) == ["barbell", "body weight"]
 
     @pytest.mark.parametrize(
         ("environment", "expected_member"),
@@ -43,12 +45,20 @@ class TestEquipmentFilter:
         assert result is not None
         assert expected_member in result
 
-    def test_does_not_restrict_a_mixed_environment(self, profile: InterviewerProfile) -> None:
+    def test_restricts_a_mixed_environment(self, profile: InterviewerProfile) -> None:
         mixed = profile.model_copy(
             update={"training": profile.training.model_copy(update={"environment": "mixed"})}
         )
 
-        assert equipment_filter(mixed) is None
+        assert equipment_filter(mixed) == ["barbell", "body weight"]
+
+    @pytest.mark.parametrize("environment", ["gym", "home", "outdoors", "mixed"])
+    def test_only_bands_never_implies_dumbbells(
+        self, profile: InterviewerProfile, environment: str
+    ) -> None:
+        profile.training.environment = environment
+        profile.training.equipment = ["bandas"]
+        assert equipment_filter(profile) == ["body weight", "resistance band"]
 
 
 class TestBuildRagContext:
@@ -92,6 +102,10 @@ class TestBuildRagContext:
         context = build_rag_context(exercises)
 
         assert "secondary_muscles: triceps" in context
+
+    def test_uses_target_not_misleading_raw_group(self) -> None:
+        exercise = Exercise(1, "press", target="pectorals", muscle_group="triceps")
+        assert "muscle_group: chest" in build_rag_context([exercise])
 
 
 class TestAllowedExerciseIds:

@@ -10,6 +10,11 @@ acotar el gasto, no moderar el uso: no hay listas de usuarios ni bloqueos perman
 
 Tres variables de entorno, **todas opcionales**:
 
+El [panel administrador](admin-panel.md) permite editar cuotas sin reiniciar:
+excepción individual de BD > global de BD > entorno. La tabla siguiente describe
+el respaldo del entorno, no necesariamente el límite efectivo de cada usuario.
+Los administradores se configuran mediante `miniapp_admin_chat_ids`.
+
 | Variable | Por defecto | Qué es |
 |---|---|---|
 | `rate_limit_token_limit` | `150000` | Punto de corte en tokens. **No es el techo.** |
@@ -211,7 +216,10 @@ es qué **puede** seguir haciendo el usuario, que es lo que da sentido al escalo
 | […/postgres_conversation_repository.py](../src/fitcoach/infrastructure/database/postgres_conversation_repository.py) | La query sobre `token_usage`. |
 | [service/conversation_service.py](../src/fitcoach/service/conversation_service.py) | `_quota_message()` y el corte en `_process`. |
 
-El reparto es deliberado: **la política se revisa en un PR, la calibración se ajusta sin desplegar**.
+El reparto es deliberado: **la política se revisa en un PR, la calibración se ajusta
+desde el panel sin desplegar**. Cambiar solo el respaldo del entorno exige
+recrear/reiniciar la aplicación; una configuración global persistida prevalece
+sobre ese respaldo hasta restaurarlo desde el panel.
 Cambiar de 142.000 a 200.000 es operación; cambiar que `/interview` caiga antes que el texto libre es
 una decisión de producto.
 

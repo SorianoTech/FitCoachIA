@@ -1,3 +1,10 @@
+FROM node:22-alpine AS frontend
+WORKDIR /frontend
+COPY ./frontend/package.json ./frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ./frontend/ ./
+RUN npm run build
+
 # Stage 1: Ejecuta todos los requerimientos para ejecutar la aplicación
 FROM python:3.12-slim AS builder
 
@@ -35,6 +42,7 @@ RUN groupadd --system fitcoach \
 
 COPY --from=builder --chown=fitcoach:fitcoach /install $APP_LIB_DIR
 COPY --chown=fitcoach:fitcoach ./src/fitcoach ./fitcoach
+COPY --from=frontend --chown=fitcoach:fitcoach /frontend/dist ./fitcoach/static/miniapp
 COPY --chown=fitcoach:fitcoach ./alembic ./alembic
 COPY --chown=fitcoach:fitcoach ./alembic.ini .
 

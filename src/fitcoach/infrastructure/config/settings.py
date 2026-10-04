@@ -13,7 +13,8 @@ import os
 import re
 from datetime import timedelta
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -22,6 +23,7 @@ from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.retry_policy import RetryPolicy
 
 _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
+TaskTemperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | Literal["default"]
 
 _APP_ENV = os.getenv("APP_ENV", "dev")
 _ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or (".env", f".env.{_APP_ENV}")
@@ -41,6 +43,42 @@ class Settings(BaseSettings):
     bot_telegram_token: SecretStr
     bot_telegram_secret_token: SecretStr
     bot_telegram_webhook_base_url: str
+    miniapp_url: str | None = None
+    miniapp_auth_max_age_seconds: int = Field(default=86400, ge=60, le=86400)
+    miniapp_admin_chat_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+    bot_telegram_exercise_admin_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+
+    @field_validator("miniapp_admin_chat_ids", "bot_telegram_exercise_admin_ids", mode="before")
+    @classmethod
+    def _parse_admin_ids(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [int(item.strip()) for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("miniapp_admin_chat_ids", "bot_telegram_exercise_admin_ids")
+    @classmethod
+    def _validate_admin_ids(cls, values: list[int]) -> list[int]:
+        if any(not 0 < value < 2**63 for value in values):
+            raise ValueError("Los ids de administradores deben ser ids Telegram positivos")
+        return sorted(set(values))
+
+    @field_validator("miniapp_url")
+    @classmethod
+    def _check_miniapp_url(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != "/miniapp/"
+        ):
+            raise ValueError("miniapp_url debe ser HTTPS y terminar en /miniapp/")
+        return value
 
     @field_validator("bot_telegram_commands", mode="before")
     @classmethod
@@ -85,8 +123,25 @@ class IASettings(BaseSettings):
     # A full 4-week mesocycle does not fit in the interview's max_tokens.
     trainer_max_tokens: int = 4096
     trainer_history_window_messages: int = 10
+    trainer_generation_model: str | None = Field(default=None, min_length=1)
+    trainer_generation_temperature: TaskTemperature | None = None
+    trainer_consultation_temperature: TaskTemperature | None = None
+    trainer_extraction_temperature: TaskTemperature | None = None
+    trainer_consultation_model: str | None = Field(default=None, min_length=1)
+    trainer_consultation_max_tokens: int | None = Field(default=None, gt=0)
+    trainer_consultation_timeout: float | None = Field(default=None, gt=0)
+    trainer_extraction_model: str | None = Field(default=None, min_length=1)
+    trainer_extraction_max_tokens: int | None = Field(default=None, gt=0)
+    trainer_extraction_timeout: float | None = Field(default=None, gt=0)
     # Exercises retrieved from the vector DB per muscle group.
-    rag_top_k: int = 8
+    rag_top_k: int = Field(default=8, gt=0)
+
+    # --- Exercise curator (agent 3) ---
+    exercise_curator_model: str = Field(default="gpt-5.4-mini", min_length=1)
+    exercise_curator_temperature: TaskTemperature = 0.1
+    exercise_curator_max_tokens: int = Field(default=1200, gt=0)
+    exercise_curator_timeout: float = Field(default=30, gt=0)
+    exercise_duplicate_similarity_threshold: float = Field(default=0.92, ge=0, le=1)
 
 
 class DatabaseSettings(BaseSettings):
@@ -116,6 +171,7 @@ class VectorDatabaseSettings(BaseSettings):
     )
 
     url: str
+    writer_url: str | None = None
 
 
 class EmbedderSettings(BaseSettings):

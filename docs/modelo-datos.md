@@ -140,15 +140,24 @@ Línea discontinua = relación lógica que solo existe en el código.
 | `training_workflows` | `id` | N propuestas históricas, máximo una abierta por chat | `a41bc08d732e` |
 | `training_notifications` | `id` | Eventos únicos por ciclo y ocasión | `a41bc08d732e` |
 | `training_evaluation` | `id` | 4 encuestas por ciclo (una por semana); cola de envío y respuesta | `c2d8e4f6a1b3` |
+| `workout_sessions` | `id` | Diario por slot semana/día/ciclo y prescripción congelada | `b82ac09d743f` |
+| `workout_requests` | `(chat_id, request_id)` | Alias UUID de inicio/reanudación idempotentes por chat | `b82ac09d743f` |
+| `quota_configs` | `scope_id` | Límite global y excepciones por usuario ([panel admin](admin-panel.md)) | `c3d7e9f1a2b4` |
+| `quota_audit` | `id` | N cambios de cuota auditados | `c3d7e9f1a2b4` |
+| `exercise_submissions` | `id` | N propuestas al catálogo; máximo un borrador por chat ([moderación](exercise-catalogue-contributions.md)) | `b6e4f2a1c9d8`, ampliada por `c7a9e2d4f6b1` |
 | `alembic_version` | `version_num` | 1 fila | la crea Alembic, no la modela la app |
 
 Cadena de migraciones:
 `c5ae33575d94` → `6ca1174fc623` → `7287a3dffce8` → `9d4e6b7a1c2f` → `ab12cd34ef56`
-→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e` → `c2d8e4f6a1b3`
-→ `d9a1b3c5e7f2` → `e5c7a9b1d3f4`.
-Las tres últimas son de las encuestas: esquema, *backfill* de `training_plans.goal` desde el
-JSON del plan y programación de las semanas futuras de los ciclos ya abiertos (migraciones de
-datos separadas de la de esquema).
+→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e`, que se bifurca en dos
+ramas independientes unidas por la revisión vacía `f8b2d6a4c1e9`:
+
+- Encuestas: `c2d8e4f6a1b3` → `d9a1b3c5e7f2` → `e5c7a9b1d3f4` (esquema, *backfill* de
+  `training_plans.goal` desde el JSON del plan y programación de las semanas futuras de los ciclos
+  ya abiertos; migraciones de datos separadas de la de esquema).
+- Diario, cuotas y catálogo: `b82ac09d743f` → `c3d7e9f1a2b4` → `b6e4f2a1c9d8` → `c7a9e2d4f6b1`.
+
+Las dos ramas tocan tablas distintas, así que el orden en que se apliquen no importa.
 La revisión intermedia [`9d4e6b7a1c2f`](../alembic/versions/9d4e6b7a1c2f_set_null_token_usage_message_fk.py)
 no crea tablas: solo recrea la FK de `token_usage` con `ON DELETE SET NULL`.
 
@@ -187,6 +196,18 @@ el índice parcial `(due_at) WHERE state IN ('pending', 'sending')`, así que su
 las encuestas pendientes y no del número de clientes. Sus FK usan `ON DELETE SET NULL` y guarda
 una copia de `goal`: tras un reset de entrevista se sigue sabiendo para qué objetivo era cada nota.
 `UNIQUE (mesocycle_id, week_number)` hace idempotente la programación.
+
+**El diario no es el estado conversacional.** `workout_sessions` guarda sesiones
+iniciadas/finalizadas, referencia a la versión del plan y mesociclo, semana/día,
+prescripción congelada y series autodeclaradas. Una sustitución no reescribe una
+sesión iniciada. Los índices únicos permiten un registro por slot de mesociclo
+(para legacy sin ciclo, por plan). La revisión optimista evita sobrescrituras
+concurrentes. Las sesiones finalizadas son de solo lectura.
+`workout_requests` conserva los UUID de cada inicio/reanudación para que los
+reintentos sean idempotentes aunque cambie la versión del plan.
+Las referencias usan CASCADE: el reset de `/interview` elimina también el diario
+de los planes borrados. Consultas de progreso separan repeticiones, duración,
+carga desconocida y carga explícita cero; no modifican planes ni cierran ciclos.
 
 **`model_prices` se resuelve en código, no con un JOIN obligatorio.** El precio
 se busca en `record_token_usage()`

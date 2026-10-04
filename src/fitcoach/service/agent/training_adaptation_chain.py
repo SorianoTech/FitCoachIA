@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from fitcoach.domain.exercise import Exercise
+from fitcoach.domain.exercise_catalogue import known_equipment
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TrainerGenerationTrace, TrainingPlan
@@ -20,8 +21,8 @@ from fitcoach.domain.training_lifecycle import (
     prescribed_summary,
 )
 from fitcoach.infrastructure.config.settings import get_ia_settings
+from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
-from fitcoach.service.agent.exercise_retriever import known_equipment
 from fitcoach.service.agent.llm_chain import AsyncChatModel, BaseLLMChain, strict_response_format
 from fitcoach.service.agent.rag_context import build_rag_context
 from fitcoach.service.agent.trainer_chain import _hash_text, build_trainer_model
@@ -43,13 +44,17 @@ class TrainingAdaptationChain:
         swap_model: AsyncChatModel,
         model_name: str = "unknown",
         request_model: AsyncChatModel | None = None,
+        extraction_model_name: str | None = None,
     ) -> None:
-        self._review = BaseLLMChain(review_model, model_name)
+        self._review = BaseLLMChain(review_model, extraction_model_name or model_name)
         self._swap = BaseLLMChain(swap_model, model_name)
-        self._request = BaseLLMChain(request_model or swap_model, model_name)
+        self._request = BaseLLMChain(
+            request_model or swap_model, extraction_model_name or model_name
+        )
         self._loader = PromptLoader()
         self._model_name = model_name
 
+    @timed("review_extraction", action="renewal")
     async def extract_review(
         self, profile: InterviewerProfile, answers: dict[str, str]
     ) -> AdaptationReply[ReviewExtraction]:
@@ -69,6 +74,7 @@ class TrainingAdaptationChain:
         )
         return AdaptationReply(result, usages)
 
+    @timed("proposal", action="exercise_swap")
     async def propose_swap(
         self,
         profile: InterviewerProfile,
@@ -166,6 +172,7 @@ class TrainingAdaptationChain:
         )
         return AdaptationReply(result, usages, trace)
 
+    @timed("constraint_extraction", action="exercise_swap")
     async def extract_swap_constraints(
         self, profile: InterviewerProfile, request: SwapRequest
     ) -> AdaptationReply[SwapConstraints]:
@@ -190,11 +197,17 @@ class TrainingAdaptationChain:
 @lru_cache
 def get_training_adaptation_chain() -> TrainingAdaptationChain:
     settings = get_ia_settings()
-    review = build_trainer_model(settings).bind(
+    review = build_trainer_model(settings, "extraction").bind(
         response_format=strict_response_format(ReviewExtraction)
     )
     swap = build_trainer_model(settings).bind(response_format=strict_response_format(SwapProposal))
-    request = build_trainer_model(settings).bind(
+    request = build_trainer_model(settings, "extraction").bind(
         response_format=strict_response_format(SwapConstraints)
     )
-    return TrainingAdaptationChain(review, swap, settings.model, request_model=request)
+    return TrainingAdaptationChain(
+        review,
+        swap,
+        settings.trainer_generation_model or settings.model,
+        request_model=request,
+        extraction_model_name=settings.trainer_extraction_model or settings.model,
+    )

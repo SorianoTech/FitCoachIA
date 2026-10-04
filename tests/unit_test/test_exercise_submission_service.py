@@ -138,9 +138,7 @@ async def test_clarification_answer_updates_existing_draft_context() -> None:
 async def test_confirmation_submits_complete_draft_without_invoking_model() -> None:
     subject, curator, repository, _ = service()
     repository.get_draft.return_value = submission(proposal())
-    repository.set_status.return_value = submission(
-        proposal(), ExerciseSubmissionStatus.PENDING
-    )
+    repository.set_status.return_value = submission(proposal(), ExerciseSubmissionStatus.PENDING)
 
     reply = await subject.handle(7, None, "confirmar", command=False)
 

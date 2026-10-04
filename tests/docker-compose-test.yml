@@ -39,7 +39,9 @@ services:
       - ia_rag_top_k=10
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
       - vector_database_url=postgresql+asyncpg://fitcoach_ro:fitcoach_ro_dev@pgvector-test:5432/fitcoach
+      - vector_database_writer_url=postgresql+asyncpg://fitcoach_writer:fitcoach_writer_dev@pgvector-test:5432/fitcoach
       - embedder_url=http://test-stubs:9999
+      - bot_telegram_exercise_admin_ids=9001
       - bot_telegram_secret_token=test-secret-token
       - bot_telegram_webhook_base_url=https://test.url.domain.com
       # Las rate_limit_* se omiten a proposito: son opcionales y ningun test de
@@ -67,6 +69,7 @@ services:
       POSTGRES_DB: fitcoach
       POSTGRES_PASSWORD: fitcoach
       POSTGRES_USER: fitcoach
+      VECTOR_DB_WRITER_PASSWORD: fitcoach_writer_dev
     # Publicado para que los tests puedan comprobar lo que se persistio.
     ports:
       - "${IT_DB_PORT:-55432}:5432"

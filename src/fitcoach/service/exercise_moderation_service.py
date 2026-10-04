@@ -65,9 +65,7 @@ class ExerciseModerationService:
         if submission_id is None:
             return ExerciseModerationReply([Constants.EXERCISE_MODERATION_USAGE])
         if self._publisher is None:
-            return ExerciseModerationReply([
-                Constants.EXERCISE_MODERATION_PUBLISHER_UNAVAILABLE
-            ])
+            return ExerciseModerationReply([Constants.EXERCISE_MODERATION_PUBLISHER_UNAVAILABLE])
         submission = await self._repository.get(submission_id)
         if (
             submission is None
@@ -76,12 +74,8 @@ class ExerciseModerationService:
         ):
             return ExerciseModerationReply([Constants.EXERCISE_MODERATION_USAGE])
         proposal = submission.proposal
-        vectors = await self._embedder.embed([
-            build_exercise_metadata_text(proposal)
-        ])
-        exercise_id = await self._publisher.publish(
-            submission.id, proposal, vectors[0]
-        )
+        vectors = await self._embedder.embed([build_exercise_metadata_text(proposal)])
+        exercise_id = await self._publisher.publish(submission.id, proposal, vectors[0])
         approved = await self._repository.set_status(
             submission.id,
             ExerciseSubmissionStatus.PENDING,
@@ -98,9 +92,7 @@ class ExerciseModerationService:
             ExerciseModerationNotification(
                 approved.chat_id,
                 approved.message_thread_id,
-                Constants.EXERCISE_SUBMISSION_APPROVED_USER.format(
-                    name=proposal.name
-                ),
+                Constants.EXERCISE_SUBMISSION_APPROVED_USER.format(name=proposal.name),
             ),
         )
 
@@ -125,11 +117,7 @@ class ExerciseModerationService:
             moderation_notes=reason.strip(),
         )
         return ExerciseModerationReply(
-            [
-                Constants.EXERCISE_MODERATION_REJECTED.format(
-                    submission_id=rejected.id
-                )
-            ],
+            [Constants.EXERCISE_MODERATION_REJECTED.format(submission_id=rejected.id)],
             ExerciseModerationNotification(
                 rejected.chat_id,
                 rejected.message_thread_id,

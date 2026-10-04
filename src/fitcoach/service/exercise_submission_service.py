@@ -90,9 +90,7 @@ class ExerciseSubmissionService:
             return ExerciseSubmissionReply([Constants.EXERCISE_SUBMISSION_PENDING], [])
 
         if command and not content and draft is None:
-            await self._repository.create(
-                chat_id, message_thread_id, "", None, self._model_name
-            )
+            await self._repository.create(chat_id, message_thread_id, "", None, self._model_name)
             return ExerciseSubmissionReply([Constants.EXERCISE_SUBMISSION_START], [])
 
         description = self._description(draft.raw_description if draft else "", content)

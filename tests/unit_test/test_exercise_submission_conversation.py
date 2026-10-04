@@ -57,9 +57,7 @@ def service(
     submissions = MagicMock(spec=ExerciseSubmissionService)
     submissions.has_draft = AsyncMock(return_value=False)
     submissions.will_invoke_model = AsyncMock(return_value=False)
-    submissions.handle = AsyncMock(
-        return_value=ExerciseSubmissionReply(["Respuesta curator"], [])
-    )
+    submissions.handle = AsyncMock(return_value=ExerciseSubmissionReply(["Respuesta curator"], []))
     subject = ConversationService(
         bot,
         interviewer,

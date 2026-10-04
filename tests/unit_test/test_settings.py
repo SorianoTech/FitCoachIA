@@ -176,17 +176,13 @@ class TestVectorDatabaseSettings:
         with pytest.raises(ValidationError):
             VectorDatabaseSettings(_env_file=None)
 
-    def test_writer_url_is_optional_and_configurable(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_writer_url_is_optional_and_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("vector_database_url", "postgresql+asyncpg://reader@db/catalogue")
         monkeypatch.delenv("vector_database_writer_url", raising=False)
 
         assert VectorDatabaseSettings(_env_file=None).writer_url is None
 
-        monkeypatch.setenv(
-            "vector_database_writer_url", "postgresql+asyncpg://writer@db/catalogue"
-        )
+        monkeypatch.setenv("vector_database_writer_url", "postgresql+asyncpg://writer@db/catalogue")
         assert (
             VectorDatabaseSettings(_env_file=None).writer_url
             == "postgresql+asyncpg://writer@db/catalogue"

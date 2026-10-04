@@ -157,9 +157,7 @@ def get_conversation_service(
     adaptation: TrainingAdaptationChain = Depends(get_training_adaptation_chain),
     quotas: QuotaService = Depends(get_quota_service),
     exercise_submissions: ExerciseSubmissionService = Depends(get_exercise_submission_service),
-    exercise_moderation: ExerciseModerationService = Depends(
-        get_exercise_moderation_service
-    ),
+    exercise_moderation: ExerciseModerationService = Depends(get_exercise_moderation_service),
 ) -> ConversationService:
     return ConversationService(
         bot=bot,

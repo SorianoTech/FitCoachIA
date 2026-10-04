@@ -38,9 +38,7 @@ def upgrade() -> None:
             name="ck_exercise_submissions_status",
         ),
     )
-    op.create_index(
-        "ix_exercise_submissions_status_id", "exercise_submissions", ["status", "id"]
-    )
+    op.create_index("ix_exercise_submissions_status_id", "exercise_submissions", ["status", "id"])
     op.create_index(
         "uq_exercise_submissions_draft_chat",
         "exercise_submissions",

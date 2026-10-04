@@ -47,9 +47,7 @@ class Settings(BaseSettings):
     miniapp_admin_chat_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
     bot_telegram_exercise_admin_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
 
-    @field_validator(
-        "miniapp_admin_chat_ids", "bot_telegram_exercise_admin_ids", mode="before"
-    )
+    @field_validator("miniapp_admin_chat_ids", "bot_telegram_exercise_admin_ids", mode="before")
     @classmethod
     def _parse_admin_ids(cls, value: object) -> object:
         if isinstance(value, str):

@@ -315,9 +315,7 @@ class ConversationService:
                 case Commands.ADD_EXERCISE:
                     await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
                 case (
-                    Commands.REVIEW_EXERCISES
-                    | Commands.APPROVE_EXERCISE
-                    | Commands.REJECT_EXERCISE
+                    Commands.REVIEW_EXERCISES | Commands.APPROVE_EXERCISE | Commands.REJECT_EXERCISE
                 ):
                     await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
                 case Commands.DOUBTS | Commands.PROGRESS:
@@ -341,9 +339,7 @@ class ConversationService:
         try:
             reply = await self._exercise_moderation.handle(actor_user_id, input_text)
         except AgentError as exc:
-            await self._send(
-                chat_id, message_thread_id, self._message_for_agent_error(exc.code)
-            )
+            await self._send(chat_id, message_thread_id, self._message_for_agent_error(exc.code))
             return
         except ExerciseSubmissionConflictError:
             await self._send(chat_id, message_thread_id, Constants.EXERCISE_MODERATION_USAGE)
@@ -369,9 +365,7 @@ class ConversationService:
         if self._exercise_submissions is None:
             return
         span.set_attribute("agent", AgentType.EXERCISE_CURATOR.value)
-        if await self._exercise_submissions.will_invoke_model(
-            chat_id, input_text, command=command
-        ):
+        if await self._exercise_submissions.will_invoke_model(chat_id, input_text, command=command):
             blocked = await self._quota_message(ctx, chat_id, None)
             if blocked is not None:
                 span.set_attribute("quota_blocked", True)

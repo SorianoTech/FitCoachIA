@@ -46,10 +46,14 @@ def test_rejects_values_that_cannot_enter_the_catalogue(field: str, value: objec
 
 
 def test_curator_turn_requires_proposal_only_for_proposal_status() -> None:
-    result = ExerciseCuratorTurn(status="proposal", reply="Confirma el ejercicio.", proposal=proposal())
+    result = ExerciseCuratorTurn(
+        status="proposal", reply="Confirma el ejercicio.", proposal=proposal()
+    )
 
     assert result.proposal is not None
     with pytest.raises(ValidationError):
-        ExerciseCuratorTurn(status="clarification", reply="¿Qué material usas?", proposal=proposal())
+        ExerciseCuratorTurn(
+            status="clarification", reply="¿Qué material usas?", proposal=proposal()
+        )
     with pytest.raises(ValidationError):
         ExerciseCuratorTurn(status="proposal", reply="Listo.", proposal=None)

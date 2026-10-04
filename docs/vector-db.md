@@ -67,8 +67,49 @@ El cargador vectorizó, por cada ejercicio, un texto con esta forma:
 name: ... | category: ... | body_part: ... | equipment: ... | muscle_group: ... | target: ... | secondary_muscles: ...
 ```
 
-`build_query_text()` en `src/fitcoach/service/agent/rag_context.py` reproduce ese formato. Si se
-modifica uno, hay que modificar el otro.
+`build_query_text()` conserva el formato de metadatos, pero usa targets anatómicos
+(`pectorals`, `lats`, etc.) y equipamiento confirmado. No coloca objetivos deportivos en
+`target` ni entornos como `gym` en `category`, porque no tienen el mismo significado.
+Cambiar el texto del corpus exige re-vectorizarlo; cambiar la consulta no.
+
+### Clasificación y disponibilidad
+
+El campo original `muscle_group` del volcado no es una clasificación fiable del músculo
+principal. La aplicación deriva el grupo canónico a partir de `target`, usando el mapa
+compartido en `domain/exercise_catalogue.py`. No modifica registros ni embeddings.
+Targets no clasificados conservan sus metadatos, pero no entran en la recuperación por
+grupo; una fuente nueva debe revisar su vocabulario antes de incorporarse.
+
+La búsqueda general filtra por los targets del grupo y por el material declarado,
+añadiendo peso corporal. La misma disponibilidad se aplica en gimnasio, casa, exterior
+y entorno mixto, tanto al primer plan como a renovaciones y sustituciones. No se
+presupone que un gimnasio tenga cualquier aparato. Material desconocido requiere
+aclaración; no se amplía el filtro automáticamente.
+
+`band` y `resistance band` se consideran equivalentes. Las búsquedas admiten ambos valores
+del corpus y la representación de dominio devuelve `resistance band`. Aparatos distintos,
+como barra EZ, barra olímpica y barra convencional, no se convierten automáticamente
+en equivalentes. Las sustituciones conservan el mismo `target`, sin exigir el
+`muscle_group` original potencialmente incorrecto.
+
+### Trazas de recuperación
+
+`search_scored()` devuelve `ExerciseMatch` con distancia coseno y similitud
+(`1 - distancia`). `search()` conserva la respuesta de ejercicios sin puntuación.
+El orden es distancia ascendente e ID como desempate. Vectores de consulta nulos,
+no finitos o con dimensión incorrecta se rechazan explícitamente.
+
+`ExerciseRetriever.retrieve_traced()` expone por grupo los filtros y las coincidencias
+en orden, además de la unión deduplicada. La traza es local a la petición; no se guarda
+en los planes ni contiene perfiles, consultas libres o vectores.
+En INFO se registra `RAG ranking` con grupo, cantidad y distancias mínima/máxima.
+Grupos vacíos generan un WARNING. No se registran perfiles ni razones de sustitución.
+
+Estos datos son diagnósticos, no probabilidades de relevancia ni garantías clínicas.
+No se aplica un umbral de similitud. La evaluación etiquetada de
+[calidad de recuperación](plan/rag-retrieval-quality.md) sigue pendiente.
+Los filtros SQL limitan los resultados admisibles; el orden físico de ejecución y
+la cobertura de una búsqueda HNSW filtrada dependen del planificador y deben medirse.
 
 ## Servicio `embedder`
 

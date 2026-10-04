@@ -12,6 +12,7 @@ Rutas:
   GET  /__sent                                       -> mensajes que la app envio
 """
 
+import copy
 import json
 import re
 import urllib.parse
@@ -26,7 +27,7 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 
 # Mensajes enviados por la app, para que el test pueda inspeccionarlos.
 SENT_MESSAGES: list[dict[str, object]] = []
-REQUEST_COUNTS = {"embed": 0}
+REQUEST_COUNTS = {"embed": 0, "llm": 0}
 REGISTERED_WEBHOOK_URL = ""
 
 _INTERVIEW_PROFILE = {
@@ -100,7 +101,7 @@ _TRAINER_TURN = {
                         "exercises": [
                             {
                                 "exercise_id": exercise_id,
-                                "name": f"fixture exercise {exercise_id}",
+                                "name": {1: "barbell bench press", 2: "barbell row"}[exercise_id],
                                 "sets": 3,
                                 "reps": "8-10",
                                 "rest_seconds": 120,
@@ -118,6 +119,23 @@ _TRAINER_TURN = {
         "progression_notes": "Sube 2,5 kg al completar el rango alto.",
     },
 }
+
+
+def _renewal_turn() -> dict[str, object]:
+    turn = copy.deepcopy(_TRAINER_TURN)
+    turn["report"] = "Borrador adaptado tras la revisión: mantenemos básicos y progresión gradual."
+    plan = turn["plan"]
+    names = {1: "barbell bench press", 2: "barbell row", 3: "back squat"}
+    for week in plan["weeks"]:
+        exercises = week["days"][0]["exercises"]
+        exercises.append(copy.deepcopy(exercises[0]))
+        for exercise, exercise_id in zip(exercises, (1, 2, 3), strict=True):
+            exercise["exercise_id"] = exercise_id
+            exercise["name"] = names[exercise_id]
+            exercise["sets"] = 2 if week["week"] == 4 else 3
+            exercise["rpe"] = {1: 7.0, 2: 8.0, 3: 9.0, 4: 6.0}[week["week"]]
+    plan["progression_notes"] = "Completa el rango sin superar el RPE indicado."
+    return turn
 
 
 def _completion(content: dict[str, object]) -> dict[str, object]:
@@ -161,6 +179,7 @@ class StubHandler(BaseHTTPRequestHandler):
         elif self.path == "/__reset":
             SENT_MESSAGES.clear()
             REQUEST_COUNTS["embed"] = 0
+            REQUEST_COUNTS["llm"] = 0
             self._respond({"ok": True})
         else:
             self._respond({"error": "not found"}, status=404)
@@ -171,6 +190,7 @@ class StubHandler(BaseHTTPRequestHandler):
         body = self._parse_body(raw_body, self.headers.get("Content-Type", ""))
 
         if self.path.startswith("/v1/chat/completions"):
+            REQUEST_COUNTS["llm"] += 1
             self._respond(_completion(self._turn_for(body)))
             return
         if self.path.startswith("/embed"):
@@ -215,16 +235,67 @@ class StubHandler(BaseHTTPRequestHandler):
             if isinstance(message, dict) and message.get("role") == "system":
                 system = str(message.get("content", ""))
                 break
+        if "Extract confirmed training updates" in system:
+            return {
+                "profile_patch": {
+                    "goal": None,
+                    "commitment": None,
+                    "training": None,
+                    "sleep": None,
+                    "injuries": None,
+                },
+                "safety_hold": False,
+                "explanation": "Sin cambios de disponibilidad ni restricciones.",
+            }
+        if "Interpret the client's exercise substitution request" in system:
+            return {"excluded_equipment": [], "safety_hold": False, "clarification": None}
+        if "Propose 1-3 distinct alternatives" in system:
+            return {
+                "safety_hold": False,
+                "options": [
+                    {
+                        "exercise": {
+                            "exercise_id": 6,
+                            "name": "push up",
+                            "sets": 3,
+                            "reps": "8-10",
+                            "rest_seconds": 120,
+                            "rpe": 7.0,
+                            "notes": "Sin dolor.",
+                        },
+                        "rationale": "Mismo target pectoral, sin necesidad de barra.",
+                    }
+                ],
+            }
         # Ojo: el prompt del interviewer tambien menciona "Trainer" al citar a
         # los agentes siguientes. Hay que mirar la linea de ROLE.
         if "You are the Trainer" in system:
             if "This is a read-only consultation" in system:
+                if (
+                    messages
+                    and isinstance(messages[-1], dict)
+                    and "quiero cambiar" in str(messages[-1].get("content", "")).lower()
+                ):
+                    return {
+                        "status": "answer",
+                        "reply": "Elige el ejercicio con los botones.",
+                        "report": None,
+                        "plan": None,
+                        "intent": "exercise_swap",
+                        "swap_selection": (
+                            {"week": 1, "exercise_id": None, "reason": None}
+                            if "semana 1" in str(messages[-1].get("content", "")).lower()
+                            else None
+                        ),
+                    }
                 return {
                     "status": "answer",
                     "reply": "El plan indica 120 segundos de descanso.",
                     "report": None,
                     "plan": None,
                 }
+            if "# RENEWAL" in system:
+                return _renewal_turn()
             return _TRAINER_TURN
         return _INTERVIEWER_TURN
 

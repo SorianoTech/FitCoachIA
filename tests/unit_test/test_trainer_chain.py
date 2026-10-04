@@ -19,11 +19,17 @@ from tests.unit_test.conftest import build_plan_payload
 
 
 def _plan_json(exercise_id: int = 101) -> str:
+    plan = build_plan_payload(exercise_id=exercise_id)
+    if exercise_id == 102:
+        plan = TrainingPlan.model_validate(plan).model_dump(mode="json")
+        for week in plan["weeks"]:
+            for day in week["days"]:
+                day["exercises"][0]["name"] = "barbell row"
     return json.dumps({
         "status": "plan",
         "reply": "Aquí tienes tu plan",
         "report": "Plan de 4 semanas, 3 días",
-        "plan": build_plan_payload(exercise_id=exercise_id),
+        "plan": plan,
     })
 
 
@@ -35,6 +41,33 @@ def model() -> MagicMock:
 
 
 class TestGeneratePlan:
+    @pytest.mark.parametrize("failure", ["name", "equipment", "goal", "time", "duplicate"])
+    @pytest.mark.asyncio
+    async def test_repairs_exact_constraint_failures(
+        self, model: MagicMock, profile: InterviewerProfile, exercises: list[Exercise], failure: str
+    ) -> None:
+        payload = json.loads(_plan_json())
+        day = payload["plan"]["weeks"][0]["days"][0]
+        if failure == "name":
+            day["exercises"][0]["name"] = "invented name"
+        elif failure == "equipment":
+            from dataclasses import replace
+
+            exercises = [replace(exercises[0], equipment="dumbbell"), exercises[1]]
+        elif failure == "goal":
+            payload["plan"]["goal"] = "lose_fat"
+        elif failure == "time":
+            day["estimated_minutes"] = 61
+        else:
+            day["exercises"].append(day["exercises"][0].copy())
+        model.ainvoke.side_effect = [
+            AIMessage(content=json.dumps(payload)),
+            AIMessage(content=_plan_json(exercise_id=102)),
+        ]
+        reply = await TrainerChain(model).generate_plan(profile, exercises)
+        assert reply.turn.plan is not None
+        assert model.ainvoke.await_count == 2
+
     @pytest.mark.asyncio
     async def test_composes_system_prompt_rag_context_and_profile(
         self, model: MagicMock, profile: InterviewerProfile, exercises: list[Exercise]

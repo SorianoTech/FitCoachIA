@@ -72,10 +72,18 @@ Línea discontinua = relación lógica que solo existe en el código.
 | `interviewer_profiles` | `chat_id` | 1 por chat | [`6ca1174fc623`](../alembic/versions/6ca1174fc623_add_interview_profiles.py) |
 | `token_usage` | `id` (serial) | N por chat, 1 por llamada al LLM | [`7287a3dffce8`](../alembic/versions/7287a3dffce8_create_token_usage.py) |
 | `model_prices` | `model` | 1 por modelo (catálogo) | [`ab12cd34ef56`](../alembic/versions/ab12cd34ef56_create_model_prices.py) |
+| `training_plans` | `id` | N versiones inmutables por chat; ciclo y plan padre | `d4f1a9b7c3e2`, ampliada por `f3a8c1d4e6b2` y `a41bc08d732e` |
+| `training_sessions` | `chat_id` | Puntero autoritativo al plan vigente | `d4f1a9b7c3e2` |
+| `training_mesocycles` | `id` | N ciclos por chat, con fechas y cierre declarado | `a41bc08d732e` |
+| `training_workflows` | `id` | N propuestas históricas, máximo una abierta por chat | `a41bc08d732e` |
+| `training_notifications` | `id` | Eventos únicos por ciclo y ocasión | `a41bc08d732e` |
+| `workout_sessions` | `id` | Diario por slot semana/día/ciclo y prescripción congelada | `b82ac09d743f` |
+| `workout_requests` | `(chat_id, request_id)` | Alias UUID de inicio/reanudación idempotentes por chat | `b82ac09d743f` |
 | `alembic_version` | `version_num` | 1 fila | la crea Alembic, no la modela la app |
 
 Cadena de migraciones:
-`c5ae33575d94` → `6ca1174fc623` → `7287a3dffce8` → `9d4e6b7a1c2f` → `ab12cd34ef56`.
+`c5ae33575d94` → `6ca1174fc623` → `7287a3dffce8` → `9d4e6b7a1c2f` → `ab12cd34ef56`
+→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e` → `b82ac09d743f`.
 La revisión intermedia [`9d4e6b7a1c2f`](../alembic/versions/9d4e6b7a1c2f_set_null_token_usage_message_fk.py)
 no crea tablas: solo recrea la FK de `token_usage` con `ON DELETE SET NULL`.
 
@@ -87,11 +95,38 @@ tablas. El código asume que equivale al `telegram_user_id` porque hoy todos los
 chats son privados 1:1; si se soportan grupos o foros, la suposición se rompe en
 las cuatro a la vez (ver el docstring de `TokenUsageRecord`).
 
-**Solo hay una FK en todo el esquema.** `token_usage.conversation_message_id →
+**La contabilidad conserva sus referencias opcionales.** `token_usage.conversation_message_id →
 conversation_messages.id`, y es *nullable* a propósito: la llamada de reparación
 de JSON del entrevistador consume tokens pero no genera un turno persistido, así
 que esa fila queda sin mensaje asociado. El `ON DELETE SET NULL` permite borrar
 el historial de conversación sin perder la contabilidad de consumo.
+
+**Mesociclo, versión y borrador son distintos.** `training_plans.mesocycle_id` referencia
+el ciclo; `parent_plan_id` establece el linaje de versiones y `change_kind` distingue
+`initial`, `renewal` y `exercise_swap`. `training_sessions.current_plan_id` selecciona
+el vigente, no la mayor versión. Un borrador vive en `training_workflows.payload` y
+solo recibe versión al aceptarlo. El payload incluye revisión, perfil efectivo y trazas.
+Las restricciones parciales impiden dos flujos abiertos por chat; un contador de revisión
+y leases evitan resultados de generación obsoletos.
+
+`training_mesocycles` tiene fechas UTC de inicio, cierre previsto y cierre declarado;
+una sustitución no las reinicia. La migración asocia cada generación legacy a un ciclo
+sin inventar fechas. `training_notifications` guarda ocasión, estado, vencimiento, intentos
+y lease. Su FK al ciclo y la del flujo al plan base usan borrado en cascada;
+el reset de entrevista elimina los ciclos después de eliminar planes y sesión.
+La base vectorial sigue separada y de solo lectura: Alembic no modifica su catálogo.
+
+**El diario no es el estado conversacional.** `workout_sessions` guarda sesiones
+iniciadas/finalizadas, referencia a la versión del plan y mesociclo, semana/día,
+prescripción congelada y series autodeclaradas. Una sustitución no reescribe una
+sesión iniciada. Los índices únicos permiten un registro por slot de mesociclo
+(para legacy sin ciclo, por plan). La revisión optimista evita sobrescrituras
+concurrentes. Las sesiones finalizadas son de solo lectura.
+`workout_requests` conserva los UUID de cada inicio/reanudación para que los
+reintentos sean idempotentes aunque cambie la versión del plan.
+Las referencias usan CASCADE: el reset de `/interview` elimina también el diario
+de los planes borrados. Consultas de progreso separan repeticiones, duración,
+carga desconocida y carga explícita cero; no modifican planes ni cierran ciclos.
 
 **`model_prices` se resuelve en código, no con un JOIN obligatorio.** El precio
 se busca en `record_token_usage()`

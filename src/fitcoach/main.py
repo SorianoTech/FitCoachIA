@@ -1,11 +1,18 @@
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.staticfiles import StaticFiles
+from telegram import MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 from telegram.error import BadRequest, InvalidToken, NetworkError, TelegramError
 
+from fitcoach.api.admin import admin, admin_access
+from fitcoach.api.miniapp import miniapp
+from fitcoach.api.miniapp_actions import miniapp_actions
 from fitcoach.api.webhook import webhook
+from fitcoach.domain.constants import Constants
 from fitcoach.infrastructure.bot.telegram_bot import get_bot, to_bot_command
 from fitcoach.infrastructure.config.logging_config import configure_logging
 from fitcoach.infrastructure.config.settings import (
@@ -46,6 +53,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="FitCoach IA - API de Prueba", lifespan=lifespan)
 app.include_router(webhook)
+app.include_router(miniapp)
+app.include_router(miniapp_actions)
+app.include_router(admin)
+app.include_router(admin_access)
+
+
+@app.middleware("http")
+async def miniapp_response_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    response = await call_next(request)
+    if request.url.path.startswith("/api/miniapp"):
+        response.headers["Cache-Control"] = "no-store"
+    if request.url.path.startswith(("/api/miniapp", "/miniapp")):
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+_miniapp_directory = Path(__file__).parent / "static" / "miniapp"
+if not _miniapp_directory.is_dir():
+    _miniapp_directory = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _miniapp_directory.is_dir():
+    app.mount("/miniapp", StaticFiles(directory=_miniapp_directory, html=True), name="miniapp")
+else:
+
+    @app.get("/miniapp/", include_in_schema=False)
+    async def miniapp_not_built() -> None:
+        raise HTTPException(status_code=503, detail="Compila primero el frontend de la Mini App.")
 
 
 @app.get("/")
@@ -72,10 +108,21 @@ async def _register_webhook(app: FastAPI, settings: Settings) -> None:
         bot = await get_bot()
         logger.info("[webhook 2/4] bot autenticado en Telegram")
 
+        await bot.set_chat_menu_button(
+            menu_button=(
+                MenuButtonWebApp(
+                    text=Constants.TRAINING_NAVIGATION["miniapp"],
+                    web_app=WebAppInfo(url=settings.miniapp_url),
+                )
+                if settings.miniapp_url
+                else MenuButtonCommands()
+            )
+        )
+
         await bot.set_webhook(
             url=expected_url,
             secret_token=settings.bot_telegram_secret_token.get_secret_value(),
-            allowed_updates=["message", "edited_message"],
+            allowed_updates=["message", "edited_message", "callback_query"],
             drop_pending_updates=False,
         )
         logger.info("[webhook 3/4] setWebhook aceptado con secreto")

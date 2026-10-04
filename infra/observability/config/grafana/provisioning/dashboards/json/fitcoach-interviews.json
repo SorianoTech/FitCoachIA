@@ -1,0 +1,54 @@
+{
+  "uid": "fitcoach-interviews", "title": "FitCoachIA - Entrevistas",
+  "schemaVersion": 39, "tags": ["fitcoach", "entrevistas"], "timezone": "browser",
+  "time": {"from": "now-30d", "to": "now"}, "refresh": "5m",
+  "templating": {"list": [
+    {"name": "environment", "label": "Entorno", "type": "custom", "query": "dev,prod", "current": {"text": "dev", "value": "dev"}, "includeAll": false, "multi": false}
+  ]},
+  "panels": [
+    {
+      "id": 1, "title": "E1 · Llamadas sin fallo final de formato (%)", "type": "stat",
+      "description": "Proxy de fiabilidad de formato, NO porcentaje de perfiles validados: 1 - llamadas llm_invalid_output / todas las llamadas interviewer. Reparaciones, respuestas intermedias y otros errores forman parte de las llamadas.",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT 100.0*(1.0-count(*) FILTER (WHERE status='llm_invalid_output')::numeric/NULLIF(count(*),0)) AS calls_without_final_format_failure_pct FROM token_usage WHERE agent='interviewer' AND $__timeFilter(created_at)"}]
+    },
+    {
+      "id": 2, "title": "E2 · Mensajes de usuario por entrevista (mediana)", "type": "stat",
+      "description": "Últimas entrevistas completadas dentro del rango. Mensajes interviewer role=user dentro de started_at..completed_at. Mensajes no son llamadas ni pares de turnos; resets borran el historial anterior.",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "WITH attempts AS (SELECT s.chat_id,count(m.id) AS user_messages FROM interview_sessions s LEFT JOIN conversation_messages m ON m.chat_id=s.chat_id AND m.agent='interviewer' AND m.role='user' AND m.created_at>=s.started_at AND m.created_at<=s.completed_at WHERE s.status='completed' AND s.completed_at>=s.started_at AND $__timeFilter(s.completed_at) GROUP BY s.chat_id) SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY user_messages) AS median_user_messages,count(*) AS completed_interviews FROM attempts"}]
+    },
+    {
+      "id": 3, "title": "E3 · Duración de entrevista (mediana, segundos)", "type": "stat",
+      "description": "Tiempo de calendario del último intento completado, incluye pausas del usuario. No es latencia del modelo. Fechas invertidas se excluyen.",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM completed_at-started_at)) AS median_duration_seconds FROM interview_sessions WHERE status='completed' AND completed_at>=started_at AND $__timeFilter(completed_at)"}]
+    },
+    {
+      "id": 4, "title": "E3 · Duración por fecha de finalización", "type": "timeseries",
+      "description": "Mediana por día de entrevistas completadas conservadas. Días sin entrevistas no se rellenan con cero.",
+      "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "rawSql": "SELECT date_trunc('day',completed_at) AS time,percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM completed_at-started_at)) AS median_duration_seconds FROM interview_sessions WHERE status='completed' AND completed_at>=started_at AND $__timeFilter(completed_at) GROUP BY 1 ORDER BY 1"}]
+    },
+    {
+      "id": 5, "title": "E4 · Usuarios con /interview repetido (%)", "type": "stat",
+      "description": "Proxy Loki limitado a retención y rango: usuarios con más de un comando INTERVIEW / usuarios que enviaron INTERVIEW, NO todos los usuarios. No distingue reset completado/a medias ni satisfacción. Incluye comandos bloqueados por cuota.",
+      "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "100 * sum((sum by (telegram_user_id) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"comando=Commands.INTERVIEW\" | regexp `telegram_user_id=(?P<telegram_user_id>[0-9]+)` | telegram_user_id!=\"\" [$__range]))) > bool 1) / count(sum by (telegram_user_id) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"comando=Commands.INTERVIEW\" | regexp `telegram_user_id=(?P<telegram_user_id>[0-9]+)` | telegram_user_id!=\"\" [$__range])))"}]
+    },
+    {
+      "id": 6, "title": "Sentimiento y reinicios históricos", "type": "text",
+      "gridPos": {"x": 0, "y": 13, "w": 24, "h": 5},
+      "options": {"mode": "markdown", "content": "Sin análisis de sentimiento ni eventos de reset históricos: no se deducen emociones de mensajes ni motivos de reinicio. La BD conserva solo el último intento. E4 es una aproximación de comandos repetidos en Loki (retención 14 días), no un KPI histórico de insatisfacción."}
+    }
+  ]
+}

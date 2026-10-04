@@ -1,11 +1,14 @@
 """Politica de cuota: que nivel corresponde a cada comando y en que umbral corta."""
 
 from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 
+from fitcoach.domain.constants import Constants
 from fitcoach.domain.rate_limiter import COMMAND_TIERS, UsageLimits, UsageTier
 from fitcoach.domain.telegram import Commands
+from fitcoach.service.conversation_service import ConversationService
 
 _LIMITS = UsageLimits(hard_tokens=1_000, soft_tokens=900, window=timedelta(hours=24))
 
@@ -42,3 +45,20 @@ class TestCommandTiers:
 
         with pytest.raises(KeyError):
             limits.limit_for("/todavia-no-existe")  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_conversation_reloads_effective_limits_and_preserves_unlimited_access() -> None:
+    repository = AsyncMock()
+    repository.tokens_used_since.return_value = 50
+    resolver = AsyncMock(return_value=UsageLimits(40, 20, timedelta(minutes=5)))
+    service = ConversationService(
+        AsyncMock(), AsyncMock(), repository, _LIMITS, quota_resolver=resolver
+    )
+    assert await service._quota_message("test", 99, None) == Constants.QUOTA_EXCEEDED_MESSAGE
+    resolver.assert_awaited_once_with(99)
+    resolver.return_value = UsageLimits(100, 80, timedelta(minutes=10))
+    assert await service._quota_message("test", 99, None) is None
+    assert resolver.await_count == 2
+    assert await service._quota_message("test", 99, Commands.START) is None
+    assert resolver.await_count == 2

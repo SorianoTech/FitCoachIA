@@ -9,7 +9,7 @@ El sistema es capaz de transformar una entrevista inicial en un **Plan Personali
 El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquestar cuatro agentes especializados:
 
 *   **Agente 1 (Secretario):** Transcribe entrevistas y genera informes estructurados del cliente.
-*   **Agente 2 (Entrenador):** Diseña planes de entrenamiento optimizados en mesociclos, anclados a una base de datos vectorial de ejercicios. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
+*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o abre el menú del vigente; los botones permiten consultar la semana actual sin LLM. `/train revisar` inicia la renovación, que requiere aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
 
@@ -30,11 +30,17 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 ### Interfaces de Usuario
 - **Web Panel:** Interfaz visual para que el usuario consulte sus datos, rutinas y nutrición.
 - **Chatbot (Telegram):** Canal de comunicación directo para actualizar progresos e interactuar con el entrenador en tiempo real.
+- **Telegram Mini App:** Consulta de semanas, registro de series, descansos, historial y
+  progreso sin LLM. Cambios de ejercicio y renovación continúan en el chat con confirmación.
+  Configuración y límites en [docs/telegram-miniapp.md](docs/telegram-miniapp.md).
+  Incluye [panel administrador de cuotas](docs/admin-panel.md), autorizado por
+  `miniapp_admin_chat_ids`, con límites globales y excepciones por usuario sin reiniciar.
 
 ## Estructura del Proyecto
 
 ```
 FitCoachIA/
+├── frontend/                     # Telegram Mini App: React, TypeScript y Vite
 ├── src/
 │   ├── fitcoach/
 │   │   ├── api/                  # Controladores y endpoints REST
@@ -114,13 +120,14 @@ git clone https://github.com/usuario/proyecto-jupiter.git
 
 ## 🐳 Docker — Construcción manual de la imagen
 
-El `Dockerfile` se encuentra en `src/` y requiere que el contexto de construcción sea ese mismo directorio, ya que copia la carpeta `fitcoach/` y el fichero `requirements.txt` desde allí.
+El `Dockerfile` se encuentra en `src/`, pero el contexto de construcción es la raíz
+del repositorio: necesita `frontend/`, `src/` y las migraciones de `alembic/`.
 
 ### 1. Construir la imagen
 
 ```bash
 # Desde la raíz del repositorio
-docker build -t fitcoach-ia:latest ./src
+docker build -t fitcoach-ia:latest -f src/Dockerfile .
 ```
 
 > **Nota:** La etiqueta `fitcoach-ia:latest` puede sustituirse por cualquier nombre y versión que prefieras (p. ej. `fitcoach-ia:1.0.0`).
@@ -150,7 +157,7 @@ Una vez en marcha, la API estará disponible en `http://localhost:8000`.
 | Opción | Descripción |
 |--------|-------------|
 | `-t fitcoach-ia:latest` | Nombre y etiqueta de la imagen resultante |
-| `./src` | Contexto de construcción (directorio donde está el `Dockerfile`) |
+| `-f src/Dockerfile .` | Dockerfile en `src/` y contexto en la raíz del repositorio |
 | `--no-cache` | Fuerza la reconstrucción de todas las capas sin caché |
 | `--platform linux/amd64` | Construye para una plataforma específica (útil en Apple Silicon) |
 

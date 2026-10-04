@@ -349,8 +349,8 @@ Tu nueva vida te espera, ¡Adelante!
 
     # --- Mensaje con el que se siembra la conversacion del modelo ---
     INTERVIEW_SEED_MESSAGE: Final = (
-        "New interview conversation about a body change was initiated. "
-        "What do you need to know about our new client to change its life?"
+        "Se ha iniciado una nueva entrevista sobre un cambio físico. "
+        "¿Qué necesitas saber de nuestro nuevo cliente para ayudarle a cambiar su vida?"
     )
 
     # --- Limpieza del texto de entrada ---

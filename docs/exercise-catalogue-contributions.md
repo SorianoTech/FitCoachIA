@@ -20,8 +20,8 @@ entrenador.
 5. Se genera un embedding con el mismo servicio y dimensiones que utiliza el catálogo.
 6. `ExerciseDuplicateDetector` compara la propuesta con los ejercicios existentes y marca posibles
    duplicados.
-7. El usuario revisa la previsualización y responde `confirmar`, explica una corrección o escribe
-   `cancelar`.
+7. El usuario revisa la previsualización y pulsa **Confirmar** o **Cancelar**. También puede
+   responder `confirmar`, explicar una corrección o escribir `cancelar`.
 8. Una propuesta confirmada pasa a estado `pending`; todavía no es visible para el RAG.
 9. Un moderador la aprueba o rechaza desde Telegram.
 10. La aprobación genera el embedding definitivo, publica el ejercicio en pgVector y cambia la
@@ -37,12 +37,19 @@ entrenador.
 |---|---|
 | `/add_exercise` | Inicia una conversación guiada |
 | `/add_exercise DESCRIPCIÓN` | Genera directamente una propuesta |
+| Botón **Confirmar** | Envía el borrador completo a moderación |
+| Botón **Cancelar** | Descarta el borrador |
 | `confirmar` | Envía el borrador completo a moderación |
 | `cancelar` | Descarta el borrador |
 
 La detección en lenguaje natural exige una intención explícita de añadir, registrar o crear un
 ejercicio. Frases casuales como «me gusta el remo» continúan por el flujo conversacional normal y
 no abren una propuesta.
+
+Los botones inline incluyen el ID de la propuesta. Si el usuario pulsa un botón antiguo después de
+cancelar, confirmar o sustituir el borrador, el backend rechaza la acción sin modificar la
+propuesta activa. En grupos se mantiene la respuesta por texto para evitar que otro miembro pulse
+los controles del autor.
 
 ### Moderador
 

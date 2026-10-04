@@ -45,6 +45,24 @@ def admin_update(text: str) -> Update:
     })
 
 
+def exercise_callback(data: str = "ex:confirm:12") -> Update:
+    return Update.de_json({
+        "update_id": 12,
+        "callback_query": {
+            "id": "exercise-click",
+            "chat_instance": "chat",
+            "data": data,
+            "from": {"id": 7, "is_bot": False, "first_name": "User"},
+            "message": {
+                "message_id": 22,
+                "date": 0,
+                "chat": {"id": 7, "type": "private"},
+                "text": "Si la propuesta es correcta...",
+            },
+        },
+    })
+
+
 def service(
     *,
     tokens_used: int = 0,
@@ -58,6 +76,9 @@ def service(
     submissions.has_draft = AsyncMock(return_value=False)
     submissions.will_invoke_model = AsyncMock(return_value=False)
     submissions.handle = AsyncMock(return_value=ExerciseSubmissionReply(["Respuesta curator"], []))
+    submissions.handle_callback = AsyncMock(
+        return_value=ExerciseSubmissionReply(["Propuesta enviada a moderación."], [])
+    )
     subject = ConversationService(
         bot,
         interviewer,
@@ -120,6 +141,60 @@ async def test_curator_token_usage_is_recorded_under_its_agent() -> None:
     conversations.record_token_usage.assert_awaited_once()
     assert conversations.record_token_usage.await_args.kwargs["agent"] == "exercise_curator"
     assert conversations.record_token_usage.await_args.kwargs["model"] == "curator-model"
+
+
+@pytest.mark.asyncio
+async def test_generated_proposal_adds_confirmation_keyboard_to_last_message() -> None:
+    subject, bot, _, submissions = service()
+    submissions.handle.return_value = ExerciseSubmissionReply(
+        ["Propuesta", "Confirma o cancela"],
+        [],
+        confirmation_submission_id=12,
+    )
+
+    await subject.handle_update(update("/add_exercise remo"))
+
+    calls = bot.send_message.await_args_list
+    assert "reply_markup" not in calls[0].kwargs
+    keyboard = calls[1].kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == "ex:confirm:12"
+    assert keyboard.inline_keyboard[0][1].callback_data == "ex:cancel:12"
+
+
+@pytest.mark.asyncio
+async def test_exercise_callback_is_acknowledged_and_retires_keyboard() -> None:
+    subject, bot, _, submissions = service()
+
+    await subject.handle_update(exercise_callback())
+
+    submissions.handle_callback.assert_awaited_once_with(7, 12, "confirm")
+    bot.answer_callback_query.assert_awaited_once_with("exercise-click")
+    bot.edit_message_reply_markup.assert_awaited_once_with(
+        chat_id=7,
+        message_id=22,
+        reply_markup=None,
+    )
+    bot.send_message.assert_awaited_once_with(
+        chat_id=7,
+        message_thread_id=None,
+        text="Propuesta enviada a moderación.",
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_exercise_callback_is_reported_as_an_alert() -> None:
+    subject, bot, _, submissions = service()
+    submissions.handle_callback.return_value = ExerciseSubmissionReply(
+        ["Esta propuesta ya no está disponible. Usa /add_exercise para consultar o crear otra."],
+        [],
+        callback_valid=False,
+    )
+
+    await subject.handle_update(exercise_callback())
+
+    assert bot.answer_callback_query.await_args.kwargs["show_alert"] is True
+    bot.edit_message_reply_markup.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

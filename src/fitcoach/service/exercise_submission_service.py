@@ -4,7 +4,11 @@ import re
 from dataclasses import dataclass
 
 from fitcoach.domain.constants import Constants
-from fitcoach.domain.exercise_submission import ExerciseProposal, ExerciseSubmissionStatus
+from fitcoach.domain.exercise_submission import (
+    ExerciseProposal,
+    ExerciseSubmissionAction,
+    ExerciseSubmissionStatus,
+)
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.repository.exercise_submission_repository import ExerciseSubmissionRepository
 from fitcoach.service.agent.exercise_curator_chain import ExerciseCuratorChain
@@ -25,6 +29,8 @@ class ExerciseSubmissionReply:
     messages: list[str]
     token_usages: list[TokenUsage]
     invoked_model: bool = False
+    confirmation_submission_id: int | None = None
+    callback_valid: bool = True
 
 
 class ExerciseSubmissionService:
@@ -138,7 +144,37 @@ class ExerciseSubmissionService:
             [reply.turn.reply, preview, Constants.EXERCISE_SUBMISSION_CONFIRM],
             reply.token_usages,
             True,
+            draft.id,
         )
+
+    async def handle_callback(
+        self,
+        chat_id: int,
+        submission_id: int,
+        action: ExerciseSubmissionAction,
+    ) -> ExerciseSubmissionReply:
+        draft = await self._repository.get_draft(chat_id)
+        if draft is None or draft.id != submission_id:
+            return ExerciseSubmissionReply(
+                [Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID],
+                [],
+                callback_valid=False,
+            )
+        if action == "cancel":
+            await self._repository.set_status(
+                draft.id,
+                ExerciseSubmissionStatus.DRAFT,
+                ExerciseSubmissionStatus.CANCELLED,
+            )
+            return ExerciseSubmissionReply([Constants.EXERCISE_SUBMISSION_CANCELLED], [])
+        if draft.proposal is None:
+            return ExerciseSubmissionReply([Constants.EXERCISE_SUBMISSION_INCOMPLETE], [])
+        await self._repository.set_status(
+            draft.id,
+            ExerciseSubmissionStatus.DRAFT,
+            ExerciseSubmissionStatus.PENDING,
+        )
+        return ExerciseSubmissionReply([Constants.EXERCISE_SUBMISSION_PENDING], [])
 
     @staticmethod
     def _description(previous: str, content: str) -> str:

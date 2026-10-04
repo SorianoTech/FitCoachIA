@@ -42,6 +42,10 @@ from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.agent.trainer_chain import TrainerChain
 from fitcoach.service.exercise_moderation_service import ExerciseModerationService
+from fitcoach.service.exercise_submission_controls import (
+    exercise_submission_keyboard,
+    parse_exercise_submission_callback,
+)
 from fitcoach.service.exercise_submission_service import ExerciseSubmissionService
 from fitcoach.service.training_service import TrainingService
 from fitcoach.service.training_view import persistent_keyboard
@@ -163,8 +167,16 @@ class ConversationService:
             not isinstance(message, Message)
             or message.chat.type != "private"
             or query.from_user.id != message.chat_id
-            or self._training_service is None
         ):
+            await self._bot.answer_callback_query(
+                query.id, text=Constants.TRAINING_CALLBACK_PRIVATE, show_alert=True
+            )
+            return
+        data = query.data or ""
+        if data.startswith("ex:"):
+            await self._handle_exercise_submission_callback(query.id, message, data, ctx)
+            return
+        if self._training_service is None:
             await self._bot.answer_callback_query(
                 query.id, text=Constants.TRAINING_CALLBACK_PRIVATE, show_alert=True
             )
@@ -172,7 +184,7 @@ class ConversationService:
         await self._bot.answer_callback_query(query.id)
         try:
             async with typing_indicator(self._bot, message.chat_id, message.message_thread_id):
-                responses = await self._training_service.callback(message.chat_id, query.data or "")
+                responses = await self._training_service.callback(message.chat_id, data)
         except AgentError as error:
             logger.warning("%s controlled callback error: %s", ctx, error.code)
             await self._send(
@@ -184,7 +196,7 @@ class ConversationService:
         if (
             Constants.TRAINING_CALLBACK_INVALID not in responses
             and Constants.TRAINING_CONFLICT_MESSAGE not in responses
-            and not (query.data or "").startswith("tr:details:")
+            and not data.startswith("tr:details:")
         ):
             try:
                 await self._bot.edit_message_reply_markup(
@@ -193,8 +205,57 @@ class ConversationService:
             except BadRequest:
                 logger.warning("%s could not retire original inline keyboard", ctx, exc_info=True)
         await self._deliver_training_responses(
-            message.chat_id, message.message_thread_id, query.data or "", responses
+            message.chat_id, message.message_thread_id, data, responses
         )
+
+    async def _handle_exercise_submission_callback(
+        self,
+        callback_query_id: str,
+        message: Message,
+        data: str,
+        ctx: str,
+    ) -> None:
+        parsed = parse_exercise_submission_callback(data)
+        if parsed is None or self._exercise_submissions is None:
+            await self._bot.answer_callback_query(
+                callback_query_id,
+                text=Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID,
+                show_alert=True,
+            )
+            return
+        action, submission_id = parsed
+        try:
+            reply = await self._exercise_submissions.handle_callback(
+                message.chat_id,
+                submission_id,
+                action,
+            )
+        except (ValueError, ExerciseSubmissionConflictError):
+            logger.warning("%s invalid exercise submission callback", ctx, exc_info=True)
+            await self._bot.answer_callback_query(
+                callback_query_id,
+                text=Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID,
+                show_alert=True,
+            )
+            return
+        if not reply.callback_valid:
+            await self._bot.answer_callback_query(
+                callback_query_id,
+                text=Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID,
+                show_alert=True,
+            )
+            return
+        await self._bot.answer_callback_query(callback_query_id)
+        try:
+            await self._bot.edit_message_reply_markup(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+                reply_markup=None,
+            )
+        except BadRequest:
+            logger.warning("%s could not retire exercise inline keyboard", ctx, exc_info=True)
+        for response in reply.messages:
+            await self._send(message.chat_id, message.message_thread_id, response)
 
     async def _process(self, update: Update, message: Message | None, ctx: str) -> None:
         edited = " (editado)" if update.edited_message is not None else ""
@@ -262,6 +323,7 @@ class ConversationService:
                     message_thread_id,
                     input_text,
                     command == Commands.ADD_EXERCISE,
+                    message.chat.type == "private",
                     span,
                 )
                 return
@@ -360,6 +422,7 @@ class ConversationService:
         message_thread_id: int | None,
         input_text: str,
         command: bool,
+        private_chat: bool,
         span: Span,
     ) -> None:
         if self._exercise_submissions is None:
@@ -393,8 +456,18 @@ class ConversationService:
             await self._send(chat_id, message_thread_id, Constants.INVALID_TEXT_MESSAGE)
             return
         elapsed_ms = (time.perf_counter() - started) * 1000
-        for response in reply.messages:
-            await self._send(chat_id, message_thread_id, response)
+        keyboard = (
+            exercise_submission_keyboard(reply.confirmation_submission_id)
+            if private_chat and reply.confirmation_submission_id is not None
+            else None
+        )
+        for index, response in enumerate(reply.messages):
+            await self._send(
+                chat_id,
+                message_thread_id,
+                response,
+                keyboard if index == len(reply.messages) - 1 else None,
+            )
         await self._record_token_usage(
             ctx,
             chat_id,

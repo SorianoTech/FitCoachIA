@@ -152,6 +152,48 @@ async def test_confirmation_submits_complete_draft_without_invoking_model() -> N
 
 
 @pytest.mark.asyncio
+async def test_callback_confirmation_targets_the_expected_draft() -> None:
+    subject, curator, repository, _ = service()
+    repository.get_draft.return_value = submission(proposal())
+
+    reply = await subject.handle_callback(7, 12, "confirm")
+
+    repository.set_status.assert_awaited_once_with(
+        12,
+        ExerciseSubmissionStatus.DRAFT,
+        ExerciseSubmissionStatus.PENDING,
+    )
+    curator.propose.assert_not_awaited()
+    assert "moderación" in reply.messages[0]
+
+
+@pytest.mark.asyncio
+async def test_callback_cancellation_targets_the_expected_draft() -> None:
+    subject, _, repository, _ = service()
+    repository.get_draft.return_value = submission(proposal())
+
+    reply = await subject.handle_callback(7, 12, "cancel")
+
+    repository.set_status.assert_awaited_once_with(
+        12,
+        ExerciseSubmissionStatus.DRAFT,
+        ExerciseSubmissionStatus.CANCELLED,
+    )
+    assert reply.messages == ["Propuesta de ejercicio cancelada."]
+
+
+@pytest.mark.asyncio
+async def test_stale_callback_does_not_change_another_draft() -> None:
+    subject, _, repository, _ = service()
+    repository.get_draft.return_value = submission(proposal())
+
+    reply = await subject.handle_callback(7, 99, "confirm")
+
+    repository.set_status.assert_not_awaited()
+    assert "ya no está disponible" in reply.messages[0]
+
+
+@pytest.mark.asyncio
 async def test_natural_intent_requires_explicit_addition_language() -> None:
     subject, _, _, _ = service()
 

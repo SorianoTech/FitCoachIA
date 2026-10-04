@@ -15,9 +15,8 @@ VECTOR_DATABASE_URL = os.getenv(
 )
 
 
-@pytest.mark.asyncio
-async def test_admin_approval_publishes_exercise_for_rag(client: httpx.Client) -> None:
-    proposal = {
+def exercise_proposal() -> dict[str, object]:
+    return {
         "name": "backpack row",
         "category": "back",
         "body_part": "back",
@@ -34,6 +33,67 @@ async def test_admin_approval_publishes_exercise_for_rag(client: httpx.Client) -
             "safety_notes": ["Secure the backpack before starting."],
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_user_can_confirm_exercise_draft_with_inline_button(client: httpx.Client) -> None:
+    database = await asyncpg.connect(DATABASE_URL)
+    try:
+        submission_id = await database.fetchval(
+            """
+            INSERT INTO exercise_submissions (
+                chat_id, raw_description, proposal, status, model
+            ) VALUES ($1, $2, $3::jsonb, 'draft', $4)
+            RETURNING id
+            """,
+            7002,
+            "remo con mochila",
+            json.dumps(exercise_proposal()),
+            "curator-test",
+        )
+    finally:
+        await database.close()
+
+    response = client.post(
+        "/webhook/response",
+        json={
+            "update_id": 910002,
+            "callback_query": {
+                "id": "exercise-confirm-click",
+                "chat_instance": "exercise-chat",
+                "data": f"ex:confirm:{submission_id}",
+                "from": {
+                    "id": 7002,
+                    "is_bot": False,
+                    "first_name": "User",
+                },
+                "message": {
+                    "message_id": 43,
+                    "date": 0,
+                    "chat": {"id": 7002, "type": "private"},
+                    "text": "Pulsa Confirmar o Cancelar.",
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    database = await asyncpg.connect(DATABASE_URL)
+    try:
+        status = await database.fetchval(
+            "SELECT status FROM exercise_submissions WHERE id = $1",
+            submission_id,
+        )
+        assert status == "pending"
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_approval_publishes_exercise_for_rag(client: httpx.Client) -> None:
+    proposal = exercise_proposal()
     database = await asyncpg.connect(DATABASE_URL)
     try:
         submission_id = await database.fetchval(

@@ -66,8 +66,9 @@ Tu nueva vida te espera, ¡Adelante!
         "principal. Puedes cancelar en cualquier momento escribiendo «cancelar»."
     )
     EXERCISE_SUBMISSION_CONFIRM: Final = (
-        "Si la propuesta es correcta, escribe «confirmar». Para modificarla, explica el cambio. "
-        "También puedes escribir «cancelar»."
+        "Pulsa «Confirmar» si la propuesta es correcta o «Cancelar» para descartarla. "
+        "Para modificarla, explica el cambio con tus palabras. También puedes responder "
+        "«confirmar» o «cancelar» por texto."
     )
     EXERCISE_SUBMISSION_PENDING: Final = (
         "Propuesta enviada a moderación. Te avisaremos cuando haya sido revisada."
@@ -76,6 +77,13 @@ Tu nueva vida te espera, ¡Adelante!
     EXERCISE_SUBMISSION_INCOMPLETE: Final = (
         "Todavía falta completar la propuesta antes de poder enviarla."
     )
+    EXERCISE_SUBMISSION_CALLBACK_INVALID: Final = (
+        "Esta propuesta ya no está disponible. Usa /add_exercise para consultar o crear otra."
+    )
+    EXERCISE_SUBMISSION_BUTTONS: Final = {
+        "confirm": "Confirmar",
+        "cancel": "Cancelar",
+    }
     EXERCISE_SUBMISSION_DUPLICATE: Final = (
         "\n\nPosible duplicado del ejercicio #{id}: {name} ({similarity:.0%} de similitud). "
         "Puedes confirmarlo igualmente para que lo revise un moderador."

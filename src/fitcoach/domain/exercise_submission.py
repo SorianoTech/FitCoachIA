@@ -24,6 +24,7 @@ ShortText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 InstructionText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=10, max_length=2000)
 ]
+ExerciseSubmissionAction = Literal["confirm", "cancel"]
 _KNOWN_TARGETS = frozenset(target for targets in MUSCLE_TARGETS.values() for target in targets)
 
 

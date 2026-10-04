@@ -172,6 +172,28 @@ No puede borrar ejercicios, modificar el corpus inicial ni administrar la base d
 confirma la inserción pero falla la actualización de PostgreSQL, un nuevo intento recupera el mismo
 ejercicio en lugar de crear otro.
 
+## Generación incremental de embeddings
+
+Cada aprobación genera automáticamente el embedding definitivo del ejercicio nuevo:
+
+1. `build_exercise_metadata_text` compone nombre, categoría, parte corporal, equipamiento, grupo
+   muscular, target y músculos secundarios con el mismo formato usado por el catálogo inicial.
+2. El servicio `embedder` genera un vector de 384 dimensiones con
+   `sentence-transformers/all-MiniLM-L6-v2`.
+3. `PgVectorExercisePublisher` inserta en una única transacción el ejercicio, su
+   `metadata_vector` y el enlace idempotente de `exercise_publications`.
+4. PostgreSQL actualiza el índice HNSW al insertar la fila, por lo que el RAG puede recuperar el
+   ejercicio inmediatamente.
+
+No se regeneran los embeddings de los ejercicios existentes ni se reconstruye el catálogo al
+añadir una propuesta. La detección de duplicados puede generar antes un vector temporal para buscar
+vecinos, pero ese vector no se publica como ejercicio definitivo.
+
+Es necesario re-vectorizar todo el catálogo únicamente cuando cambia el modelo de embeddings, sus
+dimensiones o el formato semántico utilizado para representar todos los ejercicios. Si en el futuro
+se permite editar los campos vectorizados de un ejercicio ya publicado, deberá regenerarse al menos
+el embedding de esa fila.
+
 ## Configuración
 
 ### Aplicación

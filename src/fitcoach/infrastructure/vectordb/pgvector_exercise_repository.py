@@ -31,6 +31,9 @@ class PgVectorExerciseRepository:
         query_vector: Sequence[float],
         top_k: int,
         equipment: Sequence[str] | None = None,
+        muscle_group: str | None = None,
+        target: str | None = None,
+        excluded_ids: Sequence[int] = (),
     ) -> list[Exercise]:
         if len(query_vector) != EMBEDDING_DIMENSIONS:
             raise EmbeddingDimensionError(
@@ -40,6 +43,12 @@ class PgVectorExerciseRepository:
         statement = select(ExerciseRecord)
         if equipment:
             statement = statement.where(ExerciseRecord.equipment.in_(list(equipment)))
+        if muscle_group:
+            statement = statement.where(ExerciseRecord.muscle_group == muscle_group)
+        if target:
+            statement = statement.where(ExerciseRecord.target == target)
+        if excluded_ids:
+            statement = statement.where(ExerciseRecord.id.not_in(list(excluded_ids)))
         statement = statement.order_by(
             ExerciseRecord.metadata_vector.cosine_distance(list(query_vector))
         ).limit(top_k)
@@ -47,6 +56,16 @@ class PgVectorExerciseRepository:
         records = list((await self._session.scalars(statement)).all())
         logger.debug(
             "Retrieved %s exercises (top_k=%s, equipment=%s)", len(records), top_k, equipment
+        )
+        return [self._to_domain(record) for record in records]
+
+    async def get_by_ids(self, ids: Sequence[int]) -> list[Exercise]:
+        if not ids:
+            return []
+        records = await self._session.scalars(
+            select(ExerciseRecord)
+            .where(ExerciseRecord.id.in_(list(ids)))
+            .order_by(ExerciseRecord.id)
         )
         return [self._to_domain(record) for record in records]
 

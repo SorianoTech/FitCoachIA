@@ -17,6 +17,7 @@ from fitcoach.domain.trainer_plan import (
     TrainerGenerationTrace,
     TrainingPlan,
 )
+from fitcoach.domain.training_lifecycle import expected_end, utc_now
 from fitcoach.infrastructure.database.models import (
     ConversationMessageRecord,
     InterviewerProfileRecord,
@@ -24,10 +25,12 @@ from fitcoach.infrastructure.database.models import (
     ModelPriceRecord,
     ProcessedUpdateRecord,
     TokenUsageRecord,
+    TrainingMesocycleRecord,
     TrainingPlanRecord,
     TrainingSessionRecord,
 )
 from fitcoach.repository.conversation_repository import StoredTrainingPlan
+from fitcoach.repository.training_repository import TrainingConflictError
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +140,9 @@ class PostgresConversationRepository:
             delete(TrainingPlanRecord).where(TrainingPlanRecord.chat_id == chat_id)
         )
         await self._session.execute(
+            delete(TrainingMesocycleRecord).where(TrainingMesocycleRecord.chat_id == chat_id)
+        )
+        await self._session.execute(
             delete(InterviewerProfileRecord).where(InterviewerProfileRecord.chat_id == chat_id)
         )
         await self._session.execute(
@@ -206,9 +212,14 @@ class PostgresConversationRepository:
     async def get_current_plan(self, chat_id: int) -> StoredTrainingPlan | None:
         statement = (
             select(TrainingPlanRecord)
-            .where(TrainingPlanRecord.chat_id == chat_id)
-            .order_by(TrainingPlanRecord.version.desc())
-            .limit(1)
+            .join(
+                TrainingSessionRecord,
+                TrainingSessionRecord.current_plan_id == TrainingPlanRecord.id,
+            )
+            .where(
+                TrainingSessionRecord.chat_id == chat_id,
+                TrainingPlanRecord.chat_id == chat_id,
+            )
         )
         record = (await self._session.scalars(statement)).first()
         if record is None:
@@ -249,17 +260,29 @@ class PostgresConversationRepository:
         user_content: str,
         assistant_content: str,
         trace: TrainerGenerationTrace | None,
+        initial_only: bool = False,
     ) -> int:
         """Append version N+1 and point the session at it. Older plans are kept."""
         await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
+        existing = await self._session.get(TrainingSessionRecord, chat_id)
+        if initial_only and existing is not None and existing.current_plan_id is not None:
+            await self._session.rollback()
+            raise TrainingConflictError("Another request already activated the first plan")
         current_version = await self._session.scalar(
             select(func.max(TrainingPlanRecord.version)).where(
                 TrainingPlanRecord.chat_id == chat_id
             )
         )
+        start = utc_now()
+        cycle = TrainingMesocycleRecord(
+            chat_id=chat_id, started_at=start, expected_end_at=expected_end(start)
+        )
+        self._session.add(cycle)
+        await self._session.flush()
         plan_record = TrainingPlanRecord(
             chat_id=chat_id,
             version=(current_version or 0) + 1,
+            mesocycle_id=cycle.id,
             plan=plan.model_dump(mode="json"),
             report=report,
             model=trace.model if trace else None,

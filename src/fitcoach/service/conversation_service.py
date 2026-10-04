@@ -8,11 +8,12 @@ import asyncio
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from typing import TypedDict
 
 from opentelemetry import trace
 from opentelemetry.trace import Span
-from telegram import Bot, Message, Update
-from telegram.error import RetryAfter
+from telegram import Bot, InlineKeyboardMarkup, Message, Update
+from telegram.error import BadRequest, RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.agents import AgentType
@@ -24,13 +25,19 @@ from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE, TrainerAction
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.repository.training_repository import TrainingConflictError
 from fitcoach.service.agent import agent_factory
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.agent.trainer_chain import TrainerChain
+from fitcoach.service.training_service import TrainingService
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
+
+
+class _MessageMarkup(TypedDict, total=False):
+    reply_markup: InlineKeyboardMarkup
 
 
 def remove_emojis(text: str) -> str:
@@ -89,6 +96,7 @@ class ConversationService:
         trainer: TrainerChain | None = None,
         exercise_retriever: ExerciseRetriever | None = None,
         trainer_history_window_messages: int = 10,
+        training_service: TrainingService | None = None,
     ) -> None:
         self._bot = bot
         self._interviewer = interviewer
@@ -101,6 +109,7 @@ class ConversationService:
         self._exercise_retriever = exercise_retriever
         self._trainer_history_window_messages = trainer_history_window_messages
         self._usage_limits = usage_limits
+        self._training_service = training_service
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -116,10 +125,54 @@ class ConversationService:
                 # (or already answered): processing it again is the retry loop.
                 logger.warning(f"{ctx} update duplicado, se ignora")
                 return
+            if update.callback_query is not None:
+                await self._handle_callback(update, ctx)
+                return
             await self._process(update, message, ctx)
         except Exception:
             logger.exception(f"{ctx} error inesperado procesando el update")
             await self._notify_server_error(message, ctx)
+
+    async def _handle_callback(self, update: Update, ctx: str) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        message = query.message
+        if (
+            not isinstance(message, Message)
+            or message.chat.type != "private"
+            or query.from_user.id != message.chat_id
+            or self._training_service is None
+        ):
+            await self._bot.answer_callback_query(
+                query.id, text=Constants.TRAINING_CALLBACK_PRIVATE, show_alert=True
+            )
+            return
+        await self._bot.answer_callback_query(query.id)
+        try:
+            responses = await self._training_service.callback(message.chat_id, query.data or "")
+        except AgentError as error:
+            logger.warning("%s controlled callback error: %s", ctx, error.code)
+            await self._send(
+                message.chat_id,
+                message.message_thread_id,
+                self._message_for_agent_error(error.code),
+            )
+            return
+        if (
+            Constants.TRAINING_CALLBACK_INVALID not in responses
+            and Constants.TRAINING_CONFLICT_MESSAGE not in responses
+            and not (query.data or "").startswith("tr:details:")
+        ):
+            try:
+                await self._bot.edit_message_reply_markup(
+                    chat_id=message.chat_id, message_id=message.message_id, reply_markup=None
+                )
+            except BadRequest:
+                logger.warning("%s could not retire original inline keyboard", ctx, exc_info=True)
+        await self._deliver_training_responses(
+            message.chat_id, message.message_thread_id, query.data or "", responses
+        )
 
     async def _process(self, update: Update, message: Message | None, ctx: str) -> None:
         edited = " (editado)" if update.edited_message is not None else ""
@@ -148,6 +201,33 @@ class ConversationService:
             span.set_attribute("telegram_user_id", telegram_user_id(message))
             span.set_attribute("chat_id", chat_id)
             span.set_attribute("command", command.name if command is not None else "none")
+
+            if self._training_service is not None:
+                if command == Commands.PROGRESS:
+                    await self._training_response(ctx, chat_id, message_thread_id, input_text)
+                    return
+                if command == Commands.TRAIN:
+                    stored = await self._conversation_repository.get_current_plan(chat_id)
+                    if (
+                        stored is not None or len(input_text.split(maxsplit=1)) > 1
+                    ) and not input_text.startswith("/train consulta "):
+                        await self._training_response(ctx, chat_id, message_thread_id, input_text)
+                        return
+                    if input_text.startswith("/train consulta "):
+                        blocked = await self._quota_message(ctx, chat_id, None)
+                        if blocked:
+                            await self._send(chat_id, message_thread_id, blocked)
+                        else:
+                            await self._answer_about_plan(
+                                ctx,
+                                chat_id,
+                                message_thread_id,
+                                input_text[len("/train consulta ") :],
+                            )
+                        return
+                elif command is None and await self._training_service.has_workflow(chat_id):
+                    await self._training_response(ctx, chat_id, message_thread_id, input_text)
+                    return
 
             # Rate Limiter analyzer
             blocked = await self._quota_message(ctx, chat_id, command)
@@ -200,6 +280,10 @@ class ConversationService:
             if training_status == TRAINING_STATUS_ACTIVE:
                 span.set_attribute("agent", AgentType.TRAINER.value)
                 await self._answer_about_plan(ctx, chat_id, message_thread_id, input_text)
+                if self._training_service is not None:
+                    await self._training_service.remind_on_interaction(
+                        chat_id, message_thread_id, self._send_reminder
+                    )
                 return
             await self._send(chat_id, message_thread_id, Constants.INTERVIEW_COMPLETED_MESSAGE)
             return
@@ -290,7 +374,11 @@ class ConversationService:
             await self._send(chat_id, message_thread_id, Constants.TRAINER_UNAVAILABLE_MESSAGE)
             return
 
-        profile = await self._conversation_repository.get_interviewer_profile(chat_id)
+        profile = (
+            await self._training_service.profile(chat_id)
+            if self._training_service
+            else await self._conversation_repository.get_interviewer_profile(chat_id)
+        )
         if profile is None:
             logger.info(f"{ctx} /train sin perfil previo")
             await self._send(chat_id, message_thread_id, Constants.NO_PROFILE_MESSAGE)
@@ -351,10 +439,30 @@ class ConversationService:
             logger.warning(f"{ctx} respuesta lenta del entrenador: {elapsed_ms:.0f}ms")
         logger.info(f"{ctx} plan generado en {elapsed_ms:.0f}ms")
 
+        try:
+            if self._training_service:
+                conversation_message_id = await self._conversation_repository.save_training_plan(
+                    chat_id,
+                    turn.plan,
+                    turn.report,
+                    user_message,
+                    turn.reply,
+                    reply.trace,
+                    initial_only=True,
+                )
+            else:
+                conversation_message_id = await self._conversation_repository.save_training_plan(
+                    chat_id, turn.plan, turn.report, user_message, turn.reply, reply.trace
+                )
+        except TrainingConflictError:
+            await self._record_token_usage(
+                ctx, chat_id, None, reply.token_usages, elapsed_ms, AgentType.TRAINER.value
+            )
+            await self._send(chat_id, message_thread_id, Constants.TRAINING_CONFLICT_MESSAGE)
+            return
         await self._send(chat_id, message_thread_id, turn.report)
-        conversation_message_id = await self._conversation_repository.save_training_plan(
-            chat_id, turn.plan, turn.report, user_message, turn.reply, reply.trace
-        )
+        if self._training_service:
+            await self._training_service.remember_thread(chat_id, message_thread_id)
         await self._record_token_usage(
             ctx,
             chat_id,
@@ -378,7 +486,11 @@ class ConversationService:
             await self._send(chat_id, message_thread_id, Constants.NO_PLAN_MESSAGE)
             return
 
-        profile = await self._conversation_repository.get_interviewer_profile(chat_id)
+        profile = (
+            await self._training_service.profile(chat_id)
+            if self._training_service
+            else await self._conversation_repository.get_interviewer_profile(chat_id)
+        )
 
         history = await self._conversation_repository.get_recent(
             chat_id, self._trainer_history_window_messages, AgentType.TRAINER.value
@@ -415,6 +527,39 @@ class ConversationService:
             elapsed_ms,
             AgentType.TRAINER.value,
         )
+
+        if self._training_service is not None and reply.turn.intent != "answer":
+            action = "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train"
+            await self._training_response(ctx, chat_id, message_thread_id, action)
+
+    async def _training_response(
+        self, ctx: str, chat_id: int, thread_id: int | None, text: str
+    ) -> None:
+        if self._training_service is None:
+            return
+        try:
+            await self._training_service.remember_thread(chat_id, thread_id)
+            responses = await self._training_service.handle(chat_id, text)
+        except AgentError as error:
+            logger.warning("%s controlled training error: %s", ctx, error.code)
+            await self._send(chat_id, thread_id, self._message_for_agent_error(error.code))
+            return
+        await self._deliver_training_responses(chat_id, thread_id, text, responses)
+
+    async def _deliver_training_responses(
+        self, chat_id: int, thread_id: int | None, text: str, responses: list[str]
+    ) -> None:
+        if self._training_service is None:
+            return
+        markup = await self._training_service.keyboard(chat_id, responses)
+        await self._conversation_repository.add_turn(
+            chat_id, text, "\n".join(responses), AgentType.TRAINER.value
+        )
+        for index, response in enumerate(responses):
+            if markup is not None and index == len(responses) - 1:
+                await self._send(chat_id, thread_id, response, markup)
+            else:
+                await self._send(chat_id, thread_id, response)
 
     async def _record_trainer_error(
         self,
@@ -505,11 +650,29 @@ class ConversationService:
             IAMessage(message=user_message),
         ])
 
-    async def _send(self, chat_id: int, message_thread_id: int | None, text: str) -> None:
+    async def _send(
+        self,
+        chat_id: int,
+        message_thread_id: int | None,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
         """Envia al usuario, reintentando una vez si Telegram aplica control de flujo."""
+        if len(text) > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
+            for offset in range(0, len(text), Constants.TELEGRAM_MAX_MESSAGE_CHARS):
+                await self._send(
+                    chat_id,
+                    message_thread_id,
+                    text[offset : offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS],
+                    reply_markup
+                    if offset + Constants.TELEGRAM_MAX_MESSAGE_CHARS >= len(text)
+                    else None,
+                )
+            return
+        kwargs: _MessageMarkup = {"reply_markup": reply_markup} if reply_markup is not None else {}
         try:
             await self._bot.send_message(
-                chat_id=chat_id, message_thread_id=message_thread_id, text=text
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text, **kwargs
             )
         except RetryAfter as exc:
             # PTB lo declara como int | timedelta, aunque la API devuelva segundos.
@@ -525,8 +688,11 @@ class ConversationService:
             logger.warning(f"control de flujo de Telegram: reintento en {espera}s")
             await asyncio.sleep(espera)
             await self._bot.send_message(
-                chat_id=chat_id, message_thread_id=message_thread_id, text=text
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text, **kwargs
             )
+
+    async def _send_reminder(self, chat_id: int, thread_id: int | None, text: str) -> None:
+        await self._bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=text)
 
     async def _notify_server_error(self, message: Message | None, ctx: str) -> None:
         if message is None:

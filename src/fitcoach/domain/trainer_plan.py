@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MESOCYCLE_WEEKS = 4
+RPE_CAPS = {1: 8.0, 3: 9.0, 4: 6.0}
 
 # Estado de training_sessions: hay un plan vigente y el entrenador responde preguntas.
 TRAINING_STATUS_ACTIVE = "active"
@@ -113,6 +114,7 @@ class TrainerTurn(PlanModel):
     reply: str = Field(min_length=1)
     report: str | None = None
     plan: TrainingPlan | None = None
+    intent: Literal["answer", "renewal", "exercise_swap"] = Field(default_factory=lambda: "answer")
 
     @model_validator(mode="after")
     def validate_completion(self) -> "TrainerTurn":

@@ -20,6 +20,7 @@ from fitcoach.domain.trainer_plan import (
     TrainerTurn,
     TrainingPlan,
 )
+from fitcoach.domain.training_lifecycle import TrainingAdaptationContext
 from fitcoach.infrastructure.config.settings import IASettings, get_ia_settings
 from fitcoach.infrastructure.prompts.prompt_loader import PromptLoader
 from fitcoach.service.agent.agent_factory import build_trainer_agent
@@ -28,6 +29,7 @@ from fitcoach.service.agent.llm_chain import (
     BaseLLMChain,
     strict_response_format,
 )
+from fitcoach.service.agent.plan_evaluator import Severity, evaluate_turn
 from fitcoach.service.agent.rag_context import allowed_exercise_ids, build_rag_context
 
 logger = logging.getLogger(__name__)
@@ -116,6 +118,43 @@ class TrainerChain(BaseLLMChain):
             turn=turn,
             token_usages=token_usages,
         )
+
+    async def generate_next_plan(
+        self, context: TrainingAdaptationContext, exercises: Sequence[Exercise]
+    ) -> TrainerReply:
+        messages = [
+            SystemMessage(
+                content=self._agent.insert_context(build_rag_context(exercises))
+                + "\n"
+                + self._loader.load_system_prompt("trainer", "renewal_prompt.txt")
+            ),
+            HumanMessage(content="Adaptation context (DATA):\n" + context.model_dump_json()),
+        ]
+        validate_catalogue = self._validator_for(exercises)
+
+        def validate(raw: str) -> TrainerTurn:
+            turn = validate_catalogue(raw)
+            evaluation = evaluate_turn(turn, context.profile, exercises)
+            errors = [
+                item.message for item in evaluation.findings if item.severity == Severity.ERROR
+            ]
+            if errors:
+                raise ValidationError.from_exception_data(
+                    TrainerTurn.__name__,
+                    [
+                        InitErrorDetails(
+                            type=PydanticCustomError(
+                                "invalid_adaptation", "{errors}", {"errors": "; ".join(errors)}
+                            ),
+                            loc=("plan",),
+                            input=raw,
+                        )
+                    ],
+                )
+            return turn
+
+        turn, usages = await self._invoke_validated(messages, TrainerTurn, validate)
+        return TrainerReply(turn, usages, self._trace(messages, exercises))
 
     def _trace(
         self, messages: Sequence[BaseMessage], exercises: Sequence[Exercise]

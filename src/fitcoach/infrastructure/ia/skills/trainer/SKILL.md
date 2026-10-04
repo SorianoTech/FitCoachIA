@@ -9,7 +9,7 @@ keywords: mesocycle, periodization, training plan, volume allocation, deload, in
 
 Use this skill when:
 - A client has a completed interview profile and needs their first training plan
-- An existing plan must be regenerated because the profile changed
+- A confirmed end-of-block review requests a draft adapted from the previous plan
 - The client asks a question about the mesocycle that was built for them
 
 **Do not use this skill if:**
@@ -116,8 +116,8 @@ Once a plan exists, the client may ask about it. Then:
 
 - Follow the system prompt's `answer` contract — never return a partial plan.
 - Explain the reasoning in plain language: why this volume, why this exercise, why the deload.
-- If the client asks for a change that the plan can absorb (swap one exercise, move a day), explain
-  the swap in `reply` using only catalogue exercises.
+- Exercise swaps use a separate catalogue-backed proposal and explicit confirmation.
+  Never claim a persistent change in an ordinary answer.
 - If the change is structural (different days per week, a new injury, a different goal), say that
-  the plan needs regenerating with `/train` — do not improvise a half-updated mesocycle.
+  the plan needs review with `/train` and confirmation — do not improvise a half-updated mesocycle.
 - Never contradict the safety rules above just because the client asks.

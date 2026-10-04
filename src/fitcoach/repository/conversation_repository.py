@@ -64,6 +64,7 @@ class ConversationRepository(Protocol):
         user_content: str,
         assistant_content: str,
         trace: TrainerGenerationTrace | None,
+        initial_only: bool = False,
     ) -> int: ...
 
     async def record_token_usage(

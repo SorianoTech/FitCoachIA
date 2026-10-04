@@ -144,6 +144,7 @@ class IASettings(BaseSettings):
     exercise_curator_temperature: TaskTemperature = 0.1
     exercise_curator_max_tokens: int = Field(default=1200, gt=0)
     exercise_curator_timeout: float = Field(default=30, gt=0)
+    exercise_duplicate_similarity_threshold: float = Field(default=0.92, ge=0, le=1)
 
 
 class DatabaseSettings(BaseSettings):

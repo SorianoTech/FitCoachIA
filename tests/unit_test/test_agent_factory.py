@@ -2,9 +2,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fitcoach.domain.agents import InterviewerAgent, TrainerAgent
+from fitcoach.domain.agents import ExerciseCuratorAgent, InterviewerAgent, TrainerAgent
 from fitcoach.infrastructure.prompts.prompt_loader import PromptAssetNotFoundError, PromptLoader
-from fitcoach.service.agent.agent_factory import build_interviewer_agent, build_trainer_agent
+from fitcoach.service.agent.agent_factory import (
+    build_exercise_curator_agent,
+    build_interviewer_agent,
+    build_trainer_agent,
+)
 
 
 @pytest.fixture
@@ -74,3 +78,10 @@ class TestRealPromptAssets:
         assert "When `flags.red` is non-empty" in agent.system_prompt
         assert "total weekly sets** to 50-60%" in agent.system_prompt
         assert "Never use RPE 9 or higher" in agent.system_prompt
+
+    def test_loads_the_real_exercise_curator_prompt(self) -> None:
+        agent = build_exercise_curator_agent()
+
+        assert isinstance(agent, ExerciseCuratorAgent)
+        assert "Exercise Curator" in agent.system_prompt
+        assert "Never return Markdown" in agent.system_prompt

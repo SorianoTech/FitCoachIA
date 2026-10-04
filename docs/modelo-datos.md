@@ -53,6 +53,68 @@ erDiagram
         varchar_255  source "URL de la tarifa"
     }
 
+    training_sessions {
+        bigint      chat_id PK
+        varchar_16  status "active"
+        int         current_plan_id FK "nullable, SET NULL"
+    }
+
+    training_mesocycles {
+        int         id PK
+        bigint      chat_id "idx"
+        int         previous_cycle_id FK "nullable, SET NULL"
+        timestamptz started_at "nullable (legacy)"
+        timestamptz expected_end_at "nullable, idx"
+        timestamptz completed_at "nullable"
+        bool        reminders_enabled
+    }
+
+    training_plans {
+        int         id PK
+        bigint      chat_id "uq (chat_id, version)"
+        int         version
+        int         mesocycle_id FK "nullable, SET NULL"
+        int         parent_plan_id FK "nullable, SET NULL"
+        varchar_32  change_kind "initial | renewal | exercise_swap"
+        varchar_32  goal "copia de plan.goal"
+        json        plan
+    }
+
+    training_workflows {
+        int         id PK
+        bigint      chat_id "uq parcial: 1 abierto"
+        int         base_plan_id FK "CASCADE"
+        varchar_32  state
+        json        payload
+    }
+
+    training_notifications {
+        int         id PK
+        int         mesocycle_id FK "CASCADE, uq (ciclo, ocasion)"
+        int         occasion
+        varchar_32  state
+        timestamptz due_at
+    }
+
+    training_evaluation {
+        int         id PK
+        bigint      chat_id "idx (chat_id, sent_at)"
+        int         plan_id FK "nullable, SET NULL"
+        int         mesocycle_id FK "nullable, SET NULL, uq (ciclo, semana)"
+        varchar_32  goal "nullable, copia al enviar"
+        smallint    week_number "1-4"
+        timestamptz due_at "idx parcial pending/sending"
+        varchar_16  state "pending | sending | sent | failed | cancelled"
+        varchar_64  telegram_poll_id "unique"
+        smallint    score "0-5, nullable"
+    }
+
+    training_mesocycles   ||--o{ training_plans : "FK real (SET NULL)"
+    training_plans        ||--o| training_sessions : "current_plan_id (SET NULL)"
+    training_plans        ||--o{ training_workflows : "base_plan_id (CASCADE)"
+    training_mesocycles   ||--o{ training_notifications : "FK real (CASCADE)"
+    training_mesocycles   ||--o{ training_evaluation : "FK real (SET NULL)"
+    training_plans        ||--o{ training_evaluation : "FK real (SET NULL)"
     conversation_messages ||--o{ token_usage : "FK real (SET NULL)"
     model_prices          ||..o{ token_usage : "join logico por model (sin FK)"
     interview_sessions    ||..|| interviewer_profiles : "logico por chat_id (sin FK)"
@@ -72,16 +134,21 @@ Línea discontinua = relación lógica que solo existe en el código.
 | `interviewer_profiles` | `chat_id` | 1 por chat | [`6ca1174fc623`](../alembic/versions/6ca1174fc623_add_interview_profiles.py) |
 | `token_usage` | `id` (serial) | N por chat, 1 por llamada al LLM | [`7287a3dffce8`](../alembic/versions/7287a3dffce8_create_token_usage.py) |
 | `model_prices` | `model` | 1 por modelo (catálogo) | [`ab12cd34ef56`](../alembic/versions/ab12cd34ef56_create_model_prices.py) |
-| `training_plans` | `id` | N versiones inmutables por chat; ciclo y plan padre | `d4f1a9b7c3e2`, ampliada por `f3a8c1d4e6b2` y `a41bc08d732e` |
+| `training_plans` | `id` | N versiones inmutables por chat; ciclo y plan padre | `d4f1a9b7c3e2`, ampliada por `f3a8c1d4e6b2`, `a41bc08d732e` y `c2d8e4f6a1b3` (`goal`) |
 | `training_sessions` | `chat_id` | Puntero autoritativo al plan vigente | `d4f1a9b7c3e2` |
 | `training_mesocycles` | `id` | N ciclos por chat, con fechas y cierre declarado | `a41bc08d732e` |
 | `training_workflows` | `id` | N propuestas históricas, máximo una abierta por chat | `a41bc08d732e` |
 | `training_notifications` | `id` | Eventos únicos por ciclo y ocasión | `a41bc08d732e` |
+| `training_evaluation` | `id` | 4 encuestas por ciclo (una por semana); cola de envío y respuesta | `c2d8e4f6a1b3` |
 | `alembic_version` | `version_num` | 1 fila | la crea Alembic, no la modela la app |
 
 Cadena de migraciones:
 `c5ae33575d94` → `6ca1174fc623` → `7287a3dffce8` → `9d4e6b7a1c2f` → `ab12cd34ef56`
-→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e`.
+→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e` → `c2d8e4f6a1b3`
+→ `d9a1b3c5e7f2` → `e5c7a9b1d3f4`.
+Las tres últimas son de las encuestas: esquema, *backfill* de `training_plans.goal` desde el
+JSON del plan y programación de las semanas futuras de los ciclos ya abiertos (migraciones de
+datos separadas de la de esquema).
 La revisión intermedia [`9d4e6b7a1c2f`](../alembic/versions/9d4e6b7a1c2f_set_null_token_usage_message_fk.py)
 no crea tablas: solo recrea la FK de `token_usage` con `ON DELETE SET NULL`.
 
@@ -113,6 +180,13 @@ sin inventar fechas. `training_notifications` guarda ocasión, estado, vencimien
 y lease. Su FK al ciclo y la del flujo al plan base usan borrado en cascada;
 el reset de entrevista elimina los ciclos después de eliminar planes y sesión.
 La base vectorial sigue separada y de solo lectura: Alembic no modifica su catálogo.
+
+**`training_evaluation` es cola y resultado a la vez, y sobrevive a `/interview`.** Las 4 filas
+de un ciclo se insertan al darle fecha (patrón outbox): el worker solo recorre las vencidas por
+el índice parcial `(due_at) WHERE state IN ('pending', 'sending')`, así que su coste depende de
+las encuestas pendientes y no del número de clientes. Sus FK usan `ON DELETE SET NULL` y guarda
+una copia de `goal`: tras un reset de entrevista se sigue sabiendo para qué objetivo era cada nota.
+`UNIQUE (mesocycle_id, week_number)` hace idempotente la programación.
 
 **`model_prices` se resuelve en código, no con un JOIN obligatorio.** El precio
 se busca en `record_token_usage()`

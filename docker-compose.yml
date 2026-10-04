@@ -17,6 +17,21 @@ services:
     networks:
       - proxy-network
 
+  evaluation-prod:
+    image: fitcoachia/fitcoach-app:${VERSION:-latest}
+    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.evaluation"]
+    restart: unless-stopped
+    env_file:
+      - path: .env.prod
+        required: false
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
+        required: false
+    depends_on:
+      fitcoach-ia-prod:
+        condition: service_healthy
+    networks:
+      - proxy-network
+
   fitcoach-ia-prod:
     container_name: fitcoach-ia
     restart: unless-stopped

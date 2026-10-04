@@ -339,6 +339,24 @@ embedder_timeout_seconds=10
 
 La aplicación no arranca si falta `vector_db_url` o `embedder_url`.
 
+### Avisos y encuestas semanales
+
+Los dos workers (`training-reminders*` y `evaluation*`) están desactivados por defecto. Para
+probarlos en dev, añadir al `.env` del entorno (plantilla completa en `.env.example`):
+
+```dotenv
+training_reminders_enabled=true
+evaluation_enabled=true
+# Lotes cada 10 s para no esperar en pruebas manuales (mínimo 10).
+evaluation_interval_seconds=10
+```
+
+Las encuestas vencen a los 7/14/21/28 días del inicio del ciclo; para probarlas sin esperar,
+mover hacia atrás `training_mesocycles.started_at` y los `training_evaluation.due_at` pendientes
+del ciclo en la base de dev. Detalle en
+[entornos-y-despliegue.md](entornos-y-despliegue.md#worker-de-encuestas-semanales) y
+[trainer-agent.md](trainer-agent.md#encuestas-semanales-de-satisfacción).
+
 ```bash
 # Suite completa con cobertura mínima del 80 %
 uv run pytest tests --cov=src/fitcoach --cov-fail-under=80

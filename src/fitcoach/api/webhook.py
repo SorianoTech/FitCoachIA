@@ -20,6 +20,9 @@ from fitcoach.infrastructure.database.dependencies import get_conversation_repos
 from fitcoach.infrastructure.database.postgres_conversation_repository import (
     PostgresConversationRepository,
 )
+from fitcoach.infrastructure.database.postgres_evaluation_repository import (
+    PostgresEvaluationRepository,
+)
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
 from fitcoach.infrastructure.database.session import get_session
 from fitcoach.infrastructure.ia.embedder_client import EmbedderClient, get_embedder_client
@@ -109,8 +112,9 @@ def get_conversation_service(
             trainer_deps.retriever,
             adaptation,
             usage_settings.to_limits(),
-            reminder_max_attempts=get_training_settings().reminder_max_attempts,
+            reminder_max_attempts=get_training_settings().max_attempts,
         ),
+        evaluation_repository=PostgresEvaluationRepository(session),
     )
 
 

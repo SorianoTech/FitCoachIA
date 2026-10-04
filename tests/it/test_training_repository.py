@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from fitcoach.domain.trainer_plan import TrainingPlan
 from fitcoach.infrastructure.database.models import (
+    TrainingEvaluationRecord,
     TrainingMesocycleRecord,
     TrainingNotificationRecord,
     TrainingPlanRecord,
@@ -22,6 +23,7 @@ from fitcoach.repository.training_repository import TrainingConflictError
 from tests.unit_test.conftest import build_plan_payload
 
 CHAT_ID = 882299
+SENDING_TIMEOUT = timedelta(minutes=2)
 
 
 @pytest_asyncio.fixture
@@ -48,6 +50,10 @@ async def training_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     finally:
         async with factory() as session:
             await PostgresConversationRepository(session).restart_interview(CHAT_ID)
+            await session.execute(
+                delete(TrainingEvaluationRecord).where(TrainingEvaluationRecord.chat_id == CHAT_ID)
+            )
+            await session.commit()
         await engine.dispose()
 
 
@@ -117,14 +123,35 @@ async def test_postponing_before_first_reminder_does_not_double_notify(
         training = PostgresTrainingRepository(session)
         await training.postpone(CHAT_ID, now + timedelta(days=1))
         await training.enqueue_due(now + timedelta(days=2))
-        delivery = await training.claim_reminder(now + timedelta(days=2))
+        delivery = await training.claim_reminder(now + timedelta(days=2), SENDING_TIMEOUT)
         assert delivery is not None
         assert delivery.chat_id == CHAT_ID
         await training.finish_reminder(delivery)
-        assert await training.claim_reminder(now + timedelta(days=2)) is None
+        assert await training.claim_reminder(now + timedelta(days=2), SENDING_TIMEOUT) is None
         events = list(await session.scalars(select(TrainingNotificationRecord.state)))
         assert "cancelled" in events
         assert "sent" in events
+
+
+@pytest.mark.asyncio
+async def test_claimed_reminder_stays_locked_for_the_sending_timeout(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    now = datetime.now(UTC)
+    async with training_factory() as session:
+        training = PostgresTrainingRepository(session)
+        await training.postpone(CHAT_ID, now - timedelta(seconds=1))
+        delivery = await training.claim_reminder(now, timedelta(seconds=45))
+        assert delivery is not None
+        lease_until = await session.scalar(
+            select(TrainingNotificationRecord.lease_until).where(
+                TrainingNotificationRecord.id == delivery.id
+            )
+        )
+        assert lease_until == now + timedelta(seconds=45)
+        # Locked before the timeout, claimable again once it expires.
+        assert await training.claim_reminder(now + timedelta(seconds=44), SENDING_TIMEOUT) is None
+        assert await training.claim_reminder(now + timedelta(seconds=46), SENDING_TIMEOUT)
 
 
 @pytest.mark.asyncio
@@ -138,7 +165,7 @@ async def test_interaction_and_worker_share_one_delivery_reservation(
         delivery = await training.reserve_interaction_reminder(CHAT_ID, 22, now)
         assert delivery is not None
         assert delivery.thread_id == 22
-        assert await training.claim_reminder(now) is None
+        assert await training.claim_reminder(now, SENDING_TIMEOUT) is None
         await training.finish_reminder(delivery)
         assert await training.reserve_interaction_reminder(CHAT_ID, 22, now) is None
 
@@ -233,6 +260,9 @@ async def test_confirmation_is_atomic_and_swap_preserves_dates() -> None:
             await conversation.restart_interview(CHAT_ID)
             await session.execute(
                 delete(TrainingMesocycleRecord).where(TrainingMesocycleRecord.chat_id == CHAT_ID)
+            )
+            await session.execute(
+                delete(TrainingEvaluationRecord).where(TrainingEvaluationRecord.chat_id == CHAT_ID)
             )
             await session.commit()
     finally:

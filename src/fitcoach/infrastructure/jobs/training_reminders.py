@@ -3,20 +3,18 @@
 import argparse
 import asyncio
 import logging
-import signal
-from datetime import timedelta
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot
-from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError
+from telegram.error import TelegramError
 
 from fitcoach.domain.constants import Constants
 from fitcoach.domain.training_lifecycle import utc_now
-from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.infrastructure.config.logging_config import configure_logging
 from fitcoach.infrastructure.config.settings import TrainingSettings, get_training_settings
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
-from fitcoach.infrastructure.database.session import close_database, get_session_factory
+from fitcoach.infrastructure.jobs.telegram_delivery import classify_failure
+from fitcoach.infrastructure.jobs.worker_loop import run_periodically
 from fitcoach.repository.training_repository import TrainingConflictError
 
 logger = logging.getLogger(__name__)
@@ -28,13 +26,14 @@ async def run_batch(
     if not settings.reminders_enabled:
         logger.info("Training reminders are disabled")
         return 0
+    policy = settings.to_retry_policy()
     await repository.enqueue_due(utc_now())
     delivered = 0
-    for _ in range(100):
-        delivery = await repository.claim_reminder(utc_now())
+    for _ in range(policy.batch_size):
+        delivery = await repository.claim_reminder(utc_now(), policy.sending_timeout)
         if delivery is None:
             break
-        if delivery.attempts > settings.reminder_max_attempts:
+        if delivery.attempts > policy.max_attempts:
             logger.error("Reminder %s exhausted attempts after a worker interruption", delivery.id)
             await repository.finish_reminder(delivery, failed=True)
             continue
@@ -44,38 +43,29 @@ async def run_batch(
                 message_thread_id=delivery.thread_id,
                 text=Constants.TRAINING_DUE_MESSAGE,
             )
-        except RetryAfter as error:
-            delay = error.retry_after
-            seconds = delay.total_seconds() if isinstance(delay, timedelta) else float(delay)
-            logger.warning("Reminder %s rate limited; delay=%s", delivery.id, seconds)
+        except TelegramError as error:
+            outcome = classify_failure(error, delivery.attempts, policy, utc_now())
+            logger.log(
+                logging.ERROR if outcome.failed else logging.WARNING,
+                "Reminder %s not delivered to chat %s: retry_at=%s failed=%s",
+                delivery.id,
+                delivery.chat_id,
+                outcome.retry_at,
+                outcome.failed,
+                exc_info=True,
+            )
             await repository.finish_reminder(
-                delivery,
-                retry_at=utc_now() + timedelta(seconds=max(1, seconds)),
-                failed=delivery.attempts >= settings.reminder_max_attempts,
+                delivery, retry_at=outcome.retry_at, failed=outcome.failed
             )
-        except (BadRequest, Forbidden):
-            logger.exception(
-                "Reminder %s cannot be delivered to chat %s", delivery.id, delivery.chat_id
-            )
-            await repository.finish_reminder(delivery, failed=True)
-        except NetworkError:
-            logger.exception("Transient Telegram failure for reminder %s", delivery.id)
-            await repository.finish_reminder(
-                delivery,
-                retry_at=utc_now() + timedelta(seconds=min(3600, 30 * 2**delivery.attempts)),
-                failed=delivery.attempts >= settings.reminder_max_attempts,
-            )
-        except TelegramError:
-            logger.exception("Unexpected Telegram failure for reminder %s", delivery.id)
-            await repository.finish_reminder(delivery, failed=True)
-            raise
-        else:
-            try:
-                await repository.finish_reminder(delivery)
-            except TrainingConflictError:
-                logger.exception("Reminder %s was delivered but its lease expired", delivery.id)
+            if outcome.unexpected:
                 raise
-            delivered += 1
+            continue
+        try:
+            await repository.finish_reminder(delivery)
+        except TrainingConflictError:
+            logger.exception("Reminder %s was delivered but its lease expired", delivery.id)
+            raise
+        delivered += 1
     logger.info("Training reminder batch finished: delivered=%s", delivered)
     return delivered
 
@@ -83,31 +73,11 @@ async def run_batch(
 async def run(once: bool) -> None:
     configure_logging()
     settings = get_training_settings()
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    bot = await get_bot()
-    try:
-        while not stop.is_set():
-            try:
-                async with get_session_factory()() as session:
-                    await run_batch(PostgresTrainingRepository(session), bot, settings)
-            except SQLAlchemyError:
-                logger.exception("Training reminder database/schema unavailable")
-                if once:
-                    raise
-            if once:
-                return
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=settings.reminder_interval_seconds)
-            except TimeoutError:
-                continue
-    finally:
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.remove_signal_handler(sig)
-        await bot.shutdown()
-        await close_database()
+
+    async def batch(session: AsyncSession, bot: Bot) -> int:
+        return await run_batch(PostgresTrainingRepository(session), bot, settings)
+
+    await run_periodically("Training reminders", batch, settings.interval_seconds, once)
 
 
 def main() -> None:

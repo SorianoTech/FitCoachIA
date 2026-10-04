@@ -25,9 +25,14 @@ from fitcoach.infrastructure.database.models import (
     ModelPriceRecord,
     ProcessedUpdateRecord,
     TokenUsageRecord,
+    TrainingEvaluationRecord,
     TrainingMesocycleRecord,
     TrainingPlanRecord,
     TrainingSessionRecord,
+)
+from fitcoach.infrastructure.database.postgres_evaluation_repository import (
+    cancel_pending_evaluations,
+    schedule_evaluations,
 )
 from fitcoach.repository.conversation_repository import StoredTrainingPlan
 from fitcoach.repository.training_repository import TrainingConflictError
@@ -130,6 +135,8 @@ class PostgresConversationRepository:
         leaving it behind would hand the user a mesocycle built for someone they
         no longer are.
         """
+        # Answered polls are kept; only the ones not sent yet are dropped.
+        await cancel_pending_evaluations(self._session, TrainingEvaluationRecord.chat_id == chat_id)
         await self._session.execute(
             delete(ConversationMessageRecord).where(ConversationMessageRecord.chat_id == chat_id)
         )
@@ -279,10 +286,12 @@ class PostgresConversationRepository:
         )
         self._session.add(cycle)
         await self._session.flush()
+        await schedule_evaluations(self._session, cycle, start)
         plan_record = TrainingPlanRecord(
             chat_id=chat_id,
             version=(current_version or 0) + 1,
             mesocycle_id=cycle.id,
+            goal=plan.goal,
             plan=plan.model_dump(mode="json"),
             report=report,
             model=trace.model if trace else None,

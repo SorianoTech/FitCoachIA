@@ -16,6 +16,20 @@ services:
     networks:
       - fit-coach-net
 
+  evaluation:
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.evaluation"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      fitcoach-ia:
+        condition: service_healthy
+    networks:
+      - fit-coach-net
+
   postgres:
     image: postgres:16-alpine
     container_name: fitcoach-postgres

@@ -40,37 +40,11 @@ FitCoachIA/
 │   │   ├── api/                  # Controladores y endpoints REST (webhook de Telegram)
 │   │   ├── domain/               # Entidades, enums, errores y textos de usuario
 │   │   ├── infrastructure/
-<<<<<<< Updated upstream
-│   │   │   ├── config/           # Configuración de la aplicación
-│   │   │   ├── database/         # Conexión y setup de base de datos
-│   │   │   ├── ia/               # Clientes LLM, skills y cliente de embeddings
-│   │   │   ├── prompts/          # Plantillas de prompts por agente
-│   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
-│   │   ├── repository/           # Acceso a datos (patrón Repository)
-│   │   ├── service/              # Casos de uso y lógica de negocio
-│   │   └── main.py               # Punto de entrada de la aplicación
-│   ├── Dockerfile                # Dockerización de la aplicación
-│   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
-├── infra/
-│   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
-│   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
-│   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
-├── tests/
-│   ├── unit_test/                # Tests unitarios
-│   ├── it/                       # Tests de integración
-│   └── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
-├── docs/                         # Documentación técnica
-│   ├── AUTHORS.md
-│   ├── interviewer-agent.md      # Agente 1 (Secretario)
-│   ├── trainer-agent.md          # Agente 2 (Entrenador)
-│   ├── vector-db.md              # Base de datos vectorial y embeddings
-│   ├── Dockerfile-guide.md
-│   └── Makefile.md
-=======
 │   │   │   ├── bot/              # Cliente de Telegram
 │   │   │   ├── config/           # Configuración (settings) y logging
 │   │   │   ├── database/         # PostgreSQL conversacional (modelos, sesión, repositorio)
 │   │   │   ├── ia/               # Cliente de embeddings y skills de los agentes
+│   │   │   ├── jobs/             # Workers: avisos de entrenamiento y encuestas semanales
 │   │   │   ├── observability/    # Telemetría OpenTelemetry
 │   │   │   ├── prompts/          # Plantillas de prompts por agente
 │   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
@@ -90,7 +64,6 @@ FitCoachIA/
 │   ├── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
 │   └── docker-compose-test.yml   # Entorno de los tests de integración
 ├── docs/                         # Documentación técnica (en español)
->>>>>>> Stashed changes
 ├── .github/
 │   ├── actions/
 │   │   ├── python-setup/         # Action reutilizable: Python + uv + auditoría de dependencias

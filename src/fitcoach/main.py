@@ -75,7 +75,7 @@ async def _register_webhook(app: FastAPI, settings: Settings) -> None:
         await bot.set_webhook(
             url=expected_url,
             secret_token=settings.bot_telegram_secret_token.get_secret_value(),
-            allowed_updates=["message", "edited_message", "callback_query"],
+            allowed_updates=["message", "edited_message", "callback_query", "poll_answer"],
             drop_pending_updates=False,
         )
         logger.info("[webhook 3/4] setWebhook aceptado con secreto")

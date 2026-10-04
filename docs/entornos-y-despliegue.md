@@ -64,10 +64,28 @@ Los Compose incluyen `training-reminders-dev`, `training-reminders-prod` o
 entrypoint con `python -m fitcoach.infrastructure.jobs.training_reminders`: no arrancan
 FastAPI ni ejecutan migraciones. Esperan a la app saludable, que ya ha migrado el esquema.
 
-Variables opcionales: `training_reminders_enabled=false`,
-`training_reminder_interval_seconds=300` (mínimo 10) y
-`training_reminder_max_attempts=5`. Habilitar el flag solo después de migrar.
-Las fechas desconocidas de planes legacy no disparan avisos masivos.
+Habilitar el flag solo después de migrar. Las fechas desconocidas de planes legacy no
+disparan avisos masivos.
+
+Todas las variables son opcionales. La política de reintentos era fija en el código; ahora es
+configurable y **sus valores por defecto son exactamente los anteriores**, así que sin
+configurar nada el comportamiento no cambia:
+
+| Variable | Defecto | Antes, fijo en el código | Uso |
+|---|---|---|---|
+| `training_reminders_enabled` | `false` | (ya existía) | Activa los avisos automáticos |
+| `training_reminder_interval_seconds` | `300` (mín. 10) | (ya existía) | Espera entre lotes |
+| `training_reminder_max_attempts` | `5` (1-10) | (ya existía) | Intentos antes de marcar `failed` |
+| `training_reminder_retry_delay_seconds` | `30` | `30 * 2**intentos` | Espera inicial; se duplica en cada intento |
+| `training_reminder_retry_max_delay_seconds` | `3600` (≥ la inicial) | `min(3600, ...)` | Tope de la espera |
+| `training_reminder_sending_timeout_seconds` | `120` (mín. 10) | `timedelta(minutes=2)` en `claim_reminder` | Bloqueo (`lease_until`) mientras se envía |
+| `training_reminder_batch_size` | `100` (1-1000) | `range(100)` en `run_batch` | Avisos por lote |
+
+Un valor fuera de rango aborta el arranque del worker. El aviso que se entrega **al interactuar
+con el bot** no usa esta política: mantiene su bloqueo de 2 minutos y su reintento a los
+5 minutos (o lo que pida Telegram si es más), y de la configuración solo toma
+`training_reminder_max_attempts`. Los errores de Telegram se clasifican igual que en las
+encuestas; tabla y fórmula en [encuestas-satisfaccion.md](encuestas-satisfaccion.md#6-propiedades-configurables-y-reintentos).
 
 Para una comprobación de un lote acotado:
 
@@ -80,6 +98,29 @@ Los logs registran entregas y fallos; los eventos guardan reintentos acotados y 
 permanentes. SIGTERM/SIGINT detienen el bucle y cierran las conexiones.
 `make dev-app` solo actualiza la API: para actualizar también el worker reconstruirlo
 con el Compose de desarrollo o utilizar `make dev-up`.
+
+### Worker de encuestas semanales
+
+Servicios `evaluation-dev`, `evaluation-prod` o `evaluation` (local): misma imagen con entrypoint
+`python -m fitcoach.infrastructure.jobs.evaluation`. Es un canal independiente de los avisos:
+tiene su propia tabla (`training_evaluation`) y su propio flag. Comparte con el worker de avisos
+el bucle periódico (`jobs/worker_loop.py`) y la clasificación de errores de Telegram
+(`jobs/telegram_delivery.py`).
+
+| Variable | Defecto | Uso |
+|---|---|---|
+| `evaluation_enabled` | `false` | Activa el envío; desactivado no consulta la base |
+| `evaluation_interval_seconds` | `300` (mín. 10) | Espera entre lotes |
+| `evaluation_max_attempts` | `5` | Intentos antes de marcar `failed` |
+| `evaluation_retry_delay_seconds` | `30` | Espera inicial; se duplica en cada intento |
+| `evaluation_retry_max_delay_seconds` | `3600` | Tope de la espera (≥ la inicial) |
+| `evaluation_sending_timeout_seconds` | `120` (mín. 10) | Bloqueo de la fila mientras se envía |
+| `evaluation_batch_size` | `100` | Encuestas por lote |
+
+La app debe tener `poll_answer` en `allowed_updates` (lo registra al arrancar) para recibir los
+votos. Funcionamiento detallado en [encuestas-satisfaccion.md](encuestas-satisfaccion.md). Para un lote acotado: `docker compose run --rm evaluation-prod --once`.
+Al desplegar, la migración `e5c7a9b1d3f4` programa solo las semanas **futuras** de los ciclos
+ya abiertos, para no enviar de golpe encuestas de semanas pasadas.
 
 ### Desarrollo
 

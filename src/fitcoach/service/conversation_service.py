@@ -12,7 +12,7 @@ from typing import TypedDict
 
 from opentelemetry import trace
 from opentelemetry.trace import Span
-from telegram import Bot, InlineKeyboardMarkup, Message, Update
+from telegram import Bot, InlineKeyboardMarkup, Message, PollAnswer, Update
 from telegram.error import BadRequest, RetryAfter
 
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
@@ -23,8 +23,11 @@ from fitcoach.domain.rate_limiter import UsageLimits
 from fitcoach.domain.telegram import Commands
 from fitcoach.domain.token_usage import TokenUsage
 from fitcoach.domain.trainer_plan import TRAINING_STATUS_ACTIVE, TrainerAction
+from fitcoach.domain.training_evaluation import score_from_option
+from fitcoach.domain.training_lifecycle import utc_now
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.repository.evaluation_repository import EvaluationRepository
 from fitcoach.repository.training_repository import TrainingConflictError
 from fitcoach.service.agent import agent_factory
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
@@ -97,6 +100,7 @@ class ConversationService:
         exercise_retriever: ExerciseRetriever | None = None,
         trainer_history_window_messages: int = 10,
         training_service: TrainingService | None = None,
+        evaluation_repository: EvaluationRepository | None = None,
     ) -> None:
         self._bot = bot
         self._interviewer = interviewer
@@ -110,6 +114,7 @@ class ConversationService:
         self._trainer_history_window_messages = trainer_history_window_messages
         self._usage_limits = usage_limits
         self._training_service = training_service
+        self._evaluation_repository = evaluation_repository
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -128,10 +133,30 @@ class ConversationService:
             if update.callback_query is not None:
                 await self._handle_callback(update, ctx)
                 return
+            if update.poll_answer is not None:
+                await self._record_poll_answer(update.poll_answer, ctx)
+                return
             await self._process(update, message, ctx)
         except Exception:
             logger.exception(f"{ctx} error inesperado procesando el update")
             await self._notify_server_error(message, ctx)
+
+    async def _record_poll_answer(self, answer: PollAnswer, ctx: str) -> None:
+        """Store a weekly poll vote; Telegram expects no reply to it."""
+        if self._evaluation_repository is None or answer.user is None:
+            logger.warning("%s poll answer ignored: no evaluation store or anonymous voter", ctx)
+            return
+        try:
+            score = score_from_option(answer.option_ids)
+        except ValueError:
+            logger.warning("%s poll answer with an option outside the scale", ctx)
+            return
+        recorded = await self._evaluation_repository.record_answer(
+            answer.poll_id, answer.user.id, score, utc_now()
+        )
+        logger.info(
+            "%s poll answer poll=%s score=%s recorded=%s", ctx, answer.poll_id, score, recorded
+        )
 
     async def _handle_callback(self, update: Update, ctx: str) -> None:
         query = update.callback_query

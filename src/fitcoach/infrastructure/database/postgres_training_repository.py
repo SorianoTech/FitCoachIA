@@ -15,11 +15,16 @@ from fitcoach.domain.training_lifecycle import (
     utc_now,
 )
 from fitcoach.infrastructure.database.models import (
+    TrainingEvaluationRecord,
     TrainingMesocycleRecord,
     TrainingNotificationRecord,
     TrainingPlanRecord,
     TrainingSessionRecord,
     TrainingWorkflowRecord,
+)
+from fitcoach.infrastructure.database.postgres_evaluation_repository import (
+    cancel_pending_evaluations,
+    schedule_evaluations,
 )
 from fitcoach.repository.training_repository import ReminderDelivery, TrainingConflictError
 
@@ -34,7 +39,7 @@ class PostgresTrainingRepository:
         await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
 
     async def _cycle_record(self, chat_id: int) -> TrainingMesocycleRecord | None:
-        return await self._session.scalar(
+        record: TrainingMesocycleRecord | None = await self._session.scalar(
             select(TrainingMesocycleRecord)
             .join(TrainingPlanRecord, TrainingPlanRecord.mesocycle_id == TrainingMesocycleRecord.id)
             .join(
@@ -44,6 +49,7 @@ class PostgresTrainingRepository:
             .where(TrainingSessionRecord.chat_id == chat_id, TrainingPlanRecord.chat_id == chat_id)
             .execution_options(populate_existing=True)
         )
+        return record
 
     async def get_cycle(self, chat_id: int) -> Mesocycle | None:
         record = await self._cycle_record(chat_id)
@@ -188,6 +194,7 @@ class PostgresTrainingRepository:
             )
             self._session.add(cycle)
             await self._session.flush()
+            await schedule_evaluations(self._session, cycle, utc_now())
             cycle_id = cycle.id
         version = await self._session.scalar(
             select(func.max(TrainingPlanRecord.version)).where(
@@ -201,6 +208,7 @@ class PostgresTrainingRepository:
             mesocycle_id=cycle_id,
             parent_plan_id=base.id,
             change_kind=workflow.kind,
+            goal=workflow.draft.goal,
             plan=workflow.draft.model_dump(mode="json"),
             report=workflow.report,
             model=trace.get("model"),
@@ -243,6 +251,9 @@ class PostgresTrainingRepository:
         if cycle is None:
             raise TrainingConflictError("No current mesocycle")
         cycle.completed_at = cycle.completed_at or now
+        await cancel_pending_evaluations(
+            self._session, TrainingEvaluationRecord.mesocycle_id == cycle.id
+        )
         await self._session.commit()
 
     async def set_start(self, chat_id: int, start: datetime) -> None:
@@ -252,6 +263,7 @@ class PostgresTrainingRepository:
             raise TrainingConflictError("Only an undated legacy cycle can receive a start")
         cycle.started_at = start
         cycle.expected_end_at = expected_end(start)
+        await schedule_evaluations(self._session, cycle, utc_now())
         await self._session.commit()
 
     async def set_reminders(self, chat_id: int, enabled: bool) -> None:
@@ -344,7 +356,9 @@ class PostgresTrainingRepository:
             )
         await self._session.commit()
 
-    async def claim_reminder(self, now: datetime) -> ReminderDelivery | None:
+    async def claim_reminder(
+        self, now: datetime, sending_timeout: timedelta
+    ) -> ReminderDelivery | None:
         record = await self._session.scalar(
             select(TrainingNotificationRecord)
             .where(
@@ -378,7 +392,7 @@ class PostgresTrainingRepository:
             await self._session.commit()
             return None
         record.state = "sending"
-        record.lease_until = now + timedelta(minutes=2)
+        record.lease_until = now + sending_timeout
         record.attempts += 1
         delivery = ReminderDelivery(
             record.id, cycle.chat_id, cycle.message_thread_id, record.attempts

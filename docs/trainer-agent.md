@@ -154,6 +154,39 @@ La entrega externa es **al menos una vez**: un fallo después de enviar a Telegr
 de registrar éxito puede duplicar excepcionalmente un aviso. Las reservas evitan duplicados
 normales entre workers/interacciones, no prometen exactamente una entrega externa.
 
+### Encuestas semanales de satisfacción
+
+Resumen; el funcionamiento completo está en [encuestas-satisfaccion.md](encuestas-satisfaccion.md).
+Cada mesociclo con fecha de inicio recibe **4 encuestas** (poll de Telegram no anónimo, una
+respuesta) a los 7, 14, 21 y 28 días de `started_at`:
+
+> Semana {k} de tu plan para {objetivo}: ¿qué te está pareciendo?
+
+Opciones: `0 - No me ha gustado nada`, `1 - No me gusta mucho`, `2 - Regular, mejorable`,
+`3 - Está bien, puede mejorar`, `4 - Me está gustando mucho`, `5 - Lo recomiendo sin dudar`.
+El índice de la opción elegida es la nota.
+
+- **Programación (outbox).** Las 4 filas de `training_evaluation` se insertan en la misma
+  transacción que da fecha al ciclo: primer plan, renovación aceptada y `/train inicio` de un
+  ciclo legacy. Solo se programan las semanas aún futuras. Un cambio de ejercicios dentro del
+  ciclo y `/train posponer` no programan nada.
+- **Independientes de los avisos.** Se envían aunque el usuario tenga `/train avisos off`.
+- **Cancelación.** Cerrar el ciclo (o renovarlo) cancela sus encuestas pendientes; `/interview`
+  cancela las pendientes del chat. Las ya enviadas y respondidas se conservan: la tabla
+  sobrevive al reset con las FK a `NULL` y una copia de `goal`.
+- **Envío.** El worker `evaluation` reclama las filas vencidas, copia `goal` y `plan_id` del plan
+  vigente, cierra (`stopPoll`) la encuesta anterior si sigue sin respuesta y envía la nueva. Si
+  el worker estuvo parado, solo se envía la semana más reciente; las anteriores se cancelan. Una
+  encuesta sin respuesta no se reenvía.
+- **Respuesta.** El webhook recibe `poll_answer` y guarda la nota solo si el votante es el dueño
+  del chat. El voto es definitivo: la encuesta no permite cambiarlo ni retirarlo. El bot no
+  contesta nada.
+
+Reintentos (encuestas y avisos) con política configurable: espera inicial que se duplica en
+cada intento hasta un tope, número máximo de intentos, bloqueo mientras se envía y tamaño de
+lote. `RetryAfter` espera lo que pide Telegram; `BadRequest`/`Forbidden` marcan la entrega
+`failed`. Ver [entornos-y-despliegue.md](entornos-y-despliegue.md#worker-de-encuestas-semanales).
+
 ## Comandos y estados
 
 El primer `/train` genera y activa un plan. Repetirlo abre o reanuda revisión y renovación.
@@ -322,11 +355,12 @@ agente existe para evitar, mientras que una pregunta se puede responder desde el
 
 | Tabla | Contenido | Cuándo se actualiza |
 | --- | --- | --- |
-| `training_plans` | Plan JSON e informe, versionados por `chat_id`, con ciclo y plan padre. | Primer plan o confirmación de un borrador. |
+| `training_plans` | Plan JSON e informe, versionados por `chat_id`, con ciclo, plan padre y copia de `goal`. | Primer plan o confirmación de un borrador. |
 | `training_sessions` | Estado `active` y puntero autoritativo del vigente. | Primera activación o confirmación. |
 | `training_mesocycles` | Inicio, fin previsto, cierre declarado y preferencias de avisos. | Inicio, cierre, renovación o controles de fechas. |
 | `training_workflows` | Revisión, perfil efectivo, candidatos, borrador, estado y aprobación. | En cada avance del flujo; conserva los cerrados. |
 | `training_notifications` | Eventos de aviso, ocasión, intentos y lease. | Detección, envío, reintento o posposición. |
+| `training_evaluation` | Encuesta semanal: cola de envío (estado, vencimiento, intentos, bloqueo) y respuesta (`score` 0-5). | Al dar fecha al ciclo, al enviar, al votar o al cerrar el ciclo. |
 | `conversation_messages` | Turnos, con la columna `agent` que separa entrevista de entrenamiento. | En cada turno válido. |
 | `token_usage` | Una fila por llamada al modelo, con `agent = 'trainer'`. | En cada llamada, incluidas las fallidas. |
 

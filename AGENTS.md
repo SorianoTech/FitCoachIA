@@ -16,10 +16,18 @@ Language rules: code, identifiers and this file in **English**; everything under
    Do not run commands that print resolved env values (e.g. `docker compose config` with `--env-file`).
 3. New environment variables go in the `.env.example` of the affected component, never in a real `.env`.
    If a value must change in a real `.env`, propose it in the chat and let the user apply it.
+   If a new variable is required to start the app, warn the developer explicitly that it must be set in the real `.env`.
 4. **Docs, README, Docker composes and tests must always reflect the code.** Every change keeps them updated in the same
    change, and whenever you touch an area you also fix any stale statement about it you find in those files
    (see the mandatory checklist in section 12).
 5. If something cannot be verified in this environment (Docker, network, real `.env`), say so explicitly; never claim it was verified.
+6. **Complete every development.** A feature is done only when all the dependencies it actually needs exist:
+   tests (OK and KO) and docs always; Alembic migration, env vars, composes, Makefile/workflows, dependencies and other
+   associated pieces only if the change requires them (section 12). List the detected ones in the plan; do not add unneeded ones.
+7. **Document every development in `docs/`** (Spanish). Pick the existing file whose topic is coherent with the feature
+   and extend it if it fits; if none fits, ask the developer, proposing `docs/<feature>.md`, and add it to the docs index (section 12).
+8. **Questions about documentation are answered from `docs/` first** (index in section 12), then checked against the code.
+   If they disagree, report it, state what should be updated and ask whether to update it; the code is the source of truth.
 
 ### Working protocol (developer = supervisor)
 
@@ -52,8 +60,9 @@ src/fitcoach/
   api/               HTTP only: parse request, wire dependencies, delegate. Endpoints: / , /health , /webhook/response
   service/           Use cases. conversation_service.py routes Telegram commands; agent/ holds the LLM chains
   domain/            Pydantic entities/value objects, enums, errors, user-facing texts (constants.py). No I/O
-  repository/        Ports (typing.Protocol): ConversationRepository, ExerciseRepository
-  infrastructure/    Adapters: bot, config, database, vectordb, ia, prompts, observability
+  repository/        Ports (typing.Protocol): ConversationRepository, ExerciseRepository,
+                     TrainingRepository, EvaluationRepository
+  infrastructure/    Adapters: bot, config, database, vectordb, ia, prompts, observability, jobs
 ```
 
 Key facts per layer:
@@ -64,6 +73,7 @@ Key facts per layer:
 - **service/conversation_service.py**: strips emojis before command detection, keeps `message_thread_id` when replying,
   prefixes logs with an update/chat/thread/message/user context, routes `Commands` (`domain/telegram.py`):
   `/start`, `/interview`, `/train`, `/doubts`, `/progress` and free messages (by interview/training state).
+  `callback_query` and `poll_answer` updates are handled before command routing.
 - **service/agent/**: `llm_chain.py` (`BaseLLMChain`: one invocation, token usage, provider-error mapping,
   JSON validation with a single repair attempt), `interviewer_chain.py`, `trainer_chain.py` (subclasses),
   `agent_factory.py` (composes system prompts), `exercise_retriever.py` + `rag_context.py` (RAG for the trainer).
@@ -77,6 +87,14 @@ Key facts per layer:
   - `ia/` `embedder_client.py` and `skills/<skill>/SKILL.md` (agent knowledge, `-dev` variants are lighter versions).
   - `prompts/` `<agent>/system_prompt.txt` + `prompt_loader.py`.
   - `bot/telegram_bot.py` (python-telegram-bot, `to_bot_command`), `observability/telemetry.py` (OpenTelemetry).
+  - `jobs/` standalone workers run as separate containers with the app image (`python -m ...`):
+    `training_reminders.py` (mesocycle due reminders) and `evaluation.py` (weekly satisfaction polls).
+    Both share `worker_loop.py` (periodic loop, SIGTERM, one DB session per tick) and
+    `telegram_delivery.py` (Telegram error -> retry/fail with the configurable `RetryPolicy`).
+- **Weekly polls**: `training_evaluation` is both outbox and result. The 4 rows of a cycle are inserted in the
+  same transaction that dates the cycle (`schedule_evaluations`); `close_cycle` and `/interview` cancel the pending
+  ones (`cancel_pending_evaluations`). Votes arrive as `poll_answer` updates handled by `ConversationService`.
+  Details in `docs/encuestas-satisfaccion.md`.
 - Cached providers (`lru_cache`): `_create_bot`, `get_settings`, `get_ia_settings`, `get_database_settings`,
   `get_vector_database_settings`, `get_embedder_settings`, `get_interviewer_chain`, `get_trainer_chain`.
 - Observability: OpenTelemetry traces (exported only if `otel_exporter_otlp_endpoint` is set), structured JSON logs and
@@ -135,7 +153,10 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 - **Conversational DB** (SQLAlchemy 2 async + asyncpg): models in `infrastructure/database/models.py`; versioned with **Alembic**
   (`alembic/`, `alembic.ini`; `alembic/env.py` reads `database_url` and `Base.metadata`). The container ENTRYPOINT runs
   `alembic upgrade head` before starting the API.
-  - Any model/schema change => new revision in `alembic/versions/` (autogenerate, then review by hand).
+  - Every table is defined in `infrastructure/database/models.py` (the only module `alembic/env.py` imports; models
+    elsewhere are missed by autogenerate).
+  - Any model/schema change (new table, column, index, constraint) => new revision in `alembic/versions/`
+    (autogenerate, then review by hand).
   - Migrations must be backward compatible: add first, deploy code, remove later. Never rename/drop columns in use.
   - Keep data migrations separate from schema migrations. Keep the `ConversationRepository` port, its Postgres
     implementation and the tests in sync.
@@ -183,7 +204,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 
 | File | Purpose | Notes |
 |---|---|---|
-| `docker-compose.dev.yml` | Development stack (`build:`) | Reference one: change here first |
+| `docker-compose.dev.yml` | Development stack (`build:`), incl. `training-reminders-dev` and `evaluation-dev` workers | Reference one: change here first |
 | `docker-compose.local.yml` | Local all-in-one stack, used to **try changes locally** | Reads root `.env` |
 | `docker-compose.yml` | Production (`image:` published, no `build:`) | Adapt, do not copy, from dev |
 | `tests/docker-compose-test.yml` | Integration tests (app + Postgres + pgVector + stub server) | Must always work with `make tests` |
@@ -241,7 +262,7 @@ Update every item that the change touches, in the same change:
 
 | If you change... | Also update |
 |---|---|
-| Any behaviour, flow or design | the matching file in `docs/` (Spanish) — **mandatory** |
+| Any behaviour, flow or design | the matching file in `docs/` (Spanish), chosen as in golden rule 7 — **mandatory** |
 | Code | unit + IT tests (OK and KO cases) — **mandatory** |
 | Services, ports, env vars | `docker-compose.dev.yml`, `docker-compose.local.yml`, `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
 | Env vars | the matching `.env.example` (+ `docs/how-to.md`) |
@@ -253,6 +274,7 @@ Update every item that the change touches, in the same change:
 | Architecture, layers, agents, this map | this `AGENTS.md` |
 
 Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`,
-`docs/vector-db.md`, `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
+`docs/encuestas-satisfaccion.md` (weekly polls + configurable retry properties of both workers),
+`docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
 `docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`.
 `docs/plan/` holds design notes and `docs/todo/` the backlog.

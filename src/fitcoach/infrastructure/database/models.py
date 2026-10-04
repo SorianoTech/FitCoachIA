@@ -3,10 +3,12 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -93,6 +95,8 @@ class TrainingPlanRecord(Base):
         ForeignKey("training_plans.id", ondelete="SET NULL")
     )
     change_kind: Mapped[str] = mapped_column(String(32), server_default="initial")
+    # Copied from plan["goal"] so dashboards and polls need not parse the JSON.
+    goal: Mapped[str | None] = mapped_column(String(32), nullable=True)
     plan: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     report: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -171,6 +175,49 @@ class TrainingNotificationRecord(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+class TrainingEvaluationRecord(Base):
+    """Weekly satisfaction poll of a mesocycle: delivery queue and answer in one row.
+
+    Scheduled when the cycle starts; goal and plan are copied on send and survive /interview.
+    """
+
+    __tablename__ = "training_evaluation"
+    __table_args__ = (
+        UniqueConstraint("mesocycle_id", "week_number", name="uq_training_evaluation_cycle_week"),
+        CheckConstraint("week_number BETWEEN 1 AND 4", name="ck_training_evaluation_week"),
+        CheckConstraint("score BETWEEN 0 AND 5", name="ck_training_evaluation_score"),
+        Index(
+            "ix_training_evaluation_due",
+            "due_at",
+            postgresql_where=text("state IN ('pending', 'sending')"),
+        ),
+        Index("ix_training_evaluation_chat_id_sent_at", "chat_id", "sent_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="SET NULL")
+    )
+    mesocycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="SET NULL")
+    )
+    goal: Mapped[str | None] = mapped_column(String(32))
+    week_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    telegram_poll_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    score: Mapped[int | None] = mapped_column(SmallInteger)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class ProcessedUpdateRecord(Base):

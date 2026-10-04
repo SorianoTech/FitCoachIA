@@ -116,7 +116,20 @@ Tu nueva vida te espera, ¡Adelante!
     TRAINING_DUE_MESSAGE: Final = (
         "Ha llegado la fecha prevista de cierre de tu mesociclo. Esto no significa que hayas "
         "completado las sesiones. Envía /train para revisarlo y preparar un borrador del siguiente, "
-        "/train posponer AAAA-MM-DD para posponer o /train avisos off para desactivar avisos."
+        "/train posponer AAAA-MM-DD para posponer o /train avisos off para desactivar estos avisos "
+        "(las encuestas semanales seguirán llegando)."
+    )
+    EVALUATION_POLL_QUESTION: Final = (
+        "Semana {week} de tu plan para {goal}: ¿qué te está pareciendo?"
+    )
+    EVALUATION_POLL_QUESTION_NO_GOAL: Final = "Semana {week} de tu plan: ¿qué te está pareciendo?"
+    EVALUATION_POLL_OPTIONS: Final = (
+        "0 - No me ha gustado nada",
+        "1 - No me gusta mucho",
+        "2 - Regular, mejorable",
+        "3 - Está bien, puede mejorar",
+        "4 - Me está gustando mucho",
+        "5 - Lo recomiendo sin dudar",
     )
     TRAINING_LEGACY_MESSAGE: Final = (
         "Tu plan anterior no tiene una fecha de inicio confirmada. Indícala con "

@@ -190,6 +190,42 @@ class ProcessedUpdateRecord(Base):
     )
 
 
+class ExerciseSubmissionRecord(Base):
+    __tablename__ = "exercise_submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_exercise_submissions_status",
+        ),
+        Index("ix_exercise_submissions_status_id", "status", "id"),
+        Index(
+            "uq_exercise_submissions_draft_chat",
+            "chat_id",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_thread_id: Mapped[int | None] = mapped_column(BigInteger)
+    raw_description: Mapped[str] = mapped_column(Text, nullable=False)
+    proposal: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="draft")
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    duplicate_exercise_id: Mapped[int | None] = mapped_column(BigInteger)
+    moderation_notes: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger)
+    published_exercise_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ModelPriceRecord(Base):
     __tablename__ = "model_prices"
 

@@ -139,6 +139,12 @@ class IASettings(BaseSettings):
     # Exercises retrieved from the vector DB per muscle group.
     rag_top_k: int = Field(default=8, gt=0)
 
+    # --- Exercise curator (agent 3) ---
+    exercise_curator_model: str = Field(default="gpt-5.4-mini", min_length=1)
+    exercise_curator_temperature: TaskTemperature = 0.1
+    exercise_curator_max_tokens: int = Field(default=1200, gt=0)
+    exercise_curator_timeout: float = Field(default=30, gt=0)
+
 
 class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(

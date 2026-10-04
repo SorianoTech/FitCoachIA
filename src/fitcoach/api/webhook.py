@@ -22,6 +22,9 @@ from fitcoach.infrastructure.database.dependencies import get_conversation_repos
 from fitcoach.infrastructure.database.postgres_conversation_repository import (
     PostgresConversationRepository,
 )
+from fitcoach.infrastructure.database.postgres_exercise_submission_repository import (
+    PostgresExerciseSubmissionRepository,
+)
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
 from fitcoach.infrastructure.database.postgres_workout_repository import PostgresWorkoutRepository
 from fitcoach.infrastructure.database.session import get_session
@@ -30,6 +33,11 @@ from fitcoach.infrastructure.vectordb.pgvector_exercise_repository import (
     PgVectorExerciseRepository,
 )
 from fitcoach.infrastructure.vectordb.session import get_vector_session
+from fitcoach.service.agent.exercise_curator_chain import (
+    ExerciseCuratorChain,
+    get_exercise_curator_chain,
+)
+from fitcoach.service.agent.exercise_duplicate_detector import ExerciseDuplicateDetector
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, get_interviewer_chain
 from fitcoach.service.agent.trainer_chain import TrainerChain, get_trainer_chain
@@ -38,6 +46,7 @@ from fitcoach.service.agent.training_adaptation_chain import (
     get_training_adaptation_chain,
 )
 from fitcoach.service.conversation_service import ConversationService
+from fitcoach.service.exercise_submission_service import ExerciseSubmissionService
 from fitcoach.service.quota_service import QuotaService
 from fitcoach.service.training_service import TrainingService
 
@@ -69,6 +78,8 @@ class TrainerDeps:
 
     chain: TrainerChain
     retriever: ExerciseRetriever
+    embedder: EmbedderClient
+    exercise_repository: PgVectorExerciseRepository
 
 
 def get_trainer_deps(
@@ -77,13 +88,34 @@ def get_trainer_deps(
     vector_session: AsyncSession = Depends(get_vector_session),
     ia_settings: IASettings = Depends(get_ia_settings),
 ) -> TrainerDeps:
+    exercise_repository = PgVectorExerciseRepository(vector_session)
     return TrainerDeps(
         chain=trainer,
         retriever=ExerciseRetriever(
             embedder=embedder,
-            exercise_repository=PgVectorExerciseRepository(vector_session),
+            exercise_repository=exercise_repository,
             top_k=ia_settings.rag_top_k,
         ),
+        embedder=embedder,
+        exercise_repository=exercise_repository,
+    )
+
+
+def get_exercise_submission_service(
+    curator: ExerciseCuratorChain = Depends(get_exercise_curator_chain),
+    session: AsyncSession = Depends(get_session),
+    trainer_deps: TrainerDeps = Depends(get_trainer_deps),
+    ia_settings: IASettings = Depends(get_ia_settings),
+) -> ExerciseSubmissionService:
+    return ExerciseSubmissionService(
+        curator,
+        PostgresExerciseSubmissionRepository(session),
+        ExerciseDuplicateDetector(
+            trainer_deps.embedder,
+            trainer_deps.exercise_repository,
+            ia_settings.exercise_duplicate_similarity_threshold,
+        ),
+        ia_settings.exercise_curator_model,
     )
 
 
@@ -97,6 +129,7 @@ def get_conversation_service(
     session: AsyncSession = Depends(get_session),
     adaptation: TrainingAdaptationChain = Depends(get_training_adaptation_chain),
     quotas: QuotaService = Depends(get_quota_service),
+    exercise_submissions: ExerciseSubmissionService = Depends(get_exercise_submission_service),
 ) -> ConversationService:
     return ConversationService(
         bot=bot,
@@ -111,6 +144,7 @@ def get_conversation_service(
         training_service=get_training_service(
             repository, trainer_deps, usage_settings, session, adaptation, quotas
         ),
+        exercise_submissions=exercise_submissions,
     )
 
 

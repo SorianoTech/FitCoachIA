@@ -60,6 +60,27 @@ Tu nueva vida te espera, ¡Adelante!
         "o /interview si quieres actualizar tu perfil."
     )
 
+    # --- Propuestas de ejercicios ---
+    EXERCISE_SUBMISSION_START: Final = (
+        "Describe el ejercicio que quieres añadir: movimiento, material utilizado y músculo "
+        "principal. Puedes cancelar en cualquier momento escribiendo «cancelar»."
+    )
+    EXERCISE_SUBMISSION_CONFIRM: Final = (
+        "Si la propuesta es correcta, escribe «confirmar». Para modificarla, explica el cambio. "
+        "También puedes escribir «cancelar»."
+    )
+    EXERCISE_SUBMISSION_PENDING: Final = (
+        "Propuesta enviada a moderación. Te avisaremos cuando haya sido revisada."
+    )
+    EXERCISE_SUBMISSION_CANCELLED: Final = "Propuesta de ejercicio cancelada."
+    EXERCISE_SUBMISSION_INCOMPLETE: Final = (
+        "Todavía falta completar la propuesta antes de poder enviarla."
+    )
+    EXERCISE_SUBMISSION_DUPLICATE: Final = (
+        "\n\nPosible duplicado del ejercicio #{id}: {name} ({similarity:.0%} de similitud). "
+        "Puedes confirmarlo igualmente para que lo revise un moderador."
+    )
+
     # --- Mensajes del agente entrenador ---
     NO_PROFILE_MESSAGE: Final = (
         "Todavía no tengo tu perfil. Envía /interview para hacer la entrevista inicial y "

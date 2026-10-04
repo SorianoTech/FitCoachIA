@@ -20,6 +20,9 @@ COMMAND_TIERS: Final[dict[Commands | None, UsageTier]] = {
     Commands.START: UsageTier.UNLIMITED,
     Commands.DOUBTS: UsageTier.UNLIMITED,
     Commands.PROGRESS: UsageTier.UNLIMITED,
+    # Confirmation/cancellation is free; the submission service checks the
+    # hard limit immediately before the curator model is invoked.
+    Commands.ADD_EXERCISE: UsageTier.UNLIMITED,
     Commands.INTERVIEW: UsageTier.SOFT,
     Commands.TRAIN: UsageTier.SOFT,
     None: UsageTier.HARD,  # texto libre

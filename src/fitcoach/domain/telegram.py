@@ -5,6 +5,7 @@ class Commands(Enum):
     START = ("/start", "")
     INTERVIEW = ("/interview", "Se inicia una nueva entrevista")
     TRAIN = ("/train", "Genera tu plan de entrenamiento de 4 semanas")
+    ADD_EXERCISE = ("/add_exercise", "Propón un ejercicio para el catálogo")
     DOUBTS = ("/doubts", "Consultar cualquier duda acerca de tu perfil")
     PROGRESS = ("/progress", "Comprobar tu progreso en base a tu perfil y los logros conseguidos")
 

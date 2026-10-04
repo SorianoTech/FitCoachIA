@@ -119,7 +119,7 @@ class ExerciseSubmission(BaseModel):
     chat_id: int
     message_thread_id: int | None
     raw_description: str
-    proposal: ExerciseProposal
+    proposal: ExerciseProposal | None
     status: ExerciseSubmissionStatus
     model: str
     duplicate_exercise_id: int | None = None
@@ -129,3 +129,12 @@ class ExerciseSubmission(BaseModel):
     created_at: datetime
     updated_at: datetime
     reviewed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _completed_states_require_proposal(self) -> "ExerciseSubmission":
+        if (
+            self.status in {ExerciseSubmissionStatus.PENDING, ExerciseSubmissionStatus.APPROVED}
+            and self.proposal is None
+        ):
+            raise ValueError("Pending and approved submissions require an exercise proposal")
+        return self

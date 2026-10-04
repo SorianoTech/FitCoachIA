@@ -26,7 +26,7 @@ class PostgresExerciseSubmissionRepository:
         chat_id: int,
         message_thread_id: int | None,
         raw_description: str,
-        proposal: ExerciseProposal,
+        proposal: ExerciseProposal | None,
         model: str,
         duplicate_exercise_id: int | None = None,
     ) -> ExerciseSubmission:
@@ -37,7 +37,7 @@ class PostgresExerciseSubmissionRepository:
             chat_id=chat_id,
             message_thread_id=message_thread_id,
             raw_description=raw_description,
-            proposal=proposal.model_dump(mode="json"),
+            proposal=proposal.model_dump(mode="json") if proposal is not None else None,
             status=ExerciseSubmissionStatus.DRAFT.value,
             model=model,
             duplicate_exercise_id=duplicate_exercise_id,
@@ -76,6 +76,33 @@ class PostgresExerciseSubmissionRepository:
         )
         return [self._to_domain(record) for record in records]
 
+    async def update_draft(
+        self,
+        chat_id: int,
+        raw_description: str,
+        proposal: ExerciseProposal | None,
+        duplicate_exercise_id: int | None = None,
+    ) -> ExerciseSubmission:
+        record = await self._session.scalar(
+            select(ExerciseSubmissionRecord)
+            .where(
+                ExerciseSubmissionRecord.chat_id == chat_id,
+                ExerciseSubmissionRecord.status == ExerciseSubmissionStatus.DRAFT.value,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if record is None:
+            await self._session.rollback()
+            raise ExerciseSubmissionConflictError("The user has no exercise draft")
+        record.raw_description = raw_description
+        record.proposal = proposal.model_dump(mode="json") if proposal is not None else None
+        record.duplicate_exercise_id = duplicate_exercise_id
+        record.updated_at = datetime.now(UTC)
+        await self._session.commit()
+        await self._session.refresh(record)
+        return self._to_domain(record)
+
     async def set_status(
         self,
         submission_id: int,
@@ -113,7 +140,11 @@ class PostgresExerciseSubmissionRepository:
             chat_id=record.chat_id,
             message_thread_id=record.message_thread_id,
             raw_description=record.raw_description,
-            proposal=ExerciseProposal.model_validate(record.proposal),
+            proposal=(
+                ExerciseProposal.model_validate(record.proposal)
+                if record.proposal is not None
+                else None
+            ),
             status=ExerciseSubmissionStatus(record.status),
             model=record.model,
             duplicate_exercise_id=record.duplicate_exercise_id,

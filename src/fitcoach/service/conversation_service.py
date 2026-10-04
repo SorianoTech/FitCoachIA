@@ -30,6 +30,9 @@ from fitcoach.domain.trainer_plan import (
     TrainerAction,
     TrainerAnswerTurn,
 )
+from fitcoach.infrastructure.database.postgres_exercise_submission_repository import (
+    ExerciseSubmissionConflictError,
+)
 from fitcoach.infrastructure.observability.latency import timed
 from fitcoach.infrastructure.observability.telemetry import get_tracer
 from fitcoach.repository.conversation_repository import ConversationRepository
@@ -38,6 +41,7 @@ from fitcoach.service.agent import agent_factory
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.agent.trainer_chain import TrainerChain
+from fitcoach.service.exercise_submission_service import ExerciseSubmissionService
 from fitcoach.service.training_service import TrainingService
 from fitcoach.service.training_view import persistent_keyboard
 from fitcoach.service.typing_indicator import typing_indicator
@@ -108,6 +112,7 @@ class ConversationService:
         trainer_history_window_messages: int = 10,
         training_service: TrainingService | None = None,
         quota_resolver: Callable[[int], Awaitable[UsageLimits]] | None = None,
+        exercise_submissions: ExerciseSubmissionService | None = None,
     ) -> None:
         self._bot = bot
         self._interviewer = interviewer
@@ -122,6 +127,7 @@ class ConversationService:
         self._usage_limits = usage_limits
         self._training_service = training_service
         self._quota_resolver = quota_resolver
+        self._exercise_submissions = exercise_submissions
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -224,6 +230,21 @@ class ConversationService:
             span.set_attribute("chat_id", chat_id)
             span.set_attribute("command", command.name if command is not None else "none")
 
+            if self._exercise_submissions is not None and (
+                command == Commands.ADD_EXERCISE
+                or await self._exercise_submissions.has_draft(chat_id)
+                or (command is None and self._exercise_submissions.is_natural_intent(input_text))
+            ):
+                await self._exercise_submission_response(
+                    ctx,
+                    chat_id,
+                    message_thread_id,
+                    input_text,
+                    command == Commands.ADD_EXERCISE,
+                    span,
+                )
+                return
+
             if self._training_service is not None:
                 if command == Commands.PROGRESS:
                     await self._training_response(ctx, chat_id, message_thread_id, input_text)
@@ -270,6 +291,8 @@ class ConversationService:
                 case Commands.TRAIN:
                     span.set_attribute("agent", AgentType.TRAINER.value)
                     await self._generate_plan(ctx, chat_id, message_thread_id, input_text)
+                case Commands.ADD_EXERCISE:
+                    await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
                 case Commands.DOUBTS | Commands.PROGRESS:
                     # TODO: route to the doubts/Q&A and progress-tracking flows
                     logger.info(f"{ctx} opcion todavia no implementada")
@@ -278,6 +301,59 @@ class ConversationService:
                     await self._route_free_message(
                         ctx, chat_id, message_thread_id, input_text, span
                     )
+
+    async def _exercise_submission_response(
+        self,
+        ctx: str,
+        chat_id: int,
+        message_thread_id: int | None,
+        input_text: str,
+        command: bool,
+        span: Span,
+    ) -> None:
+        if self._exercise_submissions is None:
+            return
+        span.set_attribute("agent", AgentType.EXERCISE_CURATOR.value)
+        if await self._exercise_submissions.will_invoke_model(
+            chat_id, input_text, command=command
+        ):
+            blocked = await self._quota_message(ctx, chat_id, None)
+            if blocked is not None:
+                span.set_attribute("quota_blocked", True)
+                await self._send(chat_id, message_thread_id, blocked)
+                return
+        started = time.perf_counter()
+        try:
+            reply = await self._exercise_submissions.handle(
+                chat_id, message_thread_id, input_text, command=command
+            )
+        except AgentError as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            await self._record_token_usage(
+                ctx,
+                chat_id,
+                None,
+                exc.token_usages or [self._unknown_usage(exc.code, elapsed_ms)],
+                elapsed_ms,
+                AgentType.EXERCISE_CURATOR.value,
+            )
+            await self._send(chat_id, message_thread_id, self._message_for_agent_error(exc.code))
+            return
+        except (ValueError, ExerciseSubmissionConflictError):
+            logger.warning("%s invalid exercise submission transition", ctx, exc_info=True)
+            await self._send(chat_id, message_thread_id, Constants.INVALID_TEXT_MESSAGE)
+            return
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        for response in reply.messages:
+            await self._send(chat_id, message_thread_id, response)
+        await self._record_token_usage(
+            ctx,
+            chat_id,
+            None,
+            reply.token_usages,
+            elapsed_ms,
+            AgentType.EXERCISE_CURATOR.value,
+        )
 
     async def _route_free_message(
         self,

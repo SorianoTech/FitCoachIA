@@ -210,7 +210,7 @@ class ExerciseSubmissionRecord(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     message_thread_id: Mapped[int | None] = mapped_column(BigInteger)
     raw_description: Mapped[str] = mapped_column(Text, nullable=False)
-    proposal: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    proposal: Mapped[dict[str, object] | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="draft")
     model: Mapped[str] = mapped_column(String(64), nullable=False)
     duplicate_exercise_id: Mapped[int | None] = mapped_column(BigInteger)

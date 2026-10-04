@@ -14,7 +14,7 @@ class ExerciseSubmissionRepository(Protocol):
         chat_id: int,
         message_thread_id: int | None,
         raw_description: str,
-        proposal: ExerciseProposal,
+        proposal: ExerciseProposal | None,
         model: str,
         duplicate_exercise_id: int | None = None,
     ) -> ExerciseSubmission: ...
@@ -24,6 +24,14 @@ class ExerciseSubmissionRepository(Protocol):
     async def get_draft(self, chat_id: int) -> ExerciseSubmission | None: ...
 
     async def list_pending(self, limit: int = 20) -> Sequence[ExerciseSubmission]: ...
+
+    async def update_draft(
+        self,
+        chat_id: int,
+        raw_description: str,
+        proposal: ExerciseProposal | None,
+        duplicate_exercise_id: int | None = None,
+    ) -> ExerciseSubmission: ...
 
     async def set_status(
         self,

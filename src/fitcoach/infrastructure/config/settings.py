@@ -45,19 +45,22 @@ class Settings(BaseSettings):
     miniapp_url: str | None = None
     miniapp_auth_max_age_seconds: int = Field(default=86400, ge=60, le=86400)
     miniapp_admin_chat_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+    bot_telegram_exercise_admin_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
 
-    @field_validator("miniapp_admin_chat_ids", mode="before")
+    @field_validator(
+        "miniapp_admin_chat_ids", "bot_telegram_exercise_admin_ids", mode="before"
+    )
     @classmethod
     def _parse_admin_ids(cls, value: object) -> object:
         if isinstance(value, str):
             return [int(item.strip()) for item in value.split(",") if item.strip()]
         return value
 
-    @field_validator("miniapp_admin_chat_ids")
+    @field_validator("miniapp_admin_chat_ids", "bot_telegram_exercise_admin_ids")
     @classmethod
     def _validate_admin_ids(cls, values: list[int]) -> list[int]:
         if any(not 0 < value < 2**63 for value in values):
-            raise ValueError("miniapp_admin_chat_ids requiere ids positivos de chats privados")
+            raise ValueError("Los ids de administradores deben ser ids Telegram positivos")
         return sorted(set(values))
 
     @field_validator("miniapp_url")
@@ -174,6 +177,7 @@ class VectorDatabaseSettings(BaseSettings):
     )
 
     url: str
+    writer_url: str | None = None
 
 
 class EmbedderSettings(BaseSettings):

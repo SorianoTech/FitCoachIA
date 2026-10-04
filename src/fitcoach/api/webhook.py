@@ -12,6 +12,7 @@ from fitcoach.api.security import verify_telegram_secret
 from fitcoach.infrastructure.bot.telegram_bot import get_bot
 from fitcoach.infrastructure.config.settings import (
     IASettings,
+    Settings,
     UsageSettings,
     get_ia_settings,
     get_settings,
@@ -29,10 +30,16 @@ from fitcoach.infrastructure.database.postgres_training_repository import Postgr
 from fitcoach.infrastructure.database.postgres_workout_repository import PostgresWorkoutRepository
 from fitcoach.infrastructure.database.session import get_session
 from fitcoach.infrastructure.ia.embedder_client import EmbedderClient, get_embedder_client
+from fitcoach.infrastructure.vectordb.pgvector_exercise_publisher import (
+    PgVectorExercisePublisher,
+)
 from fitcoach.infrastructure.vectordb.pgvector_exercise_repository import (
     PgVectorExerciseRepository,
 )
-from fitcoach.infrastructure.vectordb.session import get_vector_session
+from fitcoach.infrastructure.vectordb.session import (
+    get_vector_session,
+    get_vector_writer_session,
+)
 from fitcoach.service.agent.exercise_curator_chain import (
     ExerciseCuratorChain,
     get_exercise_curator_chain,
@@ -46,6 +53,7 @@ from fitcoach.service.agent.training_adaptation_chain import (
     get_training_adaptation_chain,
 )
 from fitcoach.service.conversation_service import ConversationService
+from fitcoach.service.exercise_moderation_service import ExerciseModerationService
 from fitcoach.service.exercise_submission_service import ExerciseSubmissionService
 from fitcoach.service.quota_service import QuotaService
 from fitcoach.service.training_service import TrainingService
@@ -119,6 +127,25 @@ def get_exercise_submission_service(
     )
 
 
+def get_exercise_moderation_service(
+    session: AsyncSession = Depends(get_session),
+    vector_writer_session: AsyncSession | None = Depends(get_vector_writer_session),
+    embedder: EmbedderClient = Depends(get_embedder_client),
+    settings: Settings = Depends(get_settings),
+) -> ExerciseModerationService:
+    publisher = (
+        PgVectorExercisePublisher(vector_writer_session)
+        if vector_writer_session is not None
+        else None
+    )
+    return ExerciseModerationService(
+        PostgresExerciseSubmissionRepository(session),
+        embedder,
+        publisher,
+        set(settings.bot_telegram_exercise_admin_ids),
+    )
+
+
 def get_conversation_service(
     bot: Bot = Depends(get_bot),
     interviewer: InterviewerChain = Depends(get_interviewer_chain),
@@ -130,6 +157,9 @@ def get_conversation_service(
     adaptation: TrainingAdaptationChain = Depends(get_training_adaptation_chain),
     quotas: QuotaService = Depends(get_quota_service),
     exercise_submissions: ExerciseSubmissionService = Depends(get_exercise_submission_service),
+    exercise_moderation: ExerciseModerationService = Depends(
+        get_exercise_moderation_service
+    ),
 ) -> ConversationService:
     return ConversationService(
         bot=bot,
@@ -145,6 +175,7 @@ def get_conversation_service(
             repository, trainer_deps, usage_settings, session, adaptation, quotas
         ),
         exercise_submissions=exercise_submissions,
+        exercise_moderation=exercise_moderation,
     )
 
 

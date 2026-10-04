@@ -158,5 +158,8 @@ class ExerciseSubmissionService:
             f"Objetivo: {proposal.target} ({proposal.muscle_group})\n"
             f"Material: {proposal.equipment}\n"
             f"Secundarios: {secondary}\n"
-            f"Instrucciones: {proposal.instructions_en}"
+            f"Instrucciones: {proposal.instructions_en}\n"
+            f"Calidad IA: {proposal.quality.validity} "
+            f"({proposal.quality.confidence:.0%})\n"
+            f"Motivo: {proposal.quality.rationale}"
         )

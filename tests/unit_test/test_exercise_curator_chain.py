@@ -23,6 +23,12 @@ def proposal_payload() -> dict[str, object]:
             "target": "lats",
             "secondary_muscles": ["biceps"],
             "instructions_en": "Hold the backpack securely, hinge forward, and row toward the torso.",
+            "quality": {
+                "validity": "valid",
+                "confidence": 0.91,
+                "rationale": "It is a coherent loaded horizontal pulling movement.",
+                "safety_notes": ["Keep the spine neutral and secure the backpack."],
+            },
         },
     }
 
@@ -37,6 +43,7 @@ async def test_proposes_a_strict_validated_exercise() -> None:
     assert reply.turn.status == "proposal"
     assert reply.turn.proposal is not None
     assert reply.turn.proposal.target == "lats"
+    assert reply.turn.proposal.quality.validity == "valid"
     messages = model.ainvoke.await_args.args[0]
     assert isinstance(messages[0], SystemMessage)
     assert "Allowed equipment:" in messages[0].content

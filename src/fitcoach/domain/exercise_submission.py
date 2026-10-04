@@ -35,6 +35,21 @@ class ExerciseSubmissionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ExerciseQualityAssessment(BaseModel):
+    """Model-generated review aid; moderators remain the final authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    validity: Literal["valid", "uncertain", "invalid"] = "uncertain"
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    rationale: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
+    ] = "Pending model assessment."
+    safety_notes: list[
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    ] = Field(default_factory=list, max_length=5)
+
+
 class ExerciseProposal(BaseModel):
     """Canonical fields accepted by the existing exercise catalogue."""
 
@@ -47,6 +62,7 @@ class ExerciseProposal(BaseModel):
     target: ShortText
     secondary_muscles: list[ShortText] = Field(max_length=8)
     instructions_en: InstructionText
+    quality: ExerciseQualityAssessment = Field(default_factory=ExerciseQualityAssessment)
 
     @field_validator("equipment")
     @classmethod

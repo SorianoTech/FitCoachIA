@@ -41,6 +41,7 @@ from fitcoach.service.agent import agent_factory
 from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
 from fitcoach.service.agent.trainer_chain import TrainerChain
+from fitcoach.service.exercise_moderation_service import ExerciseModerationService
 from fitcoach.service.exercise_submission_service import ExerciseSubmissionService
 from fitcoach.service.training_service import TrainingService
 from fitcoach.service.training_view import persistent_keyboard
@@ -113,6 +114,7 @@ class ConversationService:
         training_service: TrainingService | None = None,
         quota_resolver: Callable[[int], Awaitable[UsageLimits]] | None = None,
         exercise_submissions: ExerciseSubmissionService | None = None,
+        exercise_moderation: ExerciseModerationService | None = None,
     ) -> None:
         self._bot = bot
         self._interviewer = interviewer
@@ -128,6 +130,7 @@ class ConversationService:
         self._training_service = training_service
         self._quota_resolver = quota_resolver
         self._exercise_submissions = exercise_submissions
+        self._exercise_moderation = exercise_moderation
 
     async def handle_update(self, update: Update) -> None:
         """Procesa un update y contesta al usuario. Nunca propaga excepciones.
@@ -230,10 +233,28 @@ class ConversationService:
             span.set_attribute("chat_id", chat_id)
             span.set_attribute("command", command.name if command is not None else "none")
 
+            if self._exercise_moderation is not None and command in {
+                Commands.REVIEW_EXERCISES,
+                Commands.APPROVE_EXERCISE,
+                Commands.REJECT_EXERCISE,
+            }:
+                await self._exercise_moderation_response(
+                    chat_id,
+                    message_thread_id,
+                    telegram_user_id(message),
+                    input_text,
+                )
+                return
+
             if self._exercise_submissions is not None and (
                 command == Commands.ADD_EXERCISE
-                or await self._exercise_submissions.has_draft(chat_id)
-                or (command is None and self._exercise_submissions.is_natural_intent(input_text))
+                or (
+                    command is None
+                    and (
+                        await self._exercise_submissions.has_draft(chat_id)
+                        or self._exercise_submissions.is_natural_intent(input_text)
+                    )
+                )
             ):
                 await self._exercise_submission_response(
                     ctx,
@@ -293,6 +314,12 @@ class ConversationService:
                     await self._generate_plan(ctx, chat_id, message_thread_id, input_text)
                 case Commands.ADD_EXERCISE:
                     await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
+                case (
+                    Commands.REVIEW_EXERCISES
+                    | Commands.APPROVE_EXERCISE
+                    | Commands.REJECT_EXERCISE
+                ):
+                    await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
                 case Commands.DOUBTS | Commands.PROGRESS:
                     # TODO: route to the doubts/Q&A and progress-tracking flows
                     logger.info(f"{ctx} opcion todavia no implementada")
@@ -301,6 +328,34 @@ class ConversationService:
                     await self._route_free_message(
                         ctx, chat_id, message_thread_id, input_text, span
                     )
+
+    async def _exercise_moderation_response(
+        self,
+        chat_id: int,
+        message_thread_id: int | None,
+        actor_user_id: int,
+        input_text: str,
+    ) -> None:
+        if self._exercise_moderation is None:
+            return
+        try:
+            reply = await self._exercise_moderation.handle(actor_user_id, input_text)
+        except AgentError as exc:
+            await self._send(
+                chat_id, message_thread_id, self._message_for_agent_error(exc.code)
+            )
+            return
+        except ExerciseSubmissionConflictError:
+            await self._send(chat_id, message_thread_id, Constants.EXERCISE_MODERATION_USAGE)
+            return
+        for response in reply.messages:
+            await self._send(chat_id, message_thread_id, response)
+        if reply.notification is not None:
+            await self._send(
+                reply.notification.chat_id,
+                reply.notification.thread_id,
+                reply.notification.text,
+            )
 
     async def _exercise_submission_response(
         self,

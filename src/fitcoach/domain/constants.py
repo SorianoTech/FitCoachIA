@@ -80,6 +80,24 @@ Tu nueva vida te espera, ¡Adelante!
         "\n\nPosible duplicado del ejercicio #{id}: {name} ({similarity:.0%} de similitud). "
         "Puedes confirmarlo igualmente para que lo revise un moderador."
     )
+    EXERCISE_MODERATION_FORBIDDEN: Final = "No tienes permisos para moderar ejercicios."
+    EXERCISE_MODERATION_EMPTY: Final = "No hay propuestas pendientes."
+    EXERCISE_MODERATION_USAGE: Final = (
+        "Usa /approve_exercise ID o /reject_exercise ID MOTIVO."
+    )
+    EXERCISE_MODERATION_PUBLISHER_UNAVAILABLE: Final = (
+        "La publicación en el catálogo no está configurada."
+    )
+    EXERCISE_MODERATION_APPROVED: Final = (
+        "Propuesta #{submission_id} aprobada y publicada como ejercicio #{exercise_id}."
+    )
+    EXERCISE_MODERATION_REJECTED: Final = "Propuesta #{submission_id} rechazada."
+    EXERCISE_SUBMISSION_APPROVED_USER: Final = (
+        "Tu propuesta «{name}» ha sido aprobada y ya forma parte del catálogo."
+    )
+    EXERCISE_SUBMISSION_REJECTED_USER: Final = (
+        "Tu propuesta «{name}» no ha sido aprobada. Motivo: {reason}"
+    )
 
     # --- Mensajes del agente entrenador ---
     NO_PROFILE_MESSAGE: Final = (

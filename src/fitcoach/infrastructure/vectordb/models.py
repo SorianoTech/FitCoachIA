@@ -8,7 +8,7 @@ no Alembic revision should ever touch them.
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, BigInteger, DateTime, Text
+from sqlalchemy import ARRAY, BigInteger, DateTime, ForeignKey, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # 384 dimensions: sentence-transformers/all-MiniLM-L6-v2, the model the loader
@@ -35,3 +35,15 @@ class ExerciseRecord(VectorBase):
     instructions_tr: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     metadata_vector: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
+
+
+class ExercisePublicationRecord(VectorBase):
+    __tablename__ = "exercise_publications"
+
+    submission_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    exercise_id: Mapped[int] = mapped_column(
+        ForeignKey("exercises.id", ondelete="RESTRICT"), nullable=False, unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default="now()"
+    )

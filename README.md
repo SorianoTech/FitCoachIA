@@ -13,6 +13,11 @@ El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquesta
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
 
+Un **curator auxiliar de ejercicios** permite proponer ampliaciones del catálogo mediante
+`/add_exercise` o lenguaje natural. Genera una propuesta estructurada, evalúa su calidad, detecta
+posibles duplicados y exige moderación humana antes de publicarla en el RAG. Ver
+[docs/exercise-catalogue-contributions.md](docs/exercise-catalogue-contributions.md).
+
 ## Stack Tecnológico y Requisitos Técnicos
 Este proyecto cumple con los estándares de desarrollo profesional exigidos en el máster:
 
@@ -50,7 +55,7 @@ FitCoachIA/
 │   │   │   ├── database/         # Conexión y setup de base de datos
 │   │   │   ├── ia/               # Clientes LLM, skills y cliente de embeddings
 │   │   │   ├── prompts/          # Plantillas de prompts por agente
-│   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
+│   │   │   └── vectordb/         # Lectura RAG y publicación moderada en pgVector
 │   │   ├── repository/           # Acceso a datos (patrón Repository)
 │   │   ├── service/              # Casos de uso y lógica de negocio
 │   │   └── main.py               # Punto de entrada de la aplicación
@@ -68,6 +73,7 @@ FitCoachIA/
 │   ├── AUTHORS.md
 │   ├── interviewer-agent.md      # Agente 1 (Secretario)
 │   ├── trainer-agent.md          # Agente 2 (Entrenador)
+│   ├── exercise-catalogue-contributions.md # Propuestas y moderación del catálogo
 │   ├── vector-db.md              # Base de datos vectorial y embeddings
 │   ├── Dockerfile-guide.md
 │   └── Makefile.md

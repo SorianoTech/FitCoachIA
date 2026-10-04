@@ -57,6 +57,30 @@ Una variable que solo esté en `env_file:` no sirve para interpolar, y al revés
 
 ## 3. Levantar cada entorno
 
+### Worker de avisos de entrenamiento
+
+Los Compose incluyen `training-reminders-dev`, `training-reminders-prod` o
+`training-reminders` (local). Reutilizan la imagen de la app, pero sobrescriben su
+entrypoint con `python -m fitcoach.infrastructure.jobs.training_reminders`: no arrancan
+FastAPI ni ejecutan migraciones. Esperan a la app saludable, que ya ha migrado el esquema.
+
+Variables opcionales: `training_reminders_enabled=false`,
+`training_reminder_interval_seconds=300` (mínimo 10) y
+`training_reminder_max_attempts=5`. Habilitar el flag solo después de migrar.
+Las fechas desconocidas de planes legacy no disparan avisos masivos.
+
+Para una comprobación de un lote acotado:
+
+```bash
+docker compose run --rm training-reminders-prod --once
+```
+
+El proceso coordina avisos con PostgreSQL, no usa Redis/Celery ni llama al modelo.
+Los logs registran entregas y fallos; los eventos guardan reintentos acotados y fallos
+permanentes. SIGTERM/SIGINT detienen el bucle y cierran las conexiones.
+`make dev-app` solo actualiza la API: para actualizar también el worker reconstruirlo
+con el Compose de desarrollo o utilizar `make dev-up`.
+
 ### Desarrollo
 
 ```bash

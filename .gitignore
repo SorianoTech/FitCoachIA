@@ -31,3 +31,7 @@ infra/vector-db/loader/resources/**
 
 # Artefactos de las ejecuciones offline de los agentes (make trainer-debug)
 runs/
+
+# Frontend compilado y dependencias locales
+frontend/node_modules/
+frontend/dist/

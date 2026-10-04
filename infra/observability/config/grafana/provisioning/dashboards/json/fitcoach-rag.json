@@ -1,0 +1,96 @@
+{
+  "uid": "fitcoach-rag", "title": "FitCoachIA - RAG y catálogo",
+  "schemaVersion": 39, "tags": ["fitcoach", "tecnicas", "rag"], "timezone": "browser",
+  "time": {"from": "now-24h", "to": "now"}, "refresh": "1m",
+  "templating": {"list": [
+    {"name": "environment", "label": "Entorno", "type": "custom", "query": "dev,prod", "current": {"text": "dev", "value": "dev"}, "includeAll": false, "multi": false}
+  ]},
+  "panels": [
+    {
+      "id": 1, "title": "A2 · Recuperaciones con excepción instrumentada (%)", "type": "stat",
+      "description": "Eventos training_latency phase=retrieval result=error / todos los eventos de esa fase. Incluye búsqueda+embeddings; vacío sin excepción es ok. NO mide degradación, catálogos vacíos ni peticiones al entrenador.",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "100 * (sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"training_latency \" |= \"phase=retrieval \" |= \"result=error \" [$__range])) or vector(0)) / sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"training_latency \" |= \"phase=retrieval \" [$__range]))"}]
+    },
+    {
+      "id": 2, "title": "Catálogos vacíos observados en generación inicial", "type": "stat",
+      "description": "Eventos de log explícitos. No extrapola a renovaciones/sustituciones ni a todas las recuperaciones.",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"el catalogo de ejercicios devolvio 0 resultados\" [$__range]))"}]
+    },
+    {
+      "id": 3, "title": "B1 · Recuperación completa p95 por acción (ms)", "type": "timeseries",
+      "description": "Instrumentación existente retrieval: incluye embeddings y búsquedas por grupo, no latencia SQL vectorial aislada. action=other incluye generación inicial sin contexto de acción específico.",
+      "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ action }} p95", "expr": "quantile_over_time(0.95, {service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"training_latency \" |= \"phase=retrieval \" | regexp `action=(?P<action>[^ ]+) phase=retrieval result=(?P<result>[^ ]+) duration_ms=(?P<duration_ms>[0-9.]+)` | result=\"ok\" | unwrap duration_ms | __error__=\"\" [$__interval]) by (action)"}]
+    },
+    {
+      "id": 4, "title": "B1 · Embeddings p95 (ms)", "type": "timeseries",
+      "description": "Fase embeddings existente. Puede estar anidada en retrieval; no sumar los percentiles.",
+      "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ action }} p95", "expr": "quantile_over_time(0.95, {service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"training_latency \" |= \"phase=embeddings \" | regexp `action=(?P<action>[^ ]+) phase=embeddings result=(?P<result>[^ ]+) duration_ms=(?P<duration_ms>[0-9.]+)` | result=\"ok\" | unwrap duration_ms | __error__=\"\" [$__interval]) by (action)"}]
+    },
+    {
+      "id": 5, "title": "B5 · Contexto aportado vs utilizado por plan", "type": "table",
+      "description": "Planes initial/renewal confirmados con traza. Porcentaje de IDs usados que pertenecen al catálogo / IDs únicos aportados. Solo planes conservados; no todos los borradores/generaciones. Swaps excluidos porque su traza contiene alternativas, no el contexto de todo el plan. Used_outside_catalogue se muestra, no se oculta ni se recorta el ratio.",
+      "gridPos": {"x": 0, "y": 13, "w": 24, "h": 9},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "WITH plans AS (SELECT p.id,p.version,p.change_kind,p.created_at,ARRAY(SELECT DISTINCT value::int FROM jsonb_array_elements_text(p.retrieved_exercise_ids::jsonb) r(value)) AS provided,ARRAY(SELECT DISTINCT (e->>'exercise_id')::int FROM jsonb_array_elements(p.plan::jsonb->'weeks') w CROSS JOIN LATERAL jsonb_array_elements(w->'days') d CROSS JOIN LATERAL jsonb_array_elements(d->'exercises') e) AS used FROM training_plans p WHERE $__timeFilter(p.created_at) AND p.change_kind IN ('initial','renewal') AND p.retrieved_exercise_ids IS NOT NULL) SELECT id AS plan_id,version,change_kind,created_at,cardinality(provided) AS provided_ids,cardinality(used) AS used_ids,(SELECT count(*) FROM unnest(used) u WHERE NOT(u=ANY(provided))) AS used_outside_catalogue,100.0*(SELECT count(*) FROM unnest(used) u WHERE u=ANY(provided))/NULLIF(cardinality(provided),0) AS context_utilization_pct FROM plans ORDER BY created_at DESC LIMIT 100"}]
+    },
+    {
+      "id": 6, "title": "Cobertura de trazas para B5", "type": "table",
+      "description": "Distingue planes elegibles con traza y legacy sin catálogo. Traza vacía no habilita un porcentaje válido.",
+      "gridPos": {"x": 0, "y": 22, "w": 12, "h": 6},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT change_kind,count(*) AS plans,count(*) FILTER (WHERE retrieved_exercise_ids IS NOT NULL AND jsonb_array_length(retrieved_exercise_ids::jsonb)>0) AS plans_with_catalogue FROM training_plans WHERE $__timeFilter(created_at) GROUP BY change_kind ORDER BY change_kind"}]
+    },
+    {
+      "id": 7, "title": "B2, B3 y B4 pendientes", "type": "text",
+      "gridPos": {"x": 12, "y": 22, "w": 12, "h": 6},
+      "options": {"mode": "markdown", "content": "**B2:** distancia del mejor resultado disponible en los nuevos logs de ranking; no se persiste en planes. Es similitud semántica, no calidad ni seguridad. **B3:** falta datasource/lectura de estadísticas pgVector y muestreo de contadores para diferencias diarias; peticiones ×7 no equivale a queries actuales (swaps/renovaciones varían). **B4:** trazas de planes no representan todas las recuperaciones ni aportan el catálogo total. No se publica porcentaje ficticio de ejercicios nunca recuperados."}
+    },
+    {
+      "id": 8, "title": "Opciones recuperadas por grupo · media", "type": "timeseries",
+      "description": "Media de count por evento RAG ranking y grupo. Incluye consultas de generación/renovación y alternativas de sustitución; no distingue acciones ni mide relevancia. Solo eventos posteriores al despliegue de las trazas.",
+      "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ group }}", "expr": "avg_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` | unwrap count | __error__=\"\" [$__interval]) by (group)"}]
+    },
+    {
+      "id": 9, "title": "Consultas sin opciones por grupo (%)", "type": "table",
+      "description": "Eventos RAG ranking con count=0 / todos los rankings del mismo grupo en el rango. No cuenta los WARNING adicionales. Sin eventos no hay porcentaje; un cero significa consultas observadas sin vacíos.",
+      "gridPos": {"x": 12, "y": 28, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "100 * (sum by (group) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` | count=\"0\" [$__range])) or on (group) (0 * sum by (group) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` [$__range])))) / on (group) sum by (group) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+)` [$__range]))"}],
+      "transformations": [{"id": "labelsToFields", "options": {"mode": "columns"}}]
+    },
+    {
+      "id": 10, "title": "Distancia del mejor resultado por grupo · media", "type": "timeseries",
+      "description": "Media de distance_min en rankings no vacíos. Distancia coseno 0–2; menor significa mayor similitud semántica, no mejor calidad ni seguridad clínica. No comparar grupos como puntuaciones de calidad ni fijar umbrales sin etiquetas. Sin resultados no se inventa una distancia.",
+      "gridPos": {"x": 0, "y": 36, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"min": 0, "max": 2, "unit": "short"}},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ group }}", "expr": "avg_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+) distance_min=(?P<distance_min>[^ ]+)` | count!=\"0\" | unwrap distance_min | __error__=\"\" [$__interval]) by (group)"}]
+    },
+    {
+      "id": 11, "title": "Últimos rankings de recuperación", "type": "table",
+      "description": "Eventos por consulta, no por plan. Fecha, grupo, opciones y distancias mínima/máxima. None significa catálogo vacío. La cantidad visible está limitada por maxLines; no representa todos los eventos del rango. No contiene perfiles, mensajes ni vectores.",
+      "gridPos": {"x": 12, "y": 36, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "range", "maxLines": 100, "expr": "{service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"RAG ranking \" | regexp `RAG ranking group=(?P<group>[^ ]+) count=(?P<count>[0-9]+) distance_min=(?P<distance_min>[0-9.eE+-]+|None) distance_max=(?P<distance_max>[0-9.eE+-]+|None)` | line_format `{\"group\":\"{{.group}}\",\"count\":\"{{.count}}\",\"distance_min\":\"{{.distance_min}}\",\"distance_max\":\"{{.distance_max}}\"}`"}],
+      "transformations": [
+        {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": true, "keepTime": true}},
+        {"id": "sortBy", "options": {"fields": {}, "sort": [{"field": "Time", "desc": true}]}}
+      ]
+    }
+  ]
+}

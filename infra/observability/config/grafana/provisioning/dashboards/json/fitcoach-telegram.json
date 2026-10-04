@@ -1,0 +1,65 @@
+{
+  "uid": "fitcoach-telegram", "title": "FitCoachIA - Telegram y backend",
+  "schemaVersion": 39, "tags": ["fitcoach", "tecnicas", "telegram"], "timezone": "browser",
+  "time": {"from": "now-24h", "to": "now"}, "refresh": "1m",
+  "templating": {"list": [
+    {"name": "environment", "label": "Entorno", "type": "custom", "query": "dev,prod", "current": {"text": "dev", "value": "dev"}, "includeAll": false, "multi": false}
+  ]},
+  "panels": [
+    {
+      "id": 1, "title": "T1 · Updates descartados sin texto (%)", "type": "stat",
+      "description": "Logs de procesamiento de mensajes, excluye callbacks y duplicados descartados antes de update recibido. Editados cuentan como updates. Sin mensajes observados: sin datos. No es tasa de error HTTP.",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "100 * (sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |~ \"update ignorado: no contiene texto|mensaje descartado: solo contenia emojis\" [$__range])) or vector(0)) / sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"update recibido\" [$__range]))"}]
+    },
+    {
+      "id": 2, "title": "T2 · Updates de mensaje observados", "type": "stat",
+      "description": "Entradas update recibido en el rango, no entregas webhook totales ni usuarios únicos. Alloy Docker solamente para no mezclar la ingesta OTLP duplicada.",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"update recibido\" [$__range]))"}]
+    },
+    {
+      "id": 3, "title": "T6 · Eventos de corte por cuota", "type": "stat",
+      "description": "Eventos cuota superada del transporte. No son fallos del proveedor ni turnos únicos; no cubre todos los cortes internos del entrenamiento.",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"cuota superada:\" [$__range]))"}]
+    },
+    {
+      "id": 4, "title": "T2 · Entrantes por ventana móvil de 24 h", "type": "timeseries",
+      "description": "Cada punto suma las 24 horas previas. NO son días de calendario ni buckets disjuntos. Depende de retención/cobertura de Loki.",
+      "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "Updates / 24 h", "expr": "sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"update recibido\" [24h]))"}]
+    },
+    {
+      "id": 5, "title": "T4 · Comandos y texto libre por ventana móvil de 24 h", "type": "timeseries",
+      "description": "Commands.TRAIN incluye subacciones y botones de navegación traducidos a comandos; None es texto libre. Cuenta solicitudes registradas, incluidas bloqueadas; no acciones terminadas.",
+      "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "{{ command }}", "expr": "sum by (command) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"comando=\" | regexp `comando=(?P<command>Commands\\.[A-Z]+|None)` | command!=\"\" [24h]))"}]
+    },
+    {
+      "id": 6, "title": "T6 · Eventos de error y descarte (no turnos únicos)", "type": "timeseries",
+      "description": "Un update puede producir varios logs, por eso no se publica % de turnos fallidos. Una advertencia no implica necesariamente error enviado al usuario.",
+      "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "range", "legendFormat": "Eventos", "expr": "sum(count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |~ \"fallo al invocar|error inesperado procesando|respuesta vacia|fallo recuperando ejercicios|controlled training error|controlled callback error|catalogo de ejercicios devolvio 0\" [$__interval]))"}]
+    },
+    {
+      "id": 7, "title": "T2 · Media de updates por usuario observado", "type": "stat",
+      "description": "Media en el rango entre usuarios identificables en logs update recibido. No incluye usuarios sin actividad ni callbacks.",
+      "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "queryType": "instant", "expr": "avg(sum by (telegram_user_id) (count_over_time({service_name=\"fitcoach-ia\",environment=\"$environment\"} |= \"update recibido\" | regexp `telegram_user_id=(?P<telegram_user_id>[0-9]+)` | telegram_user_id!=\"\" [$__range])))"}]
+    },
+    {
+      "id": 8, "title": "Límites de la medición", "type": "text",
+      "gridPos": {"x": 0, "y": 21, "w": 24, "h": 5},
+      "options": {"mode": "markdown", "content": "**T2 salientes:** no hay evento fiable de envío; no se estima desde mensajes de conversación. **T3 latencia por turno:** existe el span conversation.turn, pero no un histograma Prometheus de turnos; no se confunde con latencia LLM. **T6 porcentaje de turnos fallidos:** falta resultado único por update. Loki conserva 14 días; un rango mayor puede ser parcial. Estos paneles no muestran el contenido de mensajes."}
+    }
+  ]
+}

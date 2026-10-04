@@ -25,6 +25,7 @@ from pydantic import BaseModel, ValidationError
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.conversation import ConversationMessage
 from fitcoach.domain.token_usage import TokenUsage
+from fitcoach.infrastructure.observability.latency import latency_phase
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,8 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
     async def _invoke(self, messages: list[BaseMessage]) -> LLMResult:
         started = time.perf_counter()
         try:
-            response = await self._model.ainvoke(messages)
+            with latency_phase("llm", model=self._model_name):
+                response = await self._model.ainvoke(messages)
         except Exception as exc:
             error = self._error_for_exception(exc)
             error.token_usages = [self._usage_from_exception(exc, error.code, started)]
@@ -114,7 +116,8 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
         logger.debug("%s result: %s", turn_type.__name__, result.content)
         token_usages = [result.usage] if result.usage is not None else []
         try:
-            return validate(result.content), token_usages
+            with latency_phase("validation"):
+                return validate(result.content), token_usages
         except ValidationError as validation_error:
             logger.debug(
                 "%s result invalid; raw model output: %s", turn_type.__name__, result.content
@@ -127,9 +130,10 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
 
         logger.debug("%s result was invalid; requesting a repair", turn_type.__name__)
         try:
-            repair = await self._invoke(
-                self._repair_messages(messages, result.content, turn_type, repair_hint)
-            )
+            with latency_phase("repair"):
+                repair = await self._invoke(
+                    self._repair_messages(messages, result.content, turn_type, repair_hint)
+                )
         except AgentError as error:
             error.token_usages = [*token_usages, *error.token_usages]
             raise
@@ -137,7 +141,8 @@ class BaseLLMChain:  # noqa: B903 - base class for subclasses, not a data holder
             token_usages.append(repair.usage)
         logger.debug("%s repair result: %s", turn_type.__name__, repair.content)
         try:
-            return validate(repair.content), token_usages
+            with latency_phase("validation"):
+                return validate(repair.content), token_usages
         except ValidationError as repair_error:
             if repair.usage is not None:
                 token_usages[-1] = replace(repair.usage, status=AgentErrorCode.INVALID_OUTPUT.value)

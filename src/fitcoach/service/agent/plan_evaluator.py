@@ -19,8 +19,14 @@ from enum import StrEnum
 from typing import Any
 
 from fitcoach.domain.exercise import Exercise
+from fitcoach.domain.exercise_catalogue import (
+    MUSCLE_TARGETS,
+    available_equipment,
+    normalize_equipment,
+)
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.trainer_plan import (
+    RPE_CAPS,
     PlannedExercise,
     TrainerTurn,
     TrainingPlan,
@@ -34,7 +40,6 @@ COOLDOWN_MINUTES = 5
 WORKING_SECONDS_PER_SET = 40
 # The formula is an estimate: only flag sessions clearly over the client's budget.
 TIME_FORMULA_TOLERANCE = 1.15
-RPE_CAPS = {1: 8.0, 3: 9.0, 4: 6.0}
 DELOAD_RANGE = (0.4, 0.7)
 ERROR_PENALTY = 15
 WARNING_PENALTY = 3
@@ -44,15 +49,7 @@ GOAL_REPS = {"lose_fat": (8, 20), "gain_muscle": (5, 15), "performance": (1, 10)
 GOAL_REST = {"lose_fat": (30, 90), "gain_muscle": (60, 240), "performance": (90, 300)}
 
 # Exercise ``target`` values in the corpus, grouped the way a split talks about them.
-MUSCLE_GROUPS: dict[str, frozenset[str]] = {
-    "chest": frozenset({"pectorals"}),
-    "back": frozenset({"lats", "upper back", "traps", "spine"}),
-    "legs": frozenset({"quads", "hamstrings", "glutes", "calves", "adductors", "abductors"}),
-    "shoulders": frozenset({"delts"}),
-    "arms": frozenset({"biceps", "triceps", "forearms"}),
-    "core": frozenset({"abs", "serratus anterior"}),
-    "cardio": frozenset({"cardiovascular system"}),
-}
+MUSCLE_GROUPS = MUSCLE_TARGETS
 ESSENTIAL_GROUPS = ("chest", "back", "legs")
 
 # Injury location keywords -> exercise-name patterns that usually conflict with it.
@@ -178,6 +175,7 @@ def evaluate_plan(
     checks = (
         _check_profile_echo,
         _check_names,
+        _check_equipment,
         _check_days,
         _check_volume,
         _check_periodization,
@@ -192,6 +190,38 @@ def evaluate_plan(
         check(evaluation, plan, profile, by_id)
     evaluation.metrics.update(_metrics(plan, profile, by_id))
     return evaluation
+
+
+def evaluate_constraints(
+    plan: TrainingPlan, profile: InterviewerProfile, catalogue: Sequence[Exercise]
+) -> PlanEvaluation:
+    """Only exact identity, availability, profile and declared session constraints."""
+    evaluation = PlanEvaluation()
+    by_id = {exercise.id: exercise for exercise in catalogue}
+    for check in (_check_profile_echo, _check_names, _check_equipment, _check_days):
+        check(evaluation, plan, profile, by_id)
+    return evaluation
+
+
+def _check_equipment(
+    evaluation: PlanEvaluation,
+    plan: TrainingPlan,
+    profile: InterviewerProfile,
+    by_id: dict[int, Exercise],
+) -> None:
+    available = available_equipment(profile.training.equipment)
+    for where, item in _exercises(plan):
+        exercise = by_id.get(item.exercise_id)
+        if exercise is not None and (
+            not exercise.equipment or normalize_equipment(exercise.equipment) not in available
+        ):
+            _add(
+                evaluation,
+                "unavailable_equipment",
+                Severity.ERROR,
+                f"Exercise {item.exercise_id} requires unconfirmed equipment",
+                where,
+            )
 
 
 def _add(
@@ -301,7 +331,7 @@ def _check_days(
                     f"estimated_minutes={day.estimated_minutes} > minutes_per_session={budget}",
                     where,
                 )
-            formula = _formula_minutes(day.exercises)
+            formula = estimate_session_minutes(day.exercises)
             if formula > budget * TIME_FORMULA_TOLERANCE:
                 _add(
                     evaluation,
@@ -581,7 +611,7 @@ def _metrics(
         "week1_sets_per_target": dict(sorted(week1_targets.items())),
         "tolerable_volume_sets": profile.initial_calculations.tolerable_volume_sets,
         "max_estimated_minutes": max(day.estimated_minutes for day in days),
-        "max_formula_minutes": round(max(_formula_minutes(day.exercises) for day in days)),
+        "max_formula_minutes": round(max(estimate_session_minutes(day.exercises) for day in days)),
         "minutes_per_session": profile.commitment.minutes_per_session,
         "exercises_per_day": round(sum(len(day.exercises) for day in days) / len(days), 1),
         "distinct_exercises": len(plan.exercise_ids()),
@@ -625,7 +655,7 @@ def _groups_of(exercises: Iterable[Exercise]) -> list[str]:
     return groups
 
 
-def _formula_minutes(exercises: Sequence[PlannedExercise]) -> float:
+def estimate_session_minutes(exercises: Sequence[PlannedExercise]) -> float:
     """The skill's formula: warm-up + Σ sets × (work + rest) + cool-down."""
     work = sum(ex.sets * (WORKING_SECONDS_PER_SET + ex.rest_seconds) for ex in exercises)
     return WARMUP_MINUTES + work / 60 + COOLDOWN_MINUTES

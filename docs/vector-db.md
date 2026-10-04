@@ -2,10 +2,12 @@
 
 El catálogo de ejercicios vive en una instancia de PostgreSQL con la extensión
 [pgvector](https://github.com/pgvector/pgvector), separada de la base de datos de la aplicación.
-El agente [`trainer`](trainer-agent.md) la consulta para construir sus planes.
+El agente [`trainer`](trainer-agent.md) la consulta para construir sus planes. La recuperación
+normal utiliza un rol de solo lectura; la publicación de ejercicios aprobados utiliza otro rol con
+permisos de inserción limitados.
 
-La aplicación **solo lee** de esta base de datos. No hay migraciones de Alembic que la toquen: su
-esquema y sus datos los define `infra/vector-db/ddl/`.
+No hay migraciones de Alembic que administren esta base de datos: su esquema, datos y roles los
+define `infra/vector-db/ddl/`.
 
 ## Esquema
 
@@ -59,6 +61,24 @@ para cuando el plan se entregue con material visual.
 Como red de seguridad, el `embedder` no arranca si su modelo no produce 384 dimensiones, y
 `EmbedderClient` rechaza cualquier vector cuya dimensión no coincida.
 
+### Altas incrementales
+
+Añadir un ejercicio aprobado no reconstruye el corpus completo:
+
+1. La aplicación compone sus metadatos semánticos con el mismo formato que usó el cargador.
+2. El `embedder` genera únicamente el vector de ese ejercicio.
+3. El rol `fitcoach_writer` inserta la fila en `exercises` junto a su `metadata_vector`.
+4. El índice HNSW incorpora la nueva fila automáticamente y las siguientes consultas RAG pueden
+   recuperarla sin reiniciar pgVector ni regenerar el volcado inicial.
+
+La aprobación vuelve a generar el vector definitivo aunque la detección de duplicados haya usado
+antes un embedding temporal. De este modo, la publicación no depende de datos transitorios ni de
+que la aplicación haya permanecido activa desde la creación del borrador.
+
+Solo hay que re-vectorizar todo el catálogo si cambia el modelo, la dimensionalidad o el formato de
+metadatos del corpus. Modificar en el futuro los campos vectorizados de un ejercicio publicado
+exigiría regenerar el embedding de esa fila.
+
 ### Texto de consulta
 
 El cargador vectorizó, por cada ejercicio, un texto con esta forma:
@@ -67,8 +87,49 @@ El cargador vectorizó, por cada ejercicio, un texto con esta forma:
 name: ... | category: ... | body_part: ... | equipment: ... | muscle_group: ... | target: ... | secondary_muscles: ...
 ```
 
-`build_query_text()` en `src/fitcoach/service/agent/rag_context.py` reproduce ese formato. Si se
-modifica uno, hay que modificar el otro.
+`build_query_text()` conserva el formato de metadatos, pero usa targets anatómicos
+(`pectorals`, `lats`, etc.) y equipamiento confirmado. No coloca objetivos deportivos en
+`target` ni entornos como `gym` en `category`, porque no tienen el mismo significado.
+Cambiar el texto del corpus exige re-vectorizarlo; cambiar la consulta no.
+
+### Clasificación y disponibilidad
+
+El campo original `muscle_group` del volcado no es una clasificación fiable del músculo
+principal. La aplicación deriva el grupo canónico a partir de `target`, usando el mapa
+compartido en `domain/exercise_catalogue.py`. No modifica registros ni embeddings.
+Targets no clasificados conservan sus metadatos, pero no entran en la recuperación por
+grupo; una fuente nueva debe revisar su vocabulario antes de incorporarse.
+
+La búsqueda general filtra por los targets del grupo y por el material declarado,
+añadiendo peso corporal. La misma disponibilidad se aplica en gimnasio, casa, exterior
+y entorno mixto, tanto al primer plan como a renovaciones y sustituciones. No se
+presupone que un gimnasio tenga cualquier aparato. Material desconocido requiere
+aclaración; no se amplía el filtro automáticamente.
+
+`band` y `resistance band` se consideran equivalentes. Las búsquedas admiten ambos valores
+del corpus y la representación de dominio devuelve `resistance band`. Aparatos distintos,
+como barra EZ, barra olímpica y barra convencional, no se convierten automáticamente
+en equivalentes. Las sustituciones conservan el mismo `target`, sin exigir el
+`muscle_group` original potencialmente incorrecto.
+
+### Trazas de recuperación
+
+`search_scored()` devuelve `ExerciseMatch` con distancia coseno y similitud
+(`1 - distancia`). `search()` conserva la respuesta de ejercicios sin puntuación.
+El orden es distancia ascendente e ID como desempate. Vectores de consulta nulos,
+no finitos o con dimensión incorrecta se rechazan explícitamente.
+
+`ExerciseRetriever.retrieve_traced()` expone por grupo los filtros y las coincidencias
+en orden, además de la unión deduplicada. La traza es local a la petición; no se guarda
+en los planes ni contiene perfiles, consultas libres o vectores.
+En INFO se registra `RAG ranking` con grupo, cantidad y distancias mínima/máxima.
+Grupos vacíos generan un WARNING. No se registran perfiles ni razones de sustitución.
+
+Estos datos son diagnósticos, no probabilidades de relevancia ni garantías clínicas.
+No se aplica un umbral de similitud. La evaluación etiquetada de
+[calidad de recuperación](plan/rag-retrieval-quality.md) sigue pendiente.
+Los filtros SQL limitan los resultados admisibles; el orden físico de ejecución y
+la cobertura de una búsqueda HNSW filtrada dependen del planificador y deben medirse.
 
 ## Servicio `embedder`
 
@@ -108,17 +169,28 @@ La primera vez, el contenedor aplica en orden alfabético todo lo que hay en
 | --- | --- |
 | `001_2026-09-18_Initial-exercises-load_part-01..08.sql` | Volcado inicial, troceado para respetar el límite de 100 MB por fichero de GitHub. |
 | `002_2026-09-21_readonly-role.sql` | Rol `fitcoach_ro`, de solo lectura, que usa la aplicación. |
+| `003_2026-10-04_exercise-writer.sql` | Tabla idempotente de publicaciones, ajuste de secuencia y rol restringido `fitcoach_writer`. |
 
 pgAdmin queda disponible en el puerto que indique `PGADMIN_PORT` (8010 por defecto).
 
-## Acceso de solo lectura
+## Roles de acceso
 
-La aplicación se conecta con `fitcoach_ro`, no con el rol `fitcoach` del volcado (que es
+La recuperación se conecta con `fitcoach_ro`, no con el rol `fitcoach` del volcado (que es
 `SUPERUSER`). La contraseña sale de `VECTOR_DB_RO_PASSWORD` al inicializar el contenedor:
 
 ```dotenv
-vector_db_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
+vector_database_url=postgresql+asyncpg://fitcoach_ro:<secreto>@pgvector:5432/fitcoach
 ```
+
+La publicación moderada usa `fitcoach_writer`, cuya contraseña se configura mediante
+`VECTOR_DB_WRITER_PASSWORD` y se referencia desde la aplicación:
+
+```dotenv
+vector_database_writer_url=postgresql+asyncpg://fitcoach_writer:<secreto>@pgvector:5432/fitcoach
+```
+
+Este rol puede insertar únicamente las columnas necesarias de `exercises`, utilizar su secuencia y
+leer o insertar en `exercise_publications`. No puede actualizar ni borrar libremente el catálogo.
 
 > **Rotación pendiente:** el volcado inicial incluye el hash SCRAM del rol `fitcoach` en el
 > repositorio. No es texto plano, pero es atacable offline. Conviene rotar esa contraseña en los

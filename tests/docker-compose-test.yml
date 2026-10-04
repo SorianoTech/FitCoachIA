@@ -1,7 +1,25 @@
 name: fitcoach-test
 
 services:
+  training-reminders:
+    profiles: ["reminders"]
+    image: fitcoachia/fitcoach-test:local
+    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
+    environment:
+      - bot_telegram_token=test-token
+      - bot_telegram_url=http://test-stubs:9999/bot
+      - bot_telegram_commands=start:Inicia FitCoach
+      - bot_telegram_secret_token=test-secret-token
+      - bot_telegram_webhook_base_url=https://test.url.domain.com
+      - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
+      - training_reminders_enabled=true
+      - training_reminder_interval_seconds=10
+    depends_on:
+      fitcoach-ia:
+        condition: service_healthy
+
   fitcoach-ia:
+    image: fitcoachia/fitcoach-test:local
     build:
       context: ..
       dockerfile: src/Dockerfile
@@ -17,11 +35,13 @@ services:
       - ia_token=test-token
       - ia_model=test-model
       - ia_temperature=0.5
-      # Con 10 ejercicios en el fixture, top_k alto devuelve el corpus entero.
+      # Limite por grupo; los filtros de target y material siguen siendo obligatorios.
       - ia_rag_top_k=10
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
       - vector_database_url=postgresql+asyncpg://fitcoach_ro:fitcoach_ro_dev@pgvector-test:5432/fitcoach
+      - vector_database_writer_url=postgresql+asyncpg://fitcoach_writer:fitcoach_writer_dev@pgvector-test:5432/fitcoach
       - embedder_url=http://test-stubs:9999
+      - bot_telegram_exercise_admin_ids=9001
       - bot_telegram_secret_token=test-secret-token
       - bot_telegram_webhook_base_url=https://test.url.domain.com
       # Las rate_limit_* se omiten a proposito: son opcionales y ningun test de
@@ -49,6 +69,7 @@ services:
       POSTGRES_DB: fitcoach
       POSTGRES_PASSWORD: fitcoach
       POSTGRES_USER: fitcoach
+      VECTOR_DB_WRITER_PASSWORD: fitcoach_writer_dev
     # Publicado para que los tests puedan comprobar lo que se persistio.
     ports:
       - "${IT_DB_PORT:-55432}:5432"

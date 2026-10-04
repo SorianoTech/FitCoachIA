@@ -33,8 +33,35 @@ async def get_vector_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+@lru_cache
+def get_vector_writer_engine() -> AsyncEngine | None:
+    writer_url = get_vector_database_settings().writer_url
+    return create_async_engine(writer_url, pool_pre_ping=True) if writer_url else None
+
+
+@lru_cache
+def get_vector_writer_session_factory() -> async_sessionmaker[AsyncSession] | None:
+    engine = get_vector_writer_engine()
+    return async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
+
+
+async def get_vector_writer_session() -> AsyncIterator[AsyncSession | None]:
+    factory = get_vector_writer_session_factory()
+    if factory is None:
+        yield None
+        return
+    async with factory() as session:
+        yield session
+
+
 async def close_vector_database() -> None:
     if get_vector_engine.cache_info().currsize:
         await get_vector_engine().dispose()
     get_vector_session_factory.cache_clear()
     get_vector_engine.cache_clear()
+    if get_vector_writer_engine.cache_info().currsize:
+        writer_engine = get_vector_writer_engine()
+        if writer_engine is not None:
+            await writer_engine.dispose()
+    get_vector_writer_session_factory.cache_clear()
+    get_vector_writer_engine.cache_clear()

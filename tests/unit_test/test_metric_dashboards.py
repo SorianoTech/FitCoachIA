@@ -13,6 +13,7 @@ METRIC_FILES = [
     "fitcoach-telegram.json",
     "fitcoach-agents.json",
     "fitcoach-rag.json",
+    "fitcoach-exercise-moderation.json",
 ]
 
 
@@ -34,8 +35,10 @@ def test_dashboards_have_distinct_panels_and_environment_scoped_sources(filename
         for target in panel["targets"]:
             if datasource["type"] == "postgres":
                 assert datasource["uid"] == "fitcoach-postgres-${environment}"
-                assert "$__timeFilter(" in target["rawSql"]
                 assert "SELECT" in target["rawSql"]
+                if "$__timeFilter(" not in target["rawSql"]:
+                    assert "status='pending'" in target["rawSql"]
+                    assert "actual" in panel["description"].lower()
             else:
                 assert 'environment="$environment"' in target["expr"]
                 assert datasource["uid"] == "loki"
@@ -71,3 +74,21 @@ def test_rag_rankings_do_not_present_similarity_as_quality() -> None:
     assert "no mejor calidad" in panels[10]["description"]
     assert "thresholds" not in panels[10]["fieldConfig"]["defaults"]
     assert panels[11]["targets"][0]["maxLines"] == 100
+
+
+def test_exercise_moderation_dashboard_exposes_backlog_without_personal_data() -> None:
+    dashboard = json.loads((DASHBOARDS / "fitcoach-exercise-moderation.json").read_text())
+    panels = {panel["id"]: panel for panel in dashboard["panels"]}
+    queue_sql = panels[4]["targets"][0]["rawSql"]
+    assert "status='pending'" in queue_sql
+    assert "ORDER BY created_at,id LIMIT 100" in queue_sql
+    assert "chat_id" not in queue_sql
+    assert "raw_description" not in queue_sql
+    assert "ai_validity" in queue_sql
+    assert "duplicate_exercise_id" in queue_sql
+    for panel_id in (1, 2, 3, 4, 5):
+        assert "$__timeFilter(" not in panels[panel_id]["targets"][0]["rawSql"]
+    for panel_id in (6, 7, 8):
+        assert "$__timeFilter(reviewed_at)" in panels[panel_id]["targets"][0]["rawSql"]
+    assert "/approve_exercise ID" in panels[9]["options"]["content"]
+    assert "/reject_exercise ID MOTIVO" in panels[9]["options"]["content"]

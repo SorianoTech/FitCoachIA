@@ -161,12 +161,12 @@ tiempo» del dashboard.
 
 ## 4. Qué se puede visualizar en Grafana
 
-Además de la vista general, se provisionan cinco dashboards independientes:
+Además de la vista general, se provisionan seis dashboards independientes:
 **Negocio y activación**, **Entrevistas**, **Telegram y backend**, **Agentes y LLM**
-y **RAG y catálogo**. Cada uno tiene selector único `environment=dev|prod` que
-selecciona el datasource SQL y los logs del mismo entorno. Los paneles explican
-su denominador, cobertura y limitaciones; los KPIs sin datos fiables quedan
-pendientes, no se sustituyen por cifras engañosas.
+y **RAG y catálogo**, además de **Moderación de ejercicios**. Cada uno tiene selector
+único `environment=dev|prod` que selecciona el datasource SQL y los logs del mismo
+entorno. Los paneles explican su denominador, cobertura y limitaciones; los KPIs sin
+datos fiables quedan pendientes, no se sustituyen por cifras engañosas.
 Detalle y matriz de métricas:
 [metricas-negogio-y-tecnicas.md](plan/metricas-negogio-y-tecnicas.md).
 Los nuevos paneles Loki usan exclusivamente la etiqueta `environment` de Alloy
@@ -182,6 +182,13 @@ menor distancia implica mayor similitud semántica, no calidad ni seguridad.
 Solo hay datos desde el despliegue de las trazas; se aplica la retención de Loki.
 No se requieren DEBUG, migraciones ni cambios de negocio. Grafana recarga los JSON
 provisionados automáticamente; estos paneles no modifican planes ni cuotas.
+
+**Moderación de ejercicios** consulta `exercise_submissions` directamente desde el
+PostgreSQL del entorno seleccionado. Muestra la cola pendiente completa, antigüedad,
+posibles duplicados, valoración del curator y métricas históricas de aprobación,
+rechazo y tiempo de revisión. No expone IDs de Telegram ni descripciones originales.
+Es un dashboard de solo lectura: aprobar y rechazar continúa requiriendo los comandos
+administrativos del bot.
 
 Dashboard provisionado: **FitCoachIA - Conversaciones**
 (`infra/observability/config/grafana/provisioning/dashboards/json/fitcoach-conversations.json`),

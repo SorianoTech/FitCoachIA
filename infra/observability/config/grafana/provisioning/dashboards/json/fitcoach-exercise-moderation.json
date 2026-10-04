@@ -1,0 +1,271 @@
+{
+  "uid": "fitcoach-exercise-moderation",
+  "title": "FitCoachIA - Moderación de ejercicios",
+  "schemaVersion": 39,
+  "tags": [
+    "fitcoach",
+    "ejercicios",
+    "moderacion"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "Entorno",
+        "type": "custom",
+        "query": "dev,prod",
+        "current": {
+          "text": "dev",
+          "value": "dev"
+        },
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pendientes actuales",
+      "type": "stat",
+      "description": "Tamaño completo de la cola actual, sin limitarla al rango temporal del dashboard. Incluye únicamente propuestas confirmadas por el usuario y todavía no revisadas.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS pending_submissions FROM exercise_submissions WHERE status='pending'"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Antigüedad máxima pendiente",
+      "type": "stat",
+      "description": "Horas transcurridas desde la creación de la propuesta pendiente más antigua de la cola actual. No aplica el rango temporal para no ocultar propuestas antiguas.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT extract(epoch FROM now()-min(created_at))/3600.0 AS oldest_pending_hours FROM exercise_submissions WHERE status='pending'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Posibles duplicados pendientes",
+      "type": "stat",
+      "description": "Propuestas de la cola actual para las que la búsqueda semántica encontró un posible duplicado. Es una señal de revisión, no un rechazo automático.",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE duplicate_exercise_id IS NOT NULL) AS possible_duplicates FROM exercise_submissions WHERE status='pending'"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Cola actual de moderación",
+      "type": "table",
+      "description": "Hasta 100 propuestas de la cola actual, primero las más antiguas. Muestra únicamente contenido estructurado y evaluación del curator; no expone IDs de Telegram ni el texto original del usuario. La calidad IA es orientativa.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 11
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id,created_at,round((extract(epoch FROM now()-created_at)/3600.0)::numeric,1) AS age_hours,proposal->>'name' AS name,proposal->>'target' AS target,proposal->>'equipment' AS equipment,proposal->'quality'->>'validity' AS ai_validity,round(NULLIF(proposal->'quality'->>'confidence','')::numeric,2) AS ai_confidence,duplicate_exercise_id,proposal->>'instructions_en' AS instructions,proposal->'quality'->>'rationale' AS ai_rationale FROM exercise_submissions WHERE status='pending' ORDER BY created_at,id LIMIT 100"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Calidad IA de la cola actual",
+      "type": "table",
+      "description": "Distribución de la valoración orientativa del curator en todas las propuestas actualmente pendientes. La decisión final corresponde siempre al moderador.",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(proposal->'quality'->>'validity','unknown') AS ai_validity,count(*) AS submissions,round(avg(NULLIF(proposal->'quality'->>'confidence','')::numeric),2) AS average_confidence FROM exercise_submissions WHERE status='pending' GROUP BY 1 ORDER BY submissions DESC"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Decisiones de moderación por día",
+      "type": "timeseries",
+      "description": "Aprobaciones y rechazos por fecha de revisión dentro del rango temporal. No incluye borradores, cancelaciones ni propuestas todavía pendientes.",
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day',reviewed_at) AS time,status AS metric,count(*) AS value FROM exercise_submissions WHERE status IN ('approved','rejected') AND reviewed_at IS NOT NULL AND $__timeFilter(reviewed_at) GROUP BY 1,2 ORDER BY 1,2"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Tiempo mediano hasta revisión",
+      "type": "stat",
+      "description": "Mediana de horas entre creación y revisión para decisiones tomadas dentro del rango temporal. Excluye fechas incoherentes y no mide el tiempo de publicación técnica por separado.",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM reviewed_at-created_at)/3600.0) AS median_review_hours FROM exercise_submissions WHERE status IN ('approved','rejected') AND reviewed_at IS NOT NULL AND reviewed_at>=created_at AND $__timeFilter(reviewed_at)"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Resultados de moderación",
+      "type": "table",
+      "description": "Decisiones tomadas dentro del rango temporal, con tiempo medio de revisión. Los porcentajes no se interpretan como calidad del curator porque dependen de la política y del volumen revisado.",
+      "gridPos": {
+        "x": 8,
+        "y": 24,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "fitcoach-postgres-${environment}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT status,count(*) AS submissions,round(avg(extract(epoch FROM reviewed_at-created_at)/3600.0)::numeric,2) AS average_review_hours FROM exercise_submissions WHERE status IN ('approved','rejected') AND reviewed_at IS NOT NULL AND reviewed_at>=created_at AND $__timeFilter(reviewed_at) GROUP BY status ORDER BY status"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Acciones de moderación",
+      "type": "text",
+      "gridPos": {
+        "x": 16,
+        "y": 24,
+        "w": 8,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Este dashboard es **solo de lectura**. Revisa el ID de la propuesta y ejecuta desde el chat privado del bot:\n\n- `/approve_exercise ID`\n- `/reject_exercise ID MOTIVO`\n\nLa aprobación genera el embedding, publica en pgVector y notifica al usuario."
+      }
+    }
+  ]
+}

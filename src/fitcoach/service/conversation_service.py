@@ -286,13 +286,27 @@ class ConversationService:
             await self._training_response(ctx, chat_id, message_thread_id, navigation[input_text])
             return
 
-        command = Commands.from_value(input_text.split(maxsplit=1)[0])
+        raw_command = input_text.split(maxsplit=1)[0]
+        command = Commands.from_value(raw_command)
         logger.info(f"{ctx} comando={command} entrada={input_text!r}")
 
         with _tracer.start_as_current_span("conversation.turn") as span:
             span.set_attribute("telegram_user_id", telegram_user_id(message))
             span.set_attribute("chat_id", chat_id)
             span.set_attribute("command", command.name if command is not None else "none")
+
+            if command is None and raw_command.startswith("/"):
+                suggestion = Commands.suggest(raw_command)
+                response = (
+                    Constants.UNKNOWN_COMMAND_SUGGESTION.format(
+                        command=raw_command,
+                        suggestion=suggestion,
+                    )
+                    if suggestion is not None
+                    else Constants.UNKNOWN_COMMAND_MESSAGE.format(command=raw_command)
+                )
+                await self._send(chat_id, message_thread_id, response)
+                return
 
             if self._exercise_moderation is not None and command in {
                 Commands.REVIEW_EXERCISES,

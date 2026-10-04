@@ -18,6 +18,7 @@ from fitcoach.service.exercise_submission_service import (
     ExerciseSubmissionReply,
     ExerciseSubmissionService,
 )
+from fitcoach.service.training_service import TrainingService
 
 
 def update(text: str) -> Update:
@@ -195,6 +196,35 @@ async def test_stale_exercise_callback_is_reported_as_an_alert() -> None:
     assert bot.answer_callback_query.await_args.kwargs["show_alert"] is True
     bot.edit_message_reply_markup.assert_not_awaited()
     bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_misspelled_admin_command_never_reaches_draft_or_training_workflows() -> None:
+    bot = AsyncMock(spec=Bot)
+    conversations = AsyncMock(spec=ConversationRepository)
+    conversations.claim_update.return_value = True
+    submissions = MagicMock(spec=ExerciseSubmissionService)
+    submissions.has_draft = AsyncMock(return_value=True)
+    training = AsyncMock(spec=TrainingService)
+    training.has_workflow.return_value = True
+    subject = ConversationService(
+        bot,
+        AsyncMock(spec=InterviewerChain),
+        conversations,
+        UsageLimits(hard_tokens=100, soft_tokens=50, window=timedelta(days=1)),
+        training_service=training,
+        exercise_submissions=submissions,
+    )
+
+    await subject.handle_update(update("/approve_excercise 12"))
+
+    submissions.has_draft.assert_not_awaited()
+    submissions.handle.assert_not_awaited()
+    training.has_workflow.assert_not_awaited()
+    training.handle.assert_not_awaited()
+    assert bot.send_message.await_args.kwargs["text"] == (
+        "No reconozco el comando «/approve_excercise». Quizá quisiste usar /approve_exercise."
+    )
 
 
 @pytest.mark.asyncio

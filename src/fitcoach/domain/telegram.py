@@ -1,3 +1,4 @@
+from difflib import get_close_matches
 from enum import Enum
 
 
@@ -22,7 +23,14 @@ class Commands(Enum):
 
     @classmethod
     def from_value(cls, value: str) -> "Commands | None":
-        return next((cmd for cmd in cls if cmd.value == value), None)
+        normalized = value.partition("@")[0]
+        return next((cmd for cmd in cls if cmd.value == normalized), None)
+
+    @classmethod
+    def suggest(cls, value: str) -> str | None:
+        normalized = value.partition("@")[0]
+        matches = get_close_matches(normalized, [cmd.value for cmd in cls], n=1, cutoff=0.6)
+        return matches[0] if matches else None
 
     @classmethod
     def get_commands_str(cls) -> str:

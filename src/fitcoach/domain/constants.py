@@ -24,6 +24,10 @@ Tu nueva vida te espera, ¡Adelante!
     INVALID_TEXT_MESSAGE: Final = (
         "Ups! Parece que no te he logrado entender ... ¿Puedes repetirmelo, por favor?"
     )
+    UNKNOWN_COMMAND_MESSAGE: Final = "No reconozco el comando «{command}»."
+    UNKNOWN_COMMAND_SUGGESTION: Final = (
+        "No reconozco el comando «{command}». Quizá quisiste usar {suggestion}."
+    )
     NO_CONTENT_MESSAGE: Final = "I didn't receive any information. Please, send it again .... "
     NOT_IMPLEMENTED_MESSAGE: Final = "Option not implemented yet"
     LLM_ERROR_MESSAGE: Final = "Ops, our brains exploded ... try it again"

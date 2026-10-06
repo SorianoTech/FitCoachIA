@@ -202,8 +202,16 @@ leer o insertar en `exercise_publications`. No puede actualizar ni borrar librem
 (`name: fitcoach-vector-db`), con su propio ciclo de vida: los ejercicios se cargan una vez y
 sobreviven a los despliegues de la aplicación.
 
-El servicio `pgvector` está en dos redes: `fit-coach-net`, para pgAdmin, y `proxy-network`, que es
-por donde lo alcanza la aplicación.
+El Compose local conecta `pgvector` y pgAdmin a `fit-coach-net`. En el servidor se usan los
+overrides por entorno:
+
+- `docker-compose.vector-db.dev.yml` conecta pgVector a `fitcoach-dev-internal` y publica pgAdmin
+  mediante `proxy-network`.
+- `docker-compose.vector-db.prod.yml` conecta pgVector y pgAdmin exclusivamente a
+  `fitcoach-prod-internal`.
+
+De este modo la aplicación alcanza pgVector por su red backend y la base vectorial nunca necesita
+pertenecer a `proxy-network`.
 
 ## Consultas útiles
 

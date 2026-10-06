@@ -89,9 +89,9 @@ Tres problemas bloquean la conexión desde la app y deben resolverse antes:
    nombre de proyecto que `docker-compose.yml`**. Levantar ambos hace que
    Compose los trate como un único proyecto y se pisen. Renombrar a
    `fitcoach-vector-db`.
-2. `pgvector` solo está en la red `fit-coach-net`; la app vive en
-   `proxy-network`. Añadir `proxy-network` a las redes del servicio `pgvector`
-   (ya está declarada como externa en ese fichero, pero no se usa).
+2. `pgvector` debe compartir la red backend del entorno con la app
+   (`fitcoach-dev-internal` / `fitcoach-prod-internal`), sin utilizar
+   `proxy-network` como bus entre servicios internos.
 3. El volumen `fitcoach_prod_pgvector` está declarado y no se usa: eliminarlo.
 
 Además, crear un rol **de solo lectura** para la app, como

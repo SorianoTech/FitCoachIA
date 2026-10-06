@@ -12,7 +12,7 @@ services:
       GF_SERVER_ROOT_URL: https://grafana.fitcoach.sergiosoriano.es
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD is required}
       # Credenciales de cada Postgres (docker-compose.dev.yml / docker-compose.yml);
-      # Grafana llega a ambos por proxy-network usando los alias postgres-dev/postgres-prod.
+      # Grafana llega a cada uno por la red interna de su entorno.
       FITCOACH_POSTGRES_DEV_DB: ${FITCOACH_POSTGRES_DEV_DB:-fitcoach}
       FITCOACH_POSTGRES_DEV_USER: ${FITCOACH_POSTGRES_DEV_USER:-fitcoach}
       FITCOACH_POSTGRES_DEV_PASSWORD: ${FITCOACH_POSTGRES_DEV_PASSWORD:?FITCOACH_POSTGRES_DEV_PASSWORD is required}
@@ -28,6 +28,8 @@ services:
       - tempo
     networks:
       - observability
+      - dev-internal
+      - prod-internal
       - proxy-network
 
   prometheus:
@@ -87,7 +89,8 @@ services:
         condition: service_started
     networks:
       - observability
-      - proxy-network # la app (proxy-network) envía OTLP aquí
+      - dev-internal
+      - prod-internal
 
   otel-collector-init:
     image: alpine:3.20
@@ -119,6 +122,12 @@ services:
 
 networks:
   observability: {}
+  dev-internal:
+    name: fitcoach-dev-internal
+    external: true
+  prod-internal:
+    name: fitcoach-prod-internal
+    external: true
   proxy-network:
     external: true
 

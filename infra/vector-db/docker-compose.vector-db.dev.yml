@@ -10,12 +10,11 @@ services:
     env_file:
       - .env.dev
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgvector-dev_volume:/var/lib/postgresql
     networks:
-      - default
-      - proxy-network
+      - internal
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U fitcoach -d fitcoach" ]
@@ -28,12 +27,10 @@ services:
     container_name: pgadmin4
     env_file:
       - .env.dev
-    ports:
-      - "8010:80"
     volumes:
       - pgadmin-dev_data:/root/.pgadmin
     networks:
-      - default
+      - internal
       - proxy-network
     restart: unless-stopped
     healthcheck:
@@ -50,5 +47,8 @@ volumes:
   pgvector-dev_volume:
 
 networks:
+  internal:
+    name: fitcoach-dev-internal
+    external: true
   proxy-network:
     external: true

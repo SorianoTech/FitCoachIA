@@ -1,16 +1,18 @@
-import asyncio
 import os
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from fitcoach.domain.scheduled_job import evaluation_poll_key
 from fitcoach.domain.trainer_plan import TrainingPlan
-from fitcoach.domain.training_evaluation import EvaluationState
+from fitcoach.domain.training_evaluation import AnswerStatus
 from fitcoach.infrastructure.database.models import (
+    JobExecutionRecord,
     TrainingEvaluationRecord,
     TrainingMesocycleRecord,
     TrainingPlanRecord,
@@ -22,12 +24,10 @@ from fitcoach.infrastructure.database.postgres_evaluation_repository import (
     PostgresEvaluationRepository,
 )
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
-from fitcoach.repository.evaluation_repository import EvaluationConflictError, EvaluationDelivery
+from fitcoach.repository.evaluation_repository import PollTarget, SentPoll
 from tests.unit_test.conftest import build_plan_payload
 
 CHAT_ID = 882377
-TIMEOUT = timedelta(minutes=2)
-WEEK = timedelta(days=7)
 
 
 @pytest_asyncio.fixture
@@ -45,6 +45,9 @@ async def factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
             # /interview keeps evaluations on purpose, so the test removes them itself.
             await session.execute(
                 delete(TrainingEvaluationRecord).where(TrainingEvaluationRecord.chat_id == CHAT_ID)
+            )
+            await session.execute(
+                delete(JobExecutionRecord).where(JobExecutionRecord.chat_id == CHAT_ID)
             )
             await session.commit()
 
@@ -65,39 +68,51 @@ async def factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         await engine.dispose()
 
 
-async def _cycle(session: AsyncSession) -> TrainingMesocycleRecord:
-    cycle = await session.scalar(
-        select(TrainingMesocycleRecord)
-        .where(TrainingMesocycleRecord.chat_id == CHAT_ID)
-        .order_by(TrainingMesocycleRecord.id.desc())
-        .limit(1)
-    )
-    assert cycle is not None
-    return cycle
-
-
-async def _start_days_ago(
-    factory: async_sessionmaker[AsyncSession], days: float, **cycle_values: object
-) -> datetime:
-    """Move the cycle start back in time, shifting its scheduled polls with it."""
-    started_at = datetime.now(UTC) - timedelta(days=days)
+async def _cycle_id(factory: async_sessionmaker[AsyncSession]) -> int:
     async with factory() as session:
-        cycle = await _cycle(session)
-        await session.execute(
-            update(TrainingMesocycleRecord)
-            .where(TrainingMesocycleRecord.id == cycle.id)
-            .values(started_at=started_at, **cycle_values)
+        cycle_id = await session.scalar(
+            select(TrainingMesocycleRecord.id)
+            .where(TrainingMesocycleRecord.chat_id == CHAT_ID)
+            .order_by(TrainingMesocycleRecord.id.desc())
+            .limit(1)
         )
-        polls = await session.scalars(
-            select(TrainingEvaluationRecord).where(
-                TrainingEvaluationRecord.mesocycle_id == cycle.id,
-                TrainingEvaluationRecord.state == EvaluationState.PENDING,
+    assert cycle_id is not None
+    return cycle_id
+
+
+async def _target(factory: async_sessionmaker[AsyncSession]) -> PollTarget:
+    async with factory() as session:
+        target = await PostgresEvaluationRepository(session).open_current_plan(
+            await _cycle_id(factory)
+        )
+    assert target is not None
+    return target
+
+
+async def _send(
+    factory: async_sessionmaker[AsyncSession], week: int, poll_id: str | None = None
+) -> SentPoll:
+    """Record the poll of ``week`` the way the scheduler does: flush, then commit."""
+    cycle_id = await _cycle_id(factory)
+    async with factory() as session:
+        job_id = await session.scalar(
+            select(JobExecutionRecord.id).where(
+                JobExecutionRecord.dedup_key == evaluation_poll_key(cycle_id, week)
             )
         )
-        for poll in polls:
-            poll.due_at = started_at + poll.week_number * WEEK
+        assert job_id is not None
+        poll = SentPoll(
+            job_id=job_id,
+            chat_id=CHAT_ID,
+            target=await _target(factory),
+            week_number=week,
+            poll_id=poll_id or f"poll-week-{week}",
+            message_id=1000 + week,
+            sent_at=datetime.now(UTC),
+        )
+        await PostgresEvaluationRepository(session).save_sent(poll)
         await session.commit()
-    return started_at
+    return poll
 
 
 async def _evaluations(factory: async_sessionmaker[AsyncSession]) -> list[TrainingEvaluationRecord]:
@@ -106,46 +121,30 @@ async def _evaluations(factory: async_sessionmaker[AsyncSession]) -> list[Traini
             await session.scalars(
                 select(TrainingEvaluationRecord)
                 .where(TrainingEvaluationRecord.chat_id == CHAT_ID)
-                .order_by(TrainingEvaluationRecord.id)
+                .order_by(TrainingEvaluationRecord.week_number)
             )
         )
 
 
-async def _states(factory: async_sessionmaker[AsyncSession]) -> dict[int, str]:
-    return {e.week_number: e.state for e in await _evaluations(factory)}
+async def _statuses(factory: async_sessionmaker[AsyncSession]) -> dict[int, str]:
+    return {e.week_number: e.answer_status for e in await _evaluations(factory)}
 
 
-async def _claim(factory: async_sessionmaker[AsyncSession]) -> EvaluationDelivery | None:
+async def _answer(
+    factory: async_sessionmaker[AsyncSession], poll_id: str, user_id: int, score: int | None
+) -> bool:
     async with factory() as session:
-        return await PostgresEvaluationRepository(session).claim(datetime.now(UTC), TIMEOUT)
-
-
-async def _mark_sent(
-    factory: async_sessionmaker[AsyncSession], delivery: EvaluationDelivery | None, poll_id: str
-) -> None:
-    assert delivery is not None
-    async with factory() as session:
-        await PostgresEvaluationRepository(session).mark_sent(
-            delivery, poll_id, 1000 + delivery.week_number, datetime.now(UTC)
+        return await PostgresEvaluationRepository(session).record_answer(
+            poll_id, user_id, score, datetime.now(UTC)
         )
 
 
-async def _accept_current_plan_as(
-    factory: async_sessionmaker[AsyncSession], kind: str, start: datetime
-) -> None:
+async def _previous_unanswered(factory: async_sessionmaker[AsyncSession]) -> list[int]:
     async with factory() as session:
-        training = PostgresTrainingRepository(session)
-        current = await PostgresConversationRepository(session).get_current_plan(CHAT_ID)
-        assert current is not None
-        flow = await training.start(CHAT_ID, kind)
-        flow.draft = current.plan
-        flow.report = kind
-        flow.state = "awaiting_confirmation"
-        await training.save(CHAT_ID, flow)
-        await training.accept(CHAT_ID, flow.id, start)
+        return await PostgresEvaluationRepository(session).previous_unanswered(CHAT_ID)
 
 
-# --- scheduling ---------------------------------------------------------------
+# --- open_current_plan --------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -158,381 +157,184 @@ async def test_saving_a_plan_copies_its_goal(factory: async_sessionmaker[AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_the_first_plan_schedules_four_weekly_polls(
+async def test_the_open_cycle_reports_its_current_plan_and_goal(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with factory() as session:
-        started_at = (await _cycle(session)).started_at
-    assert started_at is not None
+        await PostgresTrainingRepository(session).remember_thread(CHAT_ID, 42)
 
-    evaluations = await _evaluations(factory)
+    target = await _target(factory)
 
-    assert [e.week_number for e in evaluations] == [1, 2, 3, 4]
-    assert {e.state for e in evaluations} == {EvaluationState.PENDING}
-    assert [e.due_at for e in evaluations] == [started_at + k * WEEK for k in (1, 2, 3, 4)]
-    # Goal and plan are taken when the poll is sent, not when it is scheduled.
-    assert {(e.goal, e.plan_id) for e in evaluations} == {(None, None)}
-
-
-@pytest.mark.asyncio
-async def test_a_plan_change_within_the_cycle_schedules_nothing_new(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    before = [(e.id, e.due_at) for e in await _evaluations(factory)]
-
-    await _accept_current_plan_as(factory, "exercise_swap", datetime.now(UTC))
-
-    assert [(e.id, e.due_at) for e in await _evaluations(factory)] == before
-
-
-@pytest.mark.asyncio
-async def test_renewal_cancels_the_old_cycle_and_schedules_the_new_one(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    async with factory() as session:
-        old_cycle_id = (await _cycle(session)).id
-        await PostgresTrainingRepository(session).close_cycle(CHAT_ID, datetime.now(UTC))
-    start = datetime.now(UTC) + timedelta(days=1)
-
-    await _accept_current_plan_as(factory, "renewal", start)
-
-    async with factory() as session:
-        new_cycle_id = (await _cycle(session)).id
-    evaluations = await _evaluations(factory)
-    old = [e for e in evaluations if e.mesocycle_id == old_cycle_id]
-    new = [e for e in evaluations if e.mesocycle_id == new_cycle_id]
-    assert new_cycle_id != old_cycle_id
-    assert {e.state for e in old} == {EvaluationState.CANCELLED}
-    assert [e.week_number for e in new] == [1, 2, 3, 4]
-    assert {e.state for e in new} == {EvaluationState.PENDING}
-    assert new[0].due_at == start + WEEK
-
-
-@pytest.mark.asyncio
-async def test_closing_the_cycle_early_cancels_only_its_pending_polls(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-    await _mark_sent(factory, await _claim(factory), "poll-week-1")
-
-    async with factory() as session:
-        await PostgresTrainingRepository(session).close_cycle(CHAT_ID, datetime.now(UTC))
-
-    assert await _states(factory) == {
-        1: EvaluationState.SENT,
-        2: EvaluationState.CANCELLED,
-        3: EvaluationState.CANCELLED,
-        4: EvaluationState.CANCELLED,
-    }
-
-
-@pytest.mark.asyncio
-async def test_postponing_schedules_no_extra_poll(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    before = [(e.id, e.due_at, e.state) for e in await _evaluations(factory)]
-
-    async with factory() as session:
-        await PostgresTrainingRepository(session).postpone(
-            CHAT_ID, datetime.now(UTC) + timedelta(days=40)
-        )
-
-    assert [(e.id, e.due_at, e.state) for e in await _evaluations(factory)] == before
-
-
-@pytest.mark.asyncio
-async def test_a_legacy_cycle_receiving_a_start_schedules_only_its_future_weeks(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    async with factory() as session:
-        cycle = await _cycle(session)
-        await session.execute(
-            delete(TrainingEvaluationRecord).where(TrainingEvaluationRecord.chat_id == CHAT_ID)
-        )
-        await session.execute(
-            update(TrainingMesocycleRecord)
-            .where(TrainingMesocycleRecord.id == cycle.id)
-            .values(started_at=None, expected_end_at=None)
-        )
-        await session.commit()
-
-    async with factory() as session:
-        await PostgresTrainingRepository(session).set_start(
-            CHAT_ID, datetime.now(UTC) - timedelta(days=10)
-        )
-
-    assert await _states(factory) == {
-        2: EvaluationState.PENDING,
-        3: EvaluationState.PENDING,
-        4: EvaluationState.PENDING,
-    }
-
-
-@pytest.mark.asyncio
-async def test_restarting_the_interview_cancels_pending_polls_but_keeps_them(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-    await _mark_sent(factory, await _claim(factory), "poll-week-1")
-
-    async with factory() as session:
-        await PostgresConversationRepository(session).restart_interview(CHAT_ID)
-
-    evaluations = await _evaluations(factory)
-    assert {e.week_number: e.state for e in evaluations} == {
-        1: EvaluationState.SENT,
-        2: EvaluationState.CANCELLED,
-        3: EvaluationState.CANCELLED,
-        4: EvaluationState.CANCELLED,
-    }
-    assert {e.mesocycle_id for e in evaluations} == {None}
-    assert evaluations[0].goal == "gain_muscle"
-
-
-# --- claim --------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_nothing_is_claimed_before_the_first_week_ends(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 6)
-
-    assert await _claim(factory) is None
-    assert set((await _states(factory)).values()) == {EvaluationState.PENDING}
-
-
-@pytest.mark.asyncio
-async def test_claim_locks_the_poll_and_copies_the_current_plan(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8, message_thread_id=42)
-
-    delivery = await _claim(factory)
-
-    assert delivery is not None
-    assert delivery.chat_id == CHAT_ID
-    assert delivery.thread_id == 42
-    assert delivery.week_number == 1
-    assert delivery.goal == "gain_muscle"
-    assert delivery.attempts == 1
-    assert delivery.previous_message_id is None
+    assert (target.thread_id, target.goal) == (42, "gain_muscle")
+    assert target.started_at is not None
     async with factory() as session:
         plan_id = await session.scalar(
             select(TrainingPlanRecord.id).where(TrainingPlanRecord.chat_id == CHAT_ID)
         )
-    first = (await _evaluations(factory))[0]
-    assert first.state == EvaluationState.SENDING
-    assert first.locked_until is not None
-    assert first.goal == "gain_muscle"
-    assert first.plan_id == plan_id
+    assert target.plan_id == plan_id
 
 
 @pytest.mark.asyncio
-async def test_after_an_outage_only_the_latest_week_is_sent(
+async def test_a_closed_cycle_has_no_open_plan(factory: async_sessionmaker[AsyncSession]) -> None:
+    cycle_id = await _cycle_id(factory)
+    async with factory() as session:
+        await PostgresTrainingRepository(session).close_cycle(CHAT_ID, datetime.now(UTC))
+
+    async with factory() as session:
+        assert await PostgresEvaluationRepository(session).open_current_plan(cycle_id) is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_cycle_has_no_open_plan(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _start_days_ago(factory, 22)
+    async with factory() as session:
+        assert await PostgresEvaluationRepository(session).open_current_plan(-1) is None
 
-    delivery = await _claim(factory)
 
-    assert delivery is not None
-    assert delivery.week_number == 3
-    assert await _states(factory) == {
-        1: EvaluationState.CANCELLED,
-        2: EvaluationState.CANCELLED,
-        3: EvaluationState.SENDING,
-        4: EvaluationState.PENDING,
+# --- save_sent ----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_sent_stores_the_telegram_identifiers_and_the_job_link(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    poll = await _send(factory, 1, "poll-1")
+
+    [first] = await _evaluations(factory)
+
+    assert first.answer_status == AnswerStatus.AWAITING
+    assert (first.telegram_poll_id, first.telegram_message_id) == ("poll-1", 1001)
+    assert (first.goal, first.plan_id, first.job_id) == (
+        "gain_muscle",
+        poll.target.plan_id,
+        poll.job_id,
+    )
+    assert first.sent_at is not None
+
+
+@pytest.mark.asyncio
+async def test_save_sent_closes_the_unanswered_polls_of_the_chat(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _send(factory, 1)
+    await _send(factory, 2)
+    await _answer(factory, "poll-week-2", CHAT_ID, 4)
+
+    await _send(factory, 3)
+
+    assert await _statuses(factory) == {
+        1: AnswerStatus.UNANSWERED,
+        2: AnswerStatus.ANSWERED,
+        3: AnswerStatus.AWAITING,
     }
 
 
 @pytest.mark.asyncio
-async def test_disabled_reminders_do_not_stop_the_polls(
+async def test_save_sent_does_not_persist_until_the_caller_commits(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _start_days_ago(factory, 8, reminders_enabled=False)
-
-    delivery = await _claim(factory)
-
-    assert delivery is not None
-    assert delivery.week_number == 1
-
-
-@pytest.mark.asyncio
-async def test_two_workers_never_claim_the_same_poll(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-
-    first, second = await asyncio.gather(_claim(factory), _claim(factory))
-
-    assert [first is None, second is None].count(True) == 1
-
-
-@pytest.mark.asyncio
-async def test_a_poll_whose_cycle_closed_is_cancelled_on_claim(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    # Closed behind close_cycle's back: the claim is the last safety net.
-    await _start_days_ago(factory, 8, completed_at=datetime.now(UTC))
-
-    assert await _claim(factory) is None
-
-    assert (await _states(factory))[1] == EvaluationState.CANCELLED
-
-
-@pytest.mark.asyncio
-async def test_claim_reports_the_previous_unanswered_poll_to_close(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-    await _mark_sent(factory, await _claim(factory), "poll-week-1")
-    await _start_days_ago(factory, 15)
-
-    second = await _claim(factory)
-
-    assert second is not None
-    assert second.week_number == 2
-    assert second.previous_message_id == 1001
-
-
-@pytest.mark.asyncio
-async def test_an_answered_previous_poll_is_not_reported_to_close(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-    await _mark_sent(factory, await _claim(factory), "poll-week-1")
-    await _answer(factory, "poll-week-1", CHAT_ID, 3)
-    await _start_days_ago(factory, 15)
-
-    second = await _claim(factory)
-
-    assert second is not None
-    assert second.previous_message_id is None
-
-
-# --- mark_sent / finish -------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_mark_sent_stores_the_telegram_identifiers(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-
-    await _mark_sent(factory, await _claim(factory), "poll-1")
-
-    first = (await _evaluations(factory))[0]
-    assert first.state == EvaluationState.SENT
-    assert first.telegram_poll_id == "poll-1"
-    assert first.telegram_message_id == 1001
-    assert first.sent_at is not None
-    assert first.locked_until is None
-
-
-@pytest.mark.asyncio
-async def test_finish_with_retry_reschedules_the_poll(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-    delivery = await _claim(factory)
-    assert delivery is not None
-    retry_at = datetime.now(UTC) + timedelta(minutes=10)
-
+    await _send(factory, 1)
+    cycle_id = await _cycle_id(factory)
     async with factory() as session:
-        await PostgresEvaluationRepository(session).finish(delivery, retry_at=retry_at)
-
-    first = (await _evaluations(factory))[0]
-    assert first.state == EvaluationState.PENDING
-    assert first.due_at == retry_at
-    assert await _claim(factory) is None
-
-
-@pytest.mark.asyncio
-async def test_finish_as_failed_stops_retrying(factory: async_sessionmaker[AsyncSession]) -> None:
-    await _start_days_ago(factory, 8)
-    delivery = await _claim(factory)
-    assert delivery is not None
-
-    async with factory() as session:
-        await PostgresEvaluationRepository(session).finish(delivery, failed=True)
-
-    assert (await _states(factory))[1] == EvaluationState.FAILED
-    assert await _claim(factory) is None
-
-
-@pytest.mark.asyncio
-async def test_a_worker_whose_lock_expired_cannot_finish_the_poll(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await _start_days_ago(factory, 8)
-    stale = await _claim(factory)
-    assert stale is not None
-    async with factory() as session:
-        await session.execute(
-            update(TrainingEvaluationRecord)
-            .where(TrainingEvaluationRecord.id == stale.id)
-            .values(locked_until=datetime.now(UTC) - timedelta(seconds=1))
-        )
-        await session.commit()
-    assert await _claim(factory) is not None
-
-    async with factory() as session:
-        with pytest.raises(EvaluationConflictError):
-            await PostgresEvaluationRepository(session).mark_sent(
-                stale, "poll-stale", 1, datetime.now(UTC)
+        job_id = await session.scalar(
+            select(JobExecutionRecord.id).where(
+                JobExecutionRecord.dedup_key == evaluation_poll_key(cycle_id, 2)
             )
+        )
+        assert job_id is not None
+        poll = SentPoll(
+            job_id=job_id,
+            chat_id=CHAT_ID,
+            target=await _target(factory),
+            week_number=2,
+            poll_id="poll-uncommitted",
+            message_id=1002,
+            sent_at=datetime.now(UTC),
+        )
+        await PostgresEvaluationRepository(session).save_sent(poll)
+        await session.rollback()
+
+    assert await _statuses(factory) == {1: AnswerStatus.AWAITING}
+
+
+@pytest.mark.asyncio
+async def test_a_week_can_be_recorded_only_once(factory: async_sessionmaker[AsyncSession]) -> None:
+    await _send(factory, 1, "poll-1")
+
+    with pytest.raises(IntegrityError):
+        await _send(factory, 1, "poll-1-again")
+
+
+# --- previous_unanswered ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_there_is_no_previous_poll_before_the_first_one(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    assert await _previous_unanswered(factory) == []
+
+
+@pytest.mark.asyncio
+async def test_unanswered_polls_are_reported_to_be_closed(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _send(factory, 1)
+
+    assert await _previous_unanswered(factory) == [1001]
+
+
+@pytest.mark.asyncio
+async def test_answered_and_closed_polls_are_not_reported(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _send(factory, 1)
+    await _send(factory, 2)
+    await _answer(factory, "poll-week-2", CHAT_ID, 3)
+
+    assert await _previous_unanswered(factory) == []
 
 
 # --- record_answer ------------------------------------------------------------
 
 
-async def _sent_poll(factory: async_sessionmaker[AsyncSession]) -> None:
-    await _start_days_ago(factory, 8)
-    await _mark_sent(factory, await _claim(factory), "poll-answer")
-
-
-async def _answer(
-    factory: async_sessionmaker[AsyncSession], poll_id: str, user_id: int, score: int | None
-) -> bool:
-    async with factory() as session:
-        return await PostgresEvaluationRepository(session).record_answer(
-            poll_id, user_id, score, datetime.now(UTC)
-        )
-
-
 @pytest.mark.asyncio
 async def test_the_owner_answer_is_stored(factory: async_sessionmaker[AsyncSession]) -> None:
-    await _sent_poll(factory)
+    await _send(factory, 1, "poll-answer")
 
     assert await _answer(factory, "poll-answer", CHAT_ID, 4)
 
-    first = (await _evaluations(factory))[0]
-    assert first.score == 4
+    [first] = await _evaluations(factory)
+    assert (first.score, first.answer_status) == (4, AnswerStatus.ANSWERED)
     assert first.answered_at is not None
 
 
 @pytest.mark.asyncio
 async def test_a_retracted_vote_clears_the_score(factory: async_sessionmaker[AsyncSession]) -> None:
-    await _sent_poll(factory)
+    await _send(factory, 1, "poll-answer")
     await _answer(factory, "poll-answer", CHAT_ID, 4)
 
     assert await _answer(factory, "poll-answer", CHAT_ID, None)
 
-    first = (await _evaluations(factory))[0]
-    assert first.score is None
-    assert first.answered_at is None
+    [first] = await _evaluations(factory)
+    assert (first.score, first.answered_at, first.answer_status) == (
+        None,
+        None,
+        AnswerStatus.AWAITING,
+    )
 
 
 @pytest.mark.asyncio
 async def test_an_answer_from_another_user_is_ignored(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _sent_poll(factory)
+    await _send(factory, 1, "poll-answer")
 
     assert not await _answer(factory, "poll-answer", CHAT_ID + 1, 5)
 
-    assert (await _evaluations(factory))[0].score is None
+    [first] = await _evaluations(factory)
+    assert (first.score, first.answer_status) == (None, AnswerStatus.AWAITING)
 
 
 @pytest.mark.asyncio
@@ -540,3 +342,50 @@ async def test_an_answer_to_an_unknown_poll_is_ignored(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
     assert not await _answer(factory, "missing-poll", CHAT_ID, 3)
+
+
+@pytest.mark.asyncio
+async def test_a_late_vote_on_a_closed_poll_is_ignored(
+    factory: async_sessionmaker[AsyncSession], caplog: pytest.LogCaptureFixture
+) -> None:
+    await _send(factory, 1)
+    await _send(factory, 2)
+
+    with caplog.at_level("INFO"):
+        assert not await _answer(factory, "poll-week-1", CHAT_ID, 5)
+
+    assert (await _evaluations(factory))[0].score is None
+    assert await _statuses(factory) == {1: AnswerStatus.UNANSWERED, 2: AnswerStatus.AWAITING}
+    assert any("Late vote" in record.getMessage() for record in caplog.records)
+
+
+# --- /interview ---------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_restarting_the_interview_keeps_sent_polls_detached_from_the_cycle(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _send(factory, 1)
+
+    async with factory() as session:
+        await PostgresConversationRepository(session).restart_interview(CHAT_ID)
+
+    [first] = await _evaluations(factory)
+    assert (first.mesocycle_id, first.plan_id, first.goal) == (None, None, "gain_muscle")
+
+
+@pytest.mark.asyncio
+async def test_sent_polls_outlive_the_deletion_of_their_job(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _send(factory, 1)
+
+    async with factory() as session:
+        await session.execute(
+            delete(JobExecutionRecord).where(JobExecutionRecord.chat_id == CHAT_ID)
+        )
+        await session.commit()
+
+    [first] = await _evaluations(factory)
+    assert first.job_id is None

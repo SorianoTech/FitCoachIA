@@ -87,14 +87,16 @@ Key facts per layer:
   - `ia/` `embedder_client.py` and `skills/<skill>/SKILL.md` (agent knowledge, `-dev` variants are lighter versions).
   - `prompts/` `<agent>/system_prompt.txt` + `prompt_loader.py`.
   - `bot/telegram_bot.py` (python-telegram-bot, `to_bot_command`), `observability/telemetry.py` (OpenTelemetry).
-  - `jobs/` standalone workers run as separate containers with the app image (`python -m ...`):
-    `training_reminders.py` (mesocycle due reminders) and `evaluation.py` (weekly satisfaction polls).
-    Both share `worker_loop.py` (periodic loop, SIGTERM, one DB session per tick) and
-    `telegram_delivery.py` (Telegram error -> retry/fail with the configurable `RetryPolicy`).
-- **Weekly polls**: `training_evaluation` is both outbox and result. The 4 rows of a cycle are inserted in the
-  same transaction that dates the cycle (`schedule_evaluations`); `close_cycle` and `/interview` cancel the pending
-  ones (`cancel_pending_evaluations`). Votes arrive as `poll_answer` updates handled by `ConversationService`.
-  Details in `docs/encuestas-satisfaccion.md`.
+  - `jobs/` the in-app scheduler (`scheduler.py`): an asyncio task started by the lifespan when
+    `scheduler_enabled`, which claims due rows of `job_execution` and dispatches each `JobType`
+    (`training_reminder`, `evaluation_poll`) to its handler. `telegram_delivery.py` classifies Telegram
+    failures into retry/fail. Details in `docs/scheduler.md`.
+- **Jobs and weekly polls**: `job_execution` is the generic queue (`JobExecutionRecord`, port `JobRepository`,
+  `PostgresJobRepository`). The 4 poll jobs and the end-of-cycle reminder of a cycle are registered in the same
+  transaction that dates it (`schedule_cycle_jobs`); `close_cycle` and `/interview` cancel the pending ones.
+  `training_evaluation` only stores **sent** polls (`answer_status` awaiting/answered/unanswered); `save_sent`
+  flushes and the scheduler commits it together with the job's final state. Details in `docs/scheduler.md` and
+  `docs/encuestas-satisfaccion.md`.
 - Cached providers (`lru_cache`): `_create_bot`, `get_settings`, `get_ia_settings`, `get_database_settings`,
   `get_vector_database_settings`, `get_embedder_settings`, `get_interviewer_chain`, `get_trainer_chain`.
 - Observability: OpenTelemetry traces (exported only if `otel_exporter_otlp_endpoint` is set), structured JSON logs and
@@ -204,7 +206,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 
 | File | Purpose | Notes |
 |---|---|---|
-| `docker-compose.dev.yml` | Development stack (`build:`), incl. `training-reminders-dev` and `evaluation-dev` workers | Reference one: change here first |
+| `docker-compose.dev.yml` | Development stack (`build:`) | Reference one: change here first |
 | `docker-compose.local.yml` | Local all-in-one stack, used to **try changes locally** | Reads root `.env` |
 | `docker-compose.yml` | Production (`image:` published, no `build:`) | Adapt, do not copy, from dev |
 | `tests/docker-compose-test.yml` | Integration tests (app + Postgres + pgVector + stub server) | Must always work with `make tests` |
@@ -274,7 +276,7 @@ Update every item that the change touches, in the same change:
 | Architecture, layers, agents, this map | this `AGENTS.md` |
 
 Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`,
-`docs/encuestas-satisfaccion.md` (weekly polls + configurable retry properties of both workers),
+`docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
 `docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
 `docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`.
 `docs/plan/` holds design notes and `docs/todo/` the backlog.

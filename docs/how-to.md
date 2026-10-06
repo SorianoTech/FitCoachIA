@@ -341,20 +341,19 @@ La aplicación no arranca si falta `vector_db_url` o `embedder_url`.
 
 ### Avisos y encuestas semanales
 
-Los dos workers (`training-reminders*` y `evaluation*`) están desactivados por defecto. Para
+Los avisos y las encuestas los ejecuta el scheduler de la app y están desactivados por defecto. Para
 probarlos en dev, añadir al `.env` del entorno (plantilla completa en `.env.example`):
 
 ```dotenv
-training_reminders_enabled=true
-evaluation_enabled=true
-# Lotes cada 10 s para no esperar en pruebas manuales (mínimo 10).
-evaluation_interval_seconds=10
+scheduler_enabled=true
+# Ticks cada 10 s para no esperar en pruebas manuales (mínimo 10).
+scheduler_interval_seconds=10
 ```
 
 Las encuestas vencen a los 7/14/21/28 días del inicio del ciclo; para probarlas sin esperar,
-mover hacia atrás `training_mesocycles.started_at` y los `training_evaluation.due_at` pendientes
-del ciclo en la base de dev. Detalle en
-[entornos-y-despliegue.md](entornos-y-despliegue.md#worker-de-encuestas-semanales) y
+mover hacia atrás `training_mesocycles.started_at` y adelantar `job_execution.execution_date` de los jobs
+`evaluation_poll` pendientes del ciclo en la base de dev. Detalle en [scheduler.md](scheduler.md),
+[entornos-y-despliegue.md](entornos-y-despliegue.md#scheduler-de-avisos-y-encuestas) y
 [trainer-agent.md](trainer-agent.md#encuestas-semanales-de-satisfacción).
 
 ```bash

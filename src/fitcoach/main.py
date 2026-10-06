@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -16,14 +17,19 @@ from fitcoach.domain.constants import Constants
 from fitcoach.infrastructure.bot.telegram_bot import get_bot, to_bot_command
 from fitcoach.infrastructure.config.logging_config import configure_logging
 from fitcoach.infrastructure.config.settings import (
+    SchedulerSettings,
     Settings,
     get_database_settings,
     get_embedder_settings,
+    get_evaluation_settings,
     get_ia_settings,
+    get_scheduler_settings,
     get_settings,
+    get_training_settings,
     get_vector_database_settings,
 )
-from fitcoach.infrastructure.database.session import close_database
+from fitcoach.infrastructure.database.session import close_database, get_session_factory
+from fitcoach.infrastructure.jobs.scheduler import JobScheduler
 from fitcoach.infrastructure.observability.telemetry import configure_telemetry, shutdown_telemetry
 from fitcoach.infrastructure.vectordb.session import close_vector_database
 
@@ -41,14 +47,44 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     get_database_settings()  # ValidationError if the PostgreSQL URL is missing
     get_vector_database_settings()  # ValidationError if the pgVector URL is missing
     get_embedder_settings()  # ValidationError if the embedder URL is missing
+    get_training_settings()  # ValidationError if a training_reminder_* var is malformed
+    get_evaluation_settings()  # ValidationError if an evaluation_* var is malformed
+    scheduler_settings = get_scheduler_settings()  # ValidationError if a scheduler_* var is bad
     configure_telemetry(app)  # no-op unless otel_exporter_otlp_endpoint is set
     await _register_webhook(app, settings)
+    scheduler = await _start_scheduler(scheduler_settings)
     try:
         yield
     finally:
+        await _stop_scheduler(scheduler)
         shutdown_telemetry()
         await close_database()
         await close_vector_database()
+
+
+async def _start_scheduler(
+    settings: SchedulerSettings,
+) -> tuple[asyncio.Event, asyncio.Task[None]] | None:
+    if not settings.enabled:
+        logger.info("Scheduler is disabled")
+        return None
+    scheduler = JobScheduler(
+        get_session_factory(),
+        await get_bot(),
+        settings,
+        get_training_settings(),
+        get_evaluation_settings(),
+    )
+    stop = asyncio.Event()
+    return stop, asyncio.create_task(scheduler.run(stop), name="job-scheduler")
+
+
+async def _stop_scheduler(scheduler: tuple[asyncio.Event, asyncio.Task[None]] | None) -> None:
+    if scheduler is None:
+        return
+    stop, task = scheduler
+    stop.set()
+    await task
 
 
 app = FastAPI(title="FitCoach IA - API de Prueba", lifespan=lifespan)

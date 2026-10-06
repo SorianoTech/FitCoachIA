@@ -1,34 +1,35 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Protocol
-
-
-class EvaluationConflictError(RuntimeError):
-    """The poll is no longer locked by the worker that claimed it."""
+from uuid import UUID
 
 
 @dataclass(frozen=True)
-class EvaluationDelivery:
-    id: int
-    chat_id: int
+class PollTarget:
+    """Cycle and plan a due poll asks about."""
+
+    mesocycle_id: int
+    started_at: datetime | None
     thread_id: int | None
-    week_number: int
+    plan_id: int
     goal: str | None
-    attempts: int
-    # Last sent poll of the cycle still unanswered: the worker closes it.
-    previous_message_id: int | None
+
+
+@dataclass(frozen=True)
+class SentPoll:
+    job_id: UUID
+    chat_id: int
+    target: PollTarget
+    week_number: int
+    poll_id: str
+    message_id: int
+    sent_at: datetime
 
 
 class EvaluationRepository(Protocol):
-    async def claim(
-        self, now: datetime, sending_timeout: timedelta
-    ) -> EvaluationDelivery | None: ...
-    async def mark_sent(
-        self, delivery: EvaluationDelivery, poll_id: str, message_id: int, now: datetime
-    ) -> None: ...
-    async def finish(
-        self, delivery: EvaluationDelivery, retry_at: datetime | None = None, failed: bool = False
-    ) -> None: ...
+    async def open_current_plan(self, mesocycle_id: int) -> PollTarget | None: ...
+    async def previous_unanswered(self, chat_id: int) -> list[int]: ...
+    async def save_sent(self, poll: SentPoll) -> None: ...
     async def record_answer(
         self, poll_id: str, user_id: int, score: int | None, now: datetime
     ) -> bool: ...

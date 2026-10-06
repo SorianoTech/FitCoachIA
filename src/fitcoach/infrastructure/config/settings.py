@@ -240,17 +240,20 @@ class TrainingSettings(_RetrySettings):
         env_file_encoding="utf-8",
         env_prefix="training_reminder_",
         extra="ignore",
-        populate_by_name=True,
     )
-
-    # Names kept for backward compatibility with the existing .env files.
-    reminders_enabled: bool = Field(default=False, validation_alias="training_reminders_enabled")
-    interval_seconds: int = Field(default=300, ge=10)
 
 
 class EvaluationSettings(_RetrySettings):
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE, env_file_encoding="utf-8", env_prefix="evaluation_", extra="ignore"
+    )
+
+
+class SchedulerSettings(BaseSettings):
+    """One scheduler task for every job type; each type keeps its own retry settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE, env_file_encoding="utf-8", env_prefix="scheduler_", extra="ignore"
     )
 
     enabled: bool = False
@@ -295,3 +298,8 @@ def get_training_settings() -> TrainingSettings:
 @lru_cache
 def get_evaluation_settings() -> EvaluationSettings:
     return EvaluationSettings()
+
+
+@lru_cache
+def get_scheduler_settings() -> SchedulerSettings:
+    return SchedulerSettings()

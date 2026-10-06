@@ -12,12 +12,10 @@ MIN_SCORE: Final = 0
 MAX_SCORE: Final = 5
 
 
-class EvaluationState(StrEnum):
-    PENDING = "pending"
-    SENDING = "sending"
-    SENT = "sent"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+class AnswerStatus(StrEnum):
+    AWAITING = "awaiting"
+    ANSWERED = "answered"
+    UNANSWERED = "unanswered"
 
 
 def due_at(started_at: datetime, week: int) -> datetime:
@@ -46,6 +44,13 @@ def due_week(started_at: datetime, now: datetime) -> int | None:
     if elapsed < 1:
         return None
     return min(elapsed, MESOCYCLE_WEEKS)
+
+
+def is_superseded(started_at: datetime | None, week: int, now: datetime) -> bool:
+    """A newer week is already due: only the most recent poll is asked."""
+    if started_at is None:
+        return True
+    return (due_week(started_at, now) or 0) > week
 
 
 def upcoming_polls(started_at: datetime, now: datetime) -> list[tuple[int, datetime]]:

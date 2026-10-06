@@ -8,6 +8,7 @@ from fitcoach.infrastructure.config.settings import (
     EmbedderSettings,
     EvaluationSettings,
     IASettings,
+    SchedulerSettings,
     Settings,
     TrainingSettings,
     UsageSettings,
@@ -290,15 +291,14 @@ class TestTrainingSettings:
     def test_keeps_reading_the_existing_variable_names(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("training_reminders_enabled", "true")
-        monkeypatch.setenv("training_reminder_interval_seconds", "60")
         monkeypatch.setenv("training_reminder_max_attempts", "3")
 
-        settings = TrainingSettings(_env_file=None)
+        assert TrainingSettings(_env_file=None).max_attempts == 3
 
-        assert settings.reminders_enabled
-        assert settings.interval_seconds == 60
-        assert settings.max_attempts == 3
+    def test_ignores_the_removed_enabled_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("training_reminders_enabled", "true")
+
+        assert TrainingSettings(_env_file=None).max_attempts == 5
 
     def test_reads_the_new_retry_variables(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("training_reminder_retry_delay_seconds", "15")
@@ -309,14 +309,8 @@ class TestTrainingSettings:
         assert policy.retry_delay == timedelta(seconds=15)
         assert policy.sending_timeout == timedelta(seconds=60)
 
-    def test_reminders_are_disabled_without_configuration(self) -> None:
-        assert not TrainingSettings(_env_file=None).reminders_enabled
-
 
 class TestEvaluationSettings:
-    def test_is_disabled_without_configuration(self) -> None:
-        assert not EvaluationSettings(_env_file=None).enabled
-
     def test_reads_the_retry_policy_from_the_environment(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -340,7 +334,6 @@ class TestEvaluationSettings:
     @pytest.mark.parametrize(
         ("variable", "value"),
         [
-            ("evaluation_interval_seconds", "5"),
             ("evaluation_max_attempts", "0"),
             ("evaluation_sending_timeout_seconds", "1"),
             ("evaluation_batch_size", "0"),
@@ -353,3 +346,33 @@ class TestEvaluationSettings:
 
         with pytest.raises(ValidationError):
             EvaluationSettings(_env_file=None)
+
+
+class TestSchedulerSettings:
+    def test_is_disabled_by_default_with_a_five_minute_interval(self) -> None:
+        settings = SchedulerSettings(_env_file=None)
+
+        assert not settings.enabled
+        assert settings.interval_seconds == 300
+
+    def test_reads_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("scheduler_enabled", "true")
+        monkeypatch.setenv("scheduler_interval_seconds", "60")
+
+        settings = SchedulerSettings(_env_file=None)
+
+        assert settings.enabled
+        assert settings.interval_seconds == 60
+
+    def test_rejects_an_interval_below_ten_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("scheduler_interval_seconds", "5")
+
+        with pytest.raises(ValidationError):
+            SchedulerSettings(_env_file=None)
+
+    def test_ignores_the_retired_per_type_intervals(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("training_reminder_interval_seconds", "5")
+        monkeypatch.setenv("evaluation_interval_seconds", "5")
+
+        TrainingSettings(_env_file=None)
+        EvaluationSettings(_env_file=None)

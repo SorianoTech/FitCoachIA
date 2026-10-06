@@ -14,7 +14,7 @@ _MIN_RATE_LIMIT_DELAY = timedelta(seconds=1)
 class FailureOutcome:
     retry_at: datetime | None
     failed: bool
-    # Not a known Telegram failure: the worker stops so it gets noticed.
+    # Not a known Telegram failure: the job fails and is logged as an error.
     unexpected: bool = False
 
 

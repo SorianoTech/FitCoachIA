@@ -101,8 +101,9 @@ async def _insert_current_cycle(
 
 async def _scheduled_weeks(connection: asyncpg.Connection, chat_id: int) -> list[int]:
     rows = await connection.fetch(
-        """SELECT week_number FROM training_evaluation
-           WHERE chat_id=$1 AND state='pending' ORDER BY week_number""",
+        """SELECT (payload->>'week_number')::int AS week_number FROM job_execution
+           WHERE chat_id=$1 AND job_type='evaluation_poll' AND state='pending'
+           ORDER BY week_number""",
         chat_id,
     )
     return [row["week_number"] for row in rows]
@@ -113,8 +114,8 @@ async def _insert_evaluation(
 ) -> None:
     await connection.execute(
         """INSERT INTO training_evaluation
-               (chat_id, plan_id, mesocycle_id, goal, week_number, due_at, score)
-           VALUES (77, $1, $2, 'gain_muscle', $3, now(), $4)""",
+               (chat_id, plan_id, mesocycle_id, goal, week_number, score)
+           VALUES (77, $1, $2, 'gain_muscle', $3, $4)""",
         plan_id,
         cycle_id,
         week,
@@ -145,7 +146,7 @@ async def test_backfills_the_goal_of_existing_plans(
 
 
 @pytest.mark.asyncio
-async def test_schedules_only_the_future_weeks_of_open_cycles(
+async def test_registers_only_the_future_polls_of_open_cycles(
     scratch_database: tuple[str, Migrate],
 ) -> None:
     url, migrate = scratch_database
@@ -162,7 +163,7 @@ async def test_schedules_only_the_future_weeks_of_open_cycles(
     try:
         weeks = await _scheduled_weeks(connection, chat_id=77)
         overdue = await connection.fetchval(
-            "SELECT count(*) FROM training_evaluation WHERE due_at <= now()"
+            "SELECT count(*) FROM job_execution WHERE execution_date <= now()"
         )
     finally:
         await connection.close()
@@ -176,7 +177,7 @@ async def test_schedules_only_the_future_weeks_of_open_cycles(
     [("10 days", True), (None, False), ("40 days", False)],
     ids=["closed", "undated", "all-weeks-past"],
 )
-async def test_does_not_schedule_cycles_without_future_weeks(
+async def test_does_not_register_polls_for_cycles_without_future_weeks(
     scratch_database: tuple[str, Migrate], started: str | None, completed: bool
 ) -> None:
     url, migrate = scratch_database
@@ -198,7 +199,7 @@ async def test_does_not_schedule_cycles_without_future_weeks(
 
 
 @pytest.mark.asyncio
-async def test_does_not_schedule_a_cycle_that_is_no_longer_current(
+async def test_does_not_register_polls_for_a_cycle_that_is_no_longer_current(
     scratch_database: tuple[str, Migrate],
 ) -> None:
     url, migrate = scratch_database

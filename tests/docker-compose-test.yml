@@ -1,40 +1,6 @@
 name: fitcoach-test
 
 services:
-  training-reminders:
-    profiles: ["reminders"]
-    image: fitcoachia/fitcoach-test:local
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
-    environment:
-      - bot_telegram_token=test-token
-      - bot_telegram_url=http://test-stubs:9999/bot
-      - bot_telegram_commands=start:Inicia FitCoach
-      - bot_telegram_secret_token=test-secret-token
-      - bot_telegram_webhook_base_url=https://test.url.domain.com
-      - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
-      - training_reminders_enabled=true
-      - training_reminder_interval_seconds=10
-    depends_on:
-      fitcoach-ia:
-        condition: service_healthy
-
-  evaluation:
-    profiles: ["evaluation"]
-    image: fitcoachia/fitcoach-test:local
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.evaluation"]
-    environment:
-      - bot_telegram_token=test-token
-      - bot_telegram_url=http://test-stubs:9999/bot
-      - bot_telegram_commands=start:Inicia FitCoach
-      - bot_telegram_secret_token=test-secret-token
-      - bot_telegram_webhook_base_url=https://test.url.domain.com
-      - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach
-      - evaluation_enabled=true
-      - evaluation_interval_seconds=10
-    depends_on:
-      fitcoach-ia:
-        condition: service_healthy
-
   fitcoach-ia:
     image: fitcoachia/fitcoach-test:local
     build:

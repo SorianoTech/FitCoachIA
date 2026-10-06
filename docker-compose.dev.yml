@@ -2,44 +2,6 @@ name: fitcoach-dev
 
 # El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
 services:
-  training-reminders-dev:
-    image: fitcoachia/fitcoach-app:dev
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
-    restart: unless-stopped
-    env_file:
-      - path: .env.dev
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
-        required: false
-    depends_on:
-      fitcoach-ia-dev:
-        condition: service_healthy
-    networks:
-      - default
-      - proxy-network
-
-  evaluation-dev:
-    image: fitcoachia/fitcoach-app:dev
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.evaluation"]
-    restart: unless-stopped
-    env_file:
-      - path: .env.dev
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
-        required: false
-    depends_on:
-      fitcoach-ia-dev:
-        condition: service_healthy
-    networks:
-      - default
-      - proxy-network
-
   fitcoach-ia-dev:
     container_name: dev-fitcoach-ia
     restart: unless-stopped

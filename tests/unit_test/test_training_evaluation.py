@@ -5,6 +5,7 @@ import pytest
 from fitcoach.domain.training_evaluation import (
     due_at,
     due_week,
+    is_superseded,
     score_from_option,
     upcoming_polls,
 )
@@ -28,6 +29,18 @@ class TestDueWeek:
     def test_rejects_naive_dates(self) -> None:
         with pytest.raises(ValueError, match="timezone-aware"):
             due_week(_START.replace(tzinfo=None), _START + timedelta(days=7))
+
+
+class TestIsSuperseded:
+    @pytest.mark.parametrize(("days", "week"), [(8, 1), (22, 3), (60, 4)])
+    def test_the_latest_due_week_is_not_superseded(self, days: int, week: int) -> None:
+        assert not is_superseded(_START, week, _START + timedelta(days=days))
+
+    def test_an_older_week_is_superseded_by_a_newer_due_one(self) -> None:
+        assert is_superseded(_START, 1, _START + timedelta(days=15))
+
+    def test_an_undated_cycle_supersedes_everything(self) -> None:
+        assert is_superseded(None, 1, _START)
 
 
 class TestDueAt:

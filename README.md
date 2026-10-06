@@ -9,14 +9,9 @@ El sistema es capaz de transformar una entrevista inicial en un **Plan Personali
 El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquestar cuatro agentes especializados:
 
 *   **Agente 1 (Secretario):** Transcribe entrevistas y genera informes estructurados del cliente.
-*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o abre el menú del vigente; los botones permiten consultar la semana actual sin LLM. `/train revisar` inicia la renovación, que requiere aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
+*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o revisa el vigente; las renovaciones requieren aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
-
-Un **curator auxiliar de ejercicios** permite proponer ampliaciones del catálogo mediante
-`/add_exercise` o lenguaje natural. Genera una propuesta estructurada, evalúa su calidad, detecta
-posibles duplicados y exige moderación humana antes de publicarla en el RAG. Ver
-[docs/exercise-catalogue-contributions.md](docs/exercise-catalogue-contributions.md).
 
 ## Stack Tecnológico y Requisitos Técnicos
 Este proyecto cumple con los estándares de desarrollo profesional exigidos en el máster:
@@ -35,17 +30,11 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 ### Interfaces de Usuario
 - **Web Panel:** Interfaz visual para que el usuario consulte sus datos, rutinas y nutrición.
 - **Chatbot (Telegram):** Canal de comunicación directo para actualizar progresos e interactuar con el entrenador en tiempo real.
-- **Telegram Mini App:** Consulta de semanas, registro de series, descansos, historial y
-  progreso sin LLM. Cambios de ejercicio y renovación continúan en el chat con confirmación.
-  Configuración y límites en [docs/telegram-miniapp.md](docs/telegram-miniapp.md).
-  Incluye [panel administrador de cuotas](docs/admin-panel.md), autorizado por
-  `miniapp_admin_chat_ids`, con límites globales y excepciones por usuario sin reiniciar.
 
 ## Estructura del Proyecto
 
 ```
 FitCoachIA/
-├── frontend/                     # Telegram Mini App: React, TypeScript y Vite
 ├── src/
 │   ├── fitcoach/
 │   │   ├── api/                  # Controladores y endpoints REST (webhook de Telegram)
@@ -55,10 +44,10 @@ FitCoachIA/
 │   │   │   ├── config/           # Configuración (settings) y logging
 │   │   │   ├── database/         # PostgreSQL conversacional (modelos, sesión, repositorio)
 │   │   │   ├── ia/               # Cliente de embeddings y skills de los agentes
-│   │   │   ├── jobs/             # Workers: avisos de entrenamiento y encuestas semanales
+│   │   │   ├── jobs/             # Scheduler de la app: avisos de fin de ciclo y encuestas semanales
 │   │   │   ├── observability/    # Telemetría OpenTelemetry
 │   │   │   ├── prompts/          # Plantillas de prompts por agente
-│   │   │   └── vectordb/         # Lectura RAG y publicación moderada en pgVector
+│   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
 │   │   ├── repository/           # Puertos de acceso a datos (Protocol)
 │   │   ├── service/              # Casos de uso; agent/ contiene las chains de los agentes
 │   │   └── main.py               # Punto de entrada de la aplicación
@@ -129,7 +118,7 @@ git clone https://github.com/usuario/proyecto-jupiter.git
 
 ## 🐳 Docker — Construcción manual de la imagen
 
-El `Dockerfile` se encuentra en `src/`, pero el contexto de construcción es la **raíz del repositorio**: copia `frontend/` (compila la Mini App en una etapa Node), `src/requirements.txt`, `src/fitcoach`, `alembic` y `alembic.ini`. El `.dockerignore` es una lista de permitidos, de modo que solo esos ficheros entran en el contexto.
+El `Dockerfile` se encuentra en `src/`, pero el contexto de construcción es la **raíz del repositorio**: copia `src/requirements.txt`, `src/fitcoach`, `alembic` y `alembic.ini`. El `.dockerignore` es una lista de permitidos, de modo que solo esos ficheros entran en el contexto.
 
 ### 1. Construir la imagen
 

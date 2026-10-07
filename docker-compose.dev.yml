@@ -1,26 +1,8 @@
 name: fitcoach-dev
 
-# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
+# Los servicios internos comparten una red exclusiva de desarrollo. Solo las
+# interfaces HTTP publicadas por nginx se conectan tambien a proxy-network.
 services:
-  training-reminders-dev:
-    image: fitcoachia/fitcoach-app:dev
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
-    restart: unless-stopped
-    env_file:
-      - path: .env.dev
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
-        required: false
-    depends_on:
-      fitcoach-ia-dev:
-        condition: service_healthy
-    networks:
-      - default
-      - proxy-network
-
   fitcoach-ia-dev:
     container_name: dev-fitcoach-ia
     restart: unless-stopped
@@ -51,7 +33,7 @@ services:
       embedder-dev:
         condition: service_healthy
     networks:
-      - default
+      - internal
       - proxy-network
 
   postgres-dev:
@@ -64,7 +46,7 @@ services:
       - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
         required: false
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
     volumes:
       - fitcoach-dev-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -73,8 +55,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - default
-      - proxy-network
+      - internal
 
   embedder-dev:
     container_name: dev-fitcoach-embedder
@@ -86,7 +67,7 @@ services:
     env_file:
       - path: infra/embedder/.env
     ports:
-      - "${embedder_port}:8100"
+      - "127.0.0.1:${embedder_port}:8100"
     healthcheck:
       # /health solo responde 200 cuando el modelo esta cargado en memoria.
       test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]
@@ -96,8 +77,7 @@ services:
       start_period: 60s
       start_interval: 5s
     networks:
-      - default
-      - proxy-network
+      - internal
 
   adminer-dev:
     container_name: dev-fitcoach-adminer
@@ -109,12 +89,15 @@ services:
       postgres-dev:
         condition: service_healthy
     networks:
-      - default
+      - internal
       - proxy-network
 
 volumes:
   fitcoach-dev-postgres:
 
 networks:
+  internal:
+    name: fitcoach-dev-internal
+    external: true
   proxy-network:
     external: true

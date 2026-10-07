@@ -202,8 +202,21 @@ Tu nueva vida te espera, ¡Adelante!
     }
     TRAINING_DUE_MESSAGE: Final = (
         "Ha llegado la fecha prevista de cierre de tu mesociclo. Esto no significa que hayas "
-        "completado las sesiones. Pulsa «Terminé el mesociclo» o envía /train revisar para preparar el siguiente, "
-        "/train posponer AAAA-MM-DD para posponer o /train avisos off para desactivar avisos."
+        "completado las sesiones. Envía /train para revisarlo y preparar un borrador del siguiente, "
+        "/train posponer AAAA-MM-DD para posponer o /train avisos off para desactivar estos avisos "
+        "(las encuestas semanales seguirán llegando)."
+    )
+    EVALUATION_POLL_QUESTION: Final = (
+        "Semana {week} de tu plan para {goal}: ¿qué te está pareciendo?"
+    )
+    EVALUATION_POLL_QUESTION_NO_GOAL: Final = "Semana {week} de tu plan: ¿qué te está pareciendo?"
+    EVALUATION_POLL_OPTIONS: Final = (
+        "0 - No me ha gustado nada",
+        "1 - No me gusta mucho",
+        "2 - Regular, mejorable",
+        "3 - Está bien, puede mejorar",
+        "4 - Me está gustando mucho",
+        "5 - Lo recomiendo sin dudar",
     )
     TRAINING_LEGACY_MESSAGE: Final = (
         "Tu plan anterior no tiene una fecha de inicio confirmada. Indícala con "
@@ -349,8 +362,8 @@ Tu nueva vida te espera, ¡Adelante!
 
     # --- Mensaje con el que se siembra la conversacion del modelo ---
     INTERVIEW_SEED_MESSAGE: Final = (
-        "New interview conversation about a body change was initiated. "
-        "What do you need to know about our new client to change its life?"
+        "Se ha iniciado una nueva entrevista sobre un cambio físico. "
+        "¿Qué necesitas saber de nuestro nuevo cliente para ayudarle a cambiar su vida?"
     )
 
     # --- Limpieza del texto de entrada ---

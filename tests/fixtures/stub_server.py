@@ -10,6 +10,7 @@ Rutas:
   POST /embed                                        -> servicio de embeddings
   GET  /health                                       -> sonda del compose
   GET  /__sent                                       -> mensajes que la app envio
+  GET  /__polls                                      -> encuestas enviadas y cerradas
 """
 
 import copy
@@ -27,6 +28,8 @@ FIXTURE_EXERCISE_IDS = (1, 2)
 
 # Mensajes enviados por la app, para que el test pueda inspeccionarlos.
 SENT_MESSAGES: list[dict[str, object]] = []
+SENT_POLLS: list[dict[str, object]] = []
+STOPPED_POLLS: list[dict[str, object]] = []
 REQUEST_COUNTS = {"embed": 0, "llm": 0}
 REGISTERED_WEBHOOK_URL = ""
 
@@ -176,8 +179,12 @@ class StubHandler(BaseHTTPRequestHandler):
             self._respond(SENT_MESSAGES)
         elif self.path == "/__counts":
             self._respond(REQUEST_COUNTS)
+        elif self.path == "/__polls":
+            self._respond({"sent": SENT_POLLS, "stopped": STOPPED_POLLS})
         elif self.path == "/__reset":
             SENT_MESSAGES.clear()
+            SENT_POLLS.clear()
+            STOPPED_POLLS.clear()
             REQUEST_COUNTS["embed"] = 0
             REQUEST_COUNTS["llm"] = 0
             self._respond({"ok": True})
@@ -335,7 +342,54 @@ class StubHandler(BaseHTTPRequestHandler):
                     "text": body.get("text", ""),
                 },
             }
+        if method == "sendPoll":
+            SENT_POLLS.append(body)
+            message_id = 10_000 + len(SENT_POLLS)
+            return {
+                "ok": True,
+                "result": {
+                    "message_id": message_id,
+                    "date": 0,
+                    "chat": {"id": body.get("chat_id", 1), "type": "private"},
+                    "poll": _poll(f"poll-{message_id}", body),
+                },
+            }
+        if method == "stopPoll":
+            STOPPED_POLLS.append(body)
+            return {
+                "ok": True,
+                "result": _poll(f"poll-{body.get('message_id')}", body, closed=True),
+            }
         return {"ok": True, "result": True}
+
+
+def _poll(poll_id: str, body: dict[str, object], closed: bool = False) -> dict[str, object]:
+    """Poll minimo que python-telegram-bot puede deserializar."""
+    raw_options = body.get("options") or []
+    if isinstance(raw_options, str):
+        raw_options = json.loads(raw_options)
+    # persistent_id es obligatorio desde Bot API 9.6 (python-telegram-bot >= 22.8).
+    options = [
+        {
+            "text": option["text"] if isinstance(option, dict) else str(option),
+            "voter_count": 0,
+            "persistent_id": f"option-{index}",
+        }
+        for index, option in enumerate(raw_options)
+    ]
+    return {
+        "id": poll_id,
+        "question": str(body.get("question", "")),
+        "options": options,
+        "total_voter_count": 0,
+        "is_closed": closed,
+        "is_anonymous": False,
+        "type": "regular",
+        "allows_multiple_answers": False,
+        # Obligatorios desde Bot API 9.6 / 10.0 (python-telegram-bot >= 22.8).
+        "allows_revoting": False,
+        "members_only": False,
+    }
 
 
 if __name__ == "__main__":

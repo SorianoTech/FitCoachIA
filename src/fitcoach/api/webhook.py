@@ -23,6 +23,9 @@ from fitcoach.infrastructure.database.dependencies import get_conversation_repos
 from fitcoach.infrastructure.database.postgres_conversation_repository import (
     PostgresConversationRepository,
 )
+from fitcoach.infrastructure.database.postgres_evaluation_repository import (
+    PostgresEvaluationRepository,
+)
 from fitcoach.infrastructure.database.postgres_exercise_submission_repository import (
     PostgresExerciseSubmissionRepository,
 )
@@ -172,6 +175,7 @@ def get_conversation_service(
         training_service=get_training_service(
             repository, trainer_deps, usage_settings, session, adaptation, quotas
         ),
+        evaluation_repository=PostgresEvaluationRepository(session),
         exercise_submissions=exercise_submissions,
         exercise_moderation=exercise_moderation,
     )
@@ -192,7 +196,7 @@ def get_training_service(
         trainer_deps.retriever,
         adaptation,
         usage_settings.to_limits(),
-        reminder_max_attempts=get_training_settings().reminder_max_attempts,
+        reminder_max_attempts=get_training_settings().max_attempts,
         miniapp_url=get_settings().miniapp_url,
         performance_summary=PostgresWorkoutRepository(session).performance_summary,
         quota_resolver=quotas.resolve,

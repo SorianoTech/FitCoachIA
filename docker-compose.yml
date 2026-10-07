@@ -1,22 +1,8 @@
 name: fitcoach-prod
 
-# El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
+# Los servicios internos comparten una red exclusiva de produccion. Solo la API
+# publica se conecta tambien a proxy-network.
 services:
-  training-reminders-prod:
-    image: fitcoachia/fitcoach-app:${VERSION:-latest}
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
-    restart: unless-stopped
-    env_file:
-      - path: .env.prod
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
-        required: false
-    depends_on:
-      fitcoach-ia-prod:
-        condition: service_healthy
-    networks:
-      - proxy-network
-
   fitcoach-ia-prod:
     container_name: fitcoach-ia
     restart: unless-stopped
@@ -43,6 +29,7 @@ services:
       embedder-prod:
         condition: service_healthy
     networks:
+      - internal
       - proxy-network
 
   embedder-prod:
@@ -55,8 +42,6 @@ services:
         required: false
       - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
         required: false
-    ports:
-      - "${EMBEDDER_PORT}:8100"
     healthcheck:
       # /health solo responde 200 cuando el modelo esta cargado en memoria.
       test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]
@@ -66,7 +51,7 @@ services:
       start_period: 60s
       start_interval: 5s
     networks:
-      - proxy-network
+      - internal
 
   postgres-prod:
     # Nombre fijo: sin el, un rename de servicio crearia un segundo Postgres
@@ -88,7 +73,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - proxy-network
+      - internal
 
   pgadmin-prod:
     image: dpage/pgadmin4
@@ -100,12 +85,10 @@ services:
         required: false
       - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
         required: false
-    ports:
-      - "${PGADMIN_PORT}:80"
     volumes:
       - pgadmin-prod_data:/root/.pgadmin
     networks:
-      - proxy-network
+      - internal
     healthcheck:
       test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
       interval: 60s
@@ -116,6 +99,9 @@ services:
         condition: service_healthy
 
 networks:
+  internal:
+    name: fitcoach-prod-internal
+    external: true
   proxy-network:
     external: true
 

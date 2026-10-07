@@ -253,11 +253,11 @@ con un nuevo mesociclo. El flujo conserva las trazas de generación y de las sus
 `/train posponer AAAA-MM-DD` fija otra fecha prevista cuando aún no se ha completado.
 `/train avisos off|on` guarda la preferencia, que se conserva al renovar.
 
-La interacción con el bot y un worker independiente comparten eventos PostgreSQL con
-clave por ciclo/ocasión y leases. Hay una propuesta inicial por ciclo; solo una
-posposición explícita habilita otra ocasión. El worker no llama al LLM.
-Los avisos automáticos requieren `training_reminders_enabled=true`; ver
-[entornos-y-despliegue.md](entornos-y-despliegue.md#worker-de-avisos-de-entrenamiento).
+La interacción con el bot y el [scheduler](scheduler.md) de la app comparten jobs PostgreSQL
+(`job_execution`) con clave por ciclo/ocasión y leases. Hay un aviso inicial por ciclo, registrado al
+dar fecha al ciclo; solo una posposición explícita lo sustituye por otro. El scheduler no llama al LLM.
+Los avisos automáticos requieren `scheduler_enabled=true`; ver
+[entornos-y-despliegue.md](entornos-y-despliegue.md#scheduler-de-avisos-y-encuestas).
 
 Los planes anteriores a esta funcionalidad conservan sus versiones, pero no se inventa
 su fecha de inicio a partir de la creación. `/train inicio AAAA-MM-DD` confirma la fecha,
@@ -265,7 +265,41 @@ o `/train revisar` permite confirmar que ya acabaron. Hasta entonces no reciben 
 
 La entrega externa es **al menos una vez**: un fallo después de enviar a Telegram y antes
 de registrar éxito puede duplicar excepcionalmente un aviso. Las reservas evitan duplicados
-normales entre workers/interacciones, no prometen exactamente una entrega externa.
+normales entre el scheduler y las interacciones, no prometen exactamente una entrega externa.
+
+### Encuestas semanales de satisfacción
+
+Resumen; el funcionamiento completo está en [encuestas-satisfaccion.md](encuestas-satisfaccion.md).
+Cada mesociclo con fecha de inicio recibe **4 encuestas** (poll de Telegram no anónimo, una
+respuesta) a los 7, 14, 21 y 28 días de `started_at`:
+
+> Semana {k} de tu plan para {objetivo}: ¿qué te está pareciendo?
+
+Opciones: `0 - No me ha gustado nada`, `1 - No me gusta mucho`, `2 - Regular, mejorable`,
+`3 - Está bien, puede mejorar`, `4 - Me está gustando mucho`, `5 - Lo recomiendo sin dudar`.
+El índice de la opción elegida es la nota.
+
+- **Programación (outbox).** Los 4 jobs `evaluation_poll` se registran en la misma
+  transacción que da fecha al ciclo: primer plan, renovación aceptada y `/train inicio` de un
+  ciclo legacy. Solo se programan las semanas aún futuras. Un cambio de ejercicios dentro del
+  ciclo y `/train posponer` no programan nada.
+- **Independientes de los avisos.** Se envían aunque el usuario tenga `/train avisos off`.
+- **Cancelación.** Cerrar el ciclo (o renovarlo) cancela sus encuestas pendientes; `/interview`
+  cancela las pendientes del chat. Las ya enviadas y respondidas se conservan: la tabla
+  sobrevive al reset con las FK a `NULL` y una copia de `goal`.
+- **Envío.** El scheduler reclama los jobs vencidos, toma `goal` y `plan_id` del plan vigente,
+  cierra (`stopPoll`) las encuestas anteriores del chat que sigan sin respuesta (pasan a `unanswered`) y
+  envía la nueva, guardándola en `training_evaluation` en la misma transacción que cierra el job. Si
+  la app estuvo parada, solo se envía la semana más reciente; las anteriores se cancelan. Una
+  encuesta sin respuesta no se reenvía y un voto tardío sobre ella se ignora.
+- **Respuesta.** El webhook recibe `poll_answer` y guarda la nota solo si el votante es el dueño
+  del chat. El voto es definitivo: la encuesta no permite cambiarlo ni retirarlo. El bot no
+  contesta nada.
+
+Reintentos (encuestas y avisos) con política configurable: espera inicial que se duplica en
+cada intento hasta un tope, número máximo de intentos, bloqueo mientras se envía y tamaño de
+lote. `RetryAfter` espera lo que pide Telegram; `BadRequest`/`Forbidden` marcan la entrega
+`failed`. Ver [scheduler.md](scheduler.md) y [entornos-y-despliegue.md](entornos-y-despliegue.md#scheduler-de-avisos-y-encuestas).
 
 ## Comandos y estados
 
@@ -437,11 +471,12 @@ agente existe para evitar, mientras que una pregunta se puede responder desde el
 
 | Tabla | Contenido | Cuándo se actualiza |
 | --- | --- | --- |
-| `training_plans` | Plan JSON e informe, versionados por `chat_id`, con ciclo y plan padre. | Primer plan o confirmación de un borrador. |
+| `training_plans` | Plan JSON e informe, versionados por `chat_id`, con ciclo, plan padre y copia de `goal`. | Primer plan o confirmación de un borrador. |
 | `training_sessions` | Estado `active` y puntero autoritativo del vigente. | Primera activación o confirmación. |
 | `training_mesocycles` | Inicio, fin previsto, cierre declarado y preferencias de avisos. | Inicio, cierre, renovación o controles de fechas. |
 | `training_workflows` | Revisión, perfil efectivo, candidatos, borrador, estado y aprobación. | En cada avance del flujo; conserva los cerrados. |
-| `training_notifications` | Eventos de aviso, ocasión, intentos y lease. | Detección, envío, reintento o posposición. |
+| `job_execution` | Cola genérica: avisos y encuestas con fecha, estado, intentos y lease. | Al dar fecha al ciclo, al ejecutarse, reintentarse, posponer o cerrar el ciclo. |
+| `training_evaluation` | Encuesta semanal ya enviada y su respuesta (`score` 0-5). | Al enviar y al votar. |
 | `conversation_messages` | Turnos, con la columna `agent` que separa entrevista de entrenamiento. | En cada turno válido. |
 | `token_usage` | Una fila por llamada al modelo, con `agent = 'trainer'`. | En cada llamada, incluidas las fallidas. |
 

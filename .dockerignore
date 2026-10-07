@@ -10,5 +10,16 @@ __pycache__
 *.py[cod]
 .coverage
 htmlcov
+# Allowlist: solo entra en el contexto de build lo que copia src/Dockerfile
+*
+!src/requirements.txt
+!src/fitcoach
+!alembic
+!alembic.ini
+!frontend
+
+# Dentro de lo permitido, excluye artefactos generados
+**/__pycache__
+**/*.py[cod]
 frontend/node_modules
 frontend/dist

@@ -53,6 +53,73 @@ erDiagram
         varchar_255  source "URL de la tarifa"
     }
 
+    training_sessions {
+        bigint      chat_id PK
+        varchar_16  status "active"
+        int         current_plan_id FK "nullable, SET NULL"
+    }
+
+    training_mesocycles {
+        int         id PK
+        bigint      chat_id "idx"
+        int         previous_cycle_id FK "nullable, SET NULL"
+        timestamptz started_at "nullable (legacy)"
+        timestamptz expected_end_at "nullable, idx"
+        timestamptz completed_at "nullable"
+        bool        reminders_enabled
+    }
+
+    training_plans {
+        int         id PK
+        bigint      chat_id "uq (chat_id, version)"
+        int         version
+        int         mesocycle_id FK "nullable, SET NULL"
+        int         parent_plan_id FK "nullable, SET NULL"
+        varchar_32  change_kind "initial | renewal | exercise_swap"
+        varchar_32  goal "copia de plan.goal"
+        json        plan
+    }
+
+    training_workflows {
+        int         id PK
+        bigint      chat_id "uq parcial: 1 abierto"
+        int         base_plan_id FK "CASCADE"
+        varchar_32  state
+        json        payload
+    }
+
+    job_execution {
+        uuid        id PK
+        varchar_32  job_type "training_reminder | evaluation_poll"
+        bigint      chat_id "idx"
+        json        payload
+        varchar_128 dedup_key "unique"
+        varchar_16  state "pending | running | done | failed | cancelled"
+        timestamptz execution_date "idx parcial pending/running"
+        timestamptz locked_until "nullable"
+        int         attempts
+        timestamptz executed_at "nullable"
+    }
+
+    training_evaluation {
+        int         id PK
+        uuid        job_id FK "nullable, SET NULL"
+        varchar_16  answer_status "awaiting | answered | unanswered"
+        bigint      chat_id "idx (chat_id, sent_at)"
+        int         plan_id FK "nullable, SET NULL"
+        int         mesocycle_id FK "nullable, SET NULL, uq (ciclo, semana)"
+        varchar_32  goal "nullable, copia al enviar"
+        smallint    week_number "1-4"
+        varchar_64  telegram_poll_id "unique"
+        smallint    score "0-5, nullable"
+    }
+
+    training_mesocycles   ||--o{ training_plans : "FK real (SET NULL)"
+    training_plans        ||--o| training_sessions : "current_plan_id (SET NULL)"
+    training_plans        ||--o{ training_workflows : "base_plan_id (CASCADE)"
+    training_mesocycles   ||--o{ training_evaluation : "FK real (SET NULL)"
+    training_plans        ||--o{ training_evaluation : "FK real (SET NULL)"
+    job_execution         ||--o{ training_evaluation : "FK real (SET NULL)"
     conversation_messages ||--o{ token_usage : "FK real (SET NULL)"
     model_prices          ||..o{ token_usage : "join logico por model (sin FK)"
     interview_sessions    ||..|| interviewer_profiles : "logico por chat_id (sin FK)"
@@ -72,18 +139,39 @@ Línea discontinua = relación lógica que solo existe en el código.
 | `interviewer_profiles` | `chat_id` | 1 por chat | [`6ca1174fc623`](../alembic/versions/6ca1174fc623_add_interview_profiles.py) |
 | `token_usage` | `id` (serial) | N por chat, 1 por llamada al LLM | [`7287a3dffce8`](../alembic/versions/7287a3dffce8_create_token_usage.py) |
 | `model_prices` | `model` | 1 por modelo (catálogo) | [`ab12cd34ef56`](../alembic/versions/ab12cd34ef56_create_model_prices.py) |
-| `training_plans` | `id` | N versiones inmutables por chat; ciclo y plan padre | `d4f1a9b7c3e2`, ampliada por `f3a8c1d4e6b2` y `a41bc08d732e` |
+| `training_plans` | `id` | N versiones inmutables por chat; ciclo y plan padre | `d4f1a9b7c3e2`, ampliada por `f3a8c1d4e6b2`, `a41bc08d732e` y `c2d8e4f6a1b3` (`goal`) |
 | `training_sessions` | `chat_id` | Puntero autoritativo al plan vigente | `d4f1a9b7c3e2` |
 | `training_mesocycles` | `id` | N ciclos por chat, con fechas y cierre declarado | `a41bc08d732e` |
 | `training_workflows` | `id` | N propuestas históricas, máximo una abierta por chat | `a41bc08d732e` |
-| `training_notifications` | `id` | Eventos únicos por ciclo y ocasión | `a41bc08d732e` |
+| `training_evaluation` | `id` | Encuestas **enviadas** (una por semana y ciclo) y su respuesta; la cola es `job_execution` | `c2d8e4f6a1b3` |
+| `job_execution` | `id` (UUID) | Un trabajo programado por aviso o encuesta (5 por ciclo); cola genérica del [scheduler](../docs/todo/job-scheduler-plan.md) | `c2d8e4f6a1b3` |
 | `workout_sessions` | `id` | Diario por slot semana/día/ciclo y prescripción congelada | `b82ac09d743f` |
 | `workout_requests` | `(chat_id, request_id)` | Alias UUID de inicio/reanudación idempotentes por chat | `b82ac09d743f` |
+| `quota_configs` | `scope_id` | Límite global y excepciones por usuario ([panel admin](admin-panel.md)) | `c3d7e9f1a2b4` |
+| `quota_audit` | `id` | N cambios de cuota auditados | `c3d7e9f1a2b4` |
+| `exercise_submissions` | `id` | N propuestas al catálogo; máximo un borrador por chat ([moderación](exercise-catalogue-contributions.md)) | `b6e4f2a1c9d8`, ampliada por `c7a9e2d4f6b1` |
 | `alembic_version` | `version_num` | 1 fila | la crea Alembic, no la modela la app |
 
 Cadena de migraciones:
 `c5ae33575d94` → `6ca1174fc623` → `7287a3dffce8` → `9d4e6b7a1c2f` → `ab12cd34ef56`
-→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e` → `b82ac09d743f`.
+→ `d4f1a9b7c3e2` → `e7b2c4d9f1a3` → `f3a8c1d4e6b2` → `a41bc08d732e`, que se bifurca en dos
+ramas independientes unidas por la revisión vacía `f8b2d6a4c1e9`:
+
+- Encuestas y jobs: `c2d8e4f6a1b3` (esquema: `training_plans.goal`, `job_execution` y
+  `training_evaluation`) → `d9a1b3c5e7f2` (*backfill* de `goal` desde el JSON del plan) →
+  `e5c7a9b1d3f4` (datos: traspasa a `job_execution` las notificaciones de `training_notifications`
+  y registra las encuestas futuras de los ciclos ya abiertos). Datos y esquema van en revisiones separadas.
+- Diario, cuotas y catálogo: `b82ac09d743f` → `c3d7e9f1a2b4` → `b6e4f2a1c9d8` → `c7a9e2d4f6b1`.
+
+Después de la unión, `a7d3f1c9e2b5` elimina `training_notifications` (el *downgrade* la recrea vacía).
+`a41bc08d732e` ya está desplegada desde `develop`, por eso la tabla se retira aquí y no editando esa
+revisión. Estado de la migración de datos de `e5c7a9b1d3f4` por notificación: `pending`/`sending` →
+job `pending` (`cancelled` si el ciclo está cerrado), `sent` → `done`, `failed` → `failed`, `cancelled`
+→ `cancelled`; un ciclo abierto con fecha, avisos activos y ningún aviso pendiente o hecho recibe uno en
+`expected_end_at`. `alembic upgrade head` corre en **una sola transacción**: si una revisión falla no se
+aplica ninguna y `alembic_version` no cambia, para que un humano revise el error.
+
+Las dos ramas tocan tablas distintas, así que el orden en que se apliquen no importa.
 La revisión intermedia [`9d4e6b7a1c2f`](../alembic/versions/9d4e6b7a1c2f_set_null_token_usage_message_fk.py)
 no crea tablas: solo recrea la FK de `token_usage` con `ON DELETE SET NULL`.
 
@@ -111,10 +199,25 @@ y leases evitan resultados de generación obsoletos.
 
 `training_mesocycles` tiene fechas UTC de inicio, cierre previsto y cierre declarado;
 una sustitución no las reinicia. La migración asocia cada generación legacy a un ciclo
-sin inventar fechas. `training_notifications` guarda ocasión, estado, vencimiento, intentos
-y lease. Su FK al ciclo y la del flujo al plan base usan borrado en cascada;
+sin inventar fechas. La FK del flujo al plan base usa borrado en cascada;
 el reset de entrevista elimina los ciclos después de eliminar planes y sesión.
 La base vectorial sigue separada y de solo lectura: Alembic no modifica su catálogo.
+
+**`training_evaluation` solo guarda encuestas enviadas, y sobrevive a `/interview`.** La fila se inserta al
+enviar, en la misma transacción que cierra el job (`job_id`). Sus FK usan `ON DELETE SET NULL` y guarda
+una copia de `goal`: tras un reset de entrevista se sigue sabiendo para qué objetivo era cada nota.
+`UNIQUE (mesocycle_id, week_number)` impide registrar dos veces una semana. La cola vive solo en `job_execution`.
+
+**`job_execution` separa "cuándo ejecutar" de "qué resultó".** Guarda fecha, estado, lease
+(`locked_until`) e intentos de cualquier tipo de job; `payload` lleva ciclo y semana en lugar de
+una FK, y `dedup_key` (único) hace idempotente el registro. `training_evaluation.job_id`
+enlaza cada encuesta con el job que la produjo (`SET NULL`: el resultado sobrevive al job) y
+`answer_status` distingue `awaiting`, `answered` y `unanswered`. Los jobs se registran en la
+misma transacción que fecha el ciclo (`save_training_plan`, renovación aceptada y `set_start`): 4
+encuestas (semanas 1-4) y 1 aviso en `expected_end_at`. `close_cycle` y `/interview` cancelan los
+pendientes; posponer cancela el aviso pendiente y registra otro con la nueva fecha, y reactivar los
+avisos registra uno si el último no está pendiente, en curso ni hecho. Las colas antiguas
+(`training_notifications` y las columnas de cola de `training_evaluation`) ya no existen en el esquema.
 
 **El diario no es el estado conversacional.** `workout_sessions` guarda sesiones
 iniciadas/finalizadas, referencia a la versión del plan y mesociclo, semana/día,

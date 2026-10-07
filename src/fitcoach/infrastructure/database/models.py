@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
@@ -9,9 +10,11 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
     text,
 )
@@ -95,6 +98,8 @@ class TrainingPlanRecord(Base):
         ForeignKey("training_plans.id", ondelete="SET NULL")
     )
     change_kind: Mapped[str] = mapped_column(String(32), server_default="initial")
+    # Copied from plan["goal"] so dashboards and polls need not parse the JSON.
+    goal: Mapped[str | None] = mapped_column(String(32), nullable=True)
     plan: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     report: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -158,21 +163,84 @@ class TrainingWorkflowRecord(Base):
     payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
 
 
-class TrainingNotificationRecord(Base):
-    __tablename__ = "training_notifications"
+class JobExecutionRecord(Base):
+    """Generic scheduled job: when to run, lease and outcome. Results live in their own tables.
+
+    Registered with its ``execution_date`` when the cycle is dated (outbox pattern);
+    ``payload`` carries what the handler needs so no FK ties the table to one job type.
+    """
+
+    __tablename__ = "job_execution"
     __table_args__ = (
-        UniqueConstraint("mesocycle_id", "occasion", name="uq_training_notifications_occasion"),
+        CheckConstraint(
+            "state IN ('pending', 'running', 'done', 'failed', 'cancelled')",
+            name="ck_job_execution_state",
+        ),
+        Index(
+            "ix_job_execution_due",
+            "execution_date",
+            postgresql_where=text("state IN ('pending', 'running')"),
+        ),
+        Index("ix_job_execution_chat_id", "chat_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid4, server_default=text("gen_random_uuid()")
+    )
+    job_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    dedup_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    execution_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TrainingEvaluationRecord(Base):
+    """Weekly satisfaction poll already sent to a chat and its answer.
+
+    Delivery is a ``job_execution`` row; goal and plan are copied on send and survive /interview.
+    """
+
+    __tablename__ = "training_evaluation"
+    __table_args__ = (
+        UniqueConstraint("mesocycle_id", "week_number", name="uq_training_evaluation_cycle_week"),
+        CheckConstraint("week_number BETWEEN 1 AND 4", name="ck_training_evaluation_week"),
+        CheckConstraint("score BETWEEN 0 AND 5", name="ck_training_evaluation_score"),
+        CheckConstraint(
+            "answer_status IN ('awaiting', 'answered', 'unanswered')",
+            name="ck_training_evaluation_answer_status",
+        ),
+        Index("ix_training_evaluation_chat_id_sent_at", "chat_id", "sent_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    mesocycle_id: Mapped[int] = mapped_column(
-        ForeignKey("training_mesocycles.id", ondelete="CASCADE"), nullable=False
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="SET NULL")
     )
-    occasion: Mapped[int] = mapped_column(default=0, server_default="0")
-    state: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
-    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    mesocycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_mesocycles.id", ondelete="SET NULL")
+    )
+    goal: Mapped[str | None] = mapped_column(String(32))
+    week_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    job_id: Mapped[UUID | None] = mapped_column(ForeignKey("job_execution.id", ondelete="SET NULL"))
+    answer_status: Mapped[str] = mapped_column(
+        String(16), default="awaiting", server_default="awaiting"
+    )
+    telegram_poll_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    score: Mapped[int | None] = mapped_column(SmallInteger)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class ProcessedUpdateRecord(Base):

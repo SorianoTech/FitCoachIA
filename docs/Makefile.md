@@ -10,10 +10,10 @@ Son los comandos del día a día.
 
 | Comando | Qué hace |
 |---|---|
-| `make dev-up` | Construye la imagen desde el código local y levanta dev (app + Postgres + Adminer) |
+| `make dev-up` | Construye la imagen desde el código local y levanta dev (app + Postgres + Adminer); con `--remove-orphans`, elimina servicios que ya no están en el Compose |
 | `make dev-down` | Detiene dev y retira huérfanos |
 | `make dev-logs` | Sigue los logs de dev |
-| `sudo make prod-up VERSION=x.y.z` | Descarga esa versión del registro y levanta producción |
+| `sudo make prod-up VERSION=x.y.z` | Descarga esa versión del registro y levanta producción; con `--remove-orphans`, elimina servicios que ya no están en el Compose |
 | `sudo make prod-down` | Detiene producción |
 | `sudo make prod-logs` | Sigue los logs de producción |
 

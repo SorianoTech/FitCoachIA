@@ -57,29 +57,39 @@ Una variable que solo esté en `env_file:` no sirve para interpolar, y al revés
 
 ## 3. Levantar cada entorno
 
-### Worker de avisos de entrenamiento
+### Scheduler de avisos y encuestas
 
-Los Compose incluyen `training-reminders-dev`, `training-reminders-prod` o
-`training-reminders` (local). Reutilizan la imagen de la app, pero sobrescriben su
-entrypoint con `python -m fitcoach.infrastructure.jobs.training_reminders`: no arrancan
-FastAPI ni ejecutan migraciones. Esperan a la app saludable, que ya ha migrado el esquema.
+Los avisos de fin de ciclo y las encuestas semanales los ejecuta un scheduler dentro de la app (tarea
+`asyncio` del *lifespan*), sin contenedores aparte. Ciclo de vida, tipos y cómo añadir uno nuevo en
+[scheduler.md](scheduler.md); flujo de las encuestas en [encuestas-satisfaccion.md](encuestas-satisfaccion.md).
 
-Variables opcionales: `training_reminders_enabled=false`,
-`training_reminder_interval_seconds=300` (mínimo 10) y
-`training_reminder_max_attempts=5`. Habilitar el flag solo después de migrar.
-Las fechas desconocidas de planes legacy no disparan avisos masivos.
+Está apagado por defecto. Para activarlo hay que poner `scheduler_enabled=true`, que activa todos los tipos de job (avisos y
+encuestas); si está apagado, los jobs siguen pendientes. Las variables `training_reminders_enabled` y
+`evaluation_enabled` ya no se leen: pueden quitarse de los `.env`. Activarlo solo después de migrar. Las fechas desconocidas de planes legacy no disparan
+avisos masivos.
 
-Para una comprobación de un lote acotado:
+Todas las variables son opcionales (plantilla en `.env.example`):
 
-```bash
-docker compose run --rm training-reminders-prod --once
-```
+| Variable | Defecto | Uso |
+|---|---|---|
+| `scheduler_enabled` | `false` | Arranca la tarea con la app |
+| `scheduler_interval_seconds` | `300` (mín. 10) | Espera entre ticks, común a los dos tipos |
+| `training_reminder_max_attempts` / `evaluation_max_attempts` | `5` (1-10) | Intentos antes de marcar `failed` |
+| `training_reminder_retry_delay_seconds` / `evaluation_retry_delay_seconds` | `30` | Espera inicial; se duplica en cada intento |
+| `training_reminder_retry_max_delay_seconds` / `evaluation_retry_max_delay_seconds` | `3600` (≥ la inicial) | Tope de la espera |
+| `training_reminder_sending_timeout_seconds` / `evaluation_sending_timeout_seconds` | `120` (mín. 10) | Bloqueo (`locked_until`) del job mientras se envía |
+| `training_reminder_batch_size` / `evaluation_batch_size` | `100` (1-1000) | Jobs por tick |
 
-El proceso coordina avisos con PostgreSQL, no usa Redis/Celery ni llama al modelo.
-Los logs registran entregas y fallos; los eventos guardan reintentos acotados y fallos
-permanentes. SIGTERM/SIGINT detienen el bucle y cierran las conexiones.
-`make dev-app` solo actualiza la API: para actualizar también el worker reconstruirlo
-con el Compose de desarrollo o utilizar `make dev-up`.
+Un valor fuera de rango aborta el arranque de la app. `training_reminder_interval_seconds` y
+`evaluation_interval_seconds` ya no se leen: pueden quedar en un `.env` antiguo sin efecto, pero conviene
+quitarlos. El aviso que se entrega **al interactuar con el bot** no usa esta política: reclama el mismo job de
+aviso con un bloqueo fijo de 2 minutos y su reintento a los 5 minutos (o lo que pida Telegram si es más), y de la
+configuración solo toma `training_reminder_max_attempts`.
+
+El proceso coordina todo con PostgreSQL, no usa Redis/Celery ni llama al modelo. Al apagar la app se detiene
+la tarea antes de cerrar la base. `make dev-up` y `make prod-up` llevan `--remove-orphans`, así que al desplegar
+se eliminan los contenedores `training-reminders*` y `evaluation*` antiguos. La app debe tener `poll_answer` en
+`allowed_updates` (lo registra al arrancar) para recibir los votos.
 
 ### Desarrollo
 
@@ -110,9 +120,11 @@ fichero de entorno es de root.
 | Base de datos | `postgres-dev` | `postgres-prod` |
 | Extras | Adminer | — |
 
-Ambos conviven en el mismo servidor. Los **nombres de servicio** son distintos por entorno a
-propósito: Compose los registra como alias en `proxy-network`, y si coincidieran, el DNS resolvería a
-dos contenedores. Ya ocurrió: el bot de producción respondía desde el contenedor de desarrollo.
+Ambos conviven en el mismo servidor sobre redes internas distintas:
+`fitcoach-dev-internal` y `fitcoach-prod-internal`. Los **nombres de servicio** también son distintos
+por claridad operativa y como defensa adicional frente a una conexión accidental a una red
+compartida. La separación evita repetir un incidente histórico en el que ambos entornos compartían
+alias en `proxy-network` y el bot de producción respondía desde el contenedor de desarrollo.
 
 ---
 

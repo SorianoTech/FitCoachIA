@@ -54,11 +54,11 @@ flowchart LR
 | **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`. Reenvía logs a Loki, trazas a Tempo y métricas a Prometheus por remote-write. Las colas de Loki y Tempo se persisten en disco; la de métricas es en memoria (ver sección 9). |
 | **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
-Todos los servicios están en la red interna `observability`, excepto Grafana y
-el Collector, que además se unen a `proxy-network` (la misma red que usa
-`fitcoach-ia` en producción) para que la app pueda enviar OTLP al Collector y
-nginx proxy manager pueda llegar a Grafana por nombre de contenedor
-(`fitcoach-grafana:3000`).
+Todos los servicios están en la red privada `observability`. Grafana se une además a las redes
+`fitcoach-dev-internal` y `fitcoach-prod-internal` para consultar cada PostgreSQL, y a
+`proxy-network` para que nginx proxy manager pueda publicarlo como `fitcoach-grafana:3000`. El
+Collector también se une a las dos redes internas de aplicación para recibir OTLP, pero no a la red
+del proxy.
 
 ## 3. Qué información se recoge
 
@@ -255,11 +255,11 @@ grupo consulta su propio datasource (`fitcoach-postgres-dev` /
 
 ## 5. Cómo levantar el stack
 
-Requiere la red externa `proxy-network` (la misma que usa `fitcoach-ia` en
-producción). Si no existe todavía:
+Requiere las redes externas `proxy-network`, `fitcoach-dev-internal` y
+`fitcoach-prod-internal`. Desde la raíz del repositorio pueden crearse de forma idempotente con:
 
 ```bash
-docker network create proxy-network
+make networks
 ```
 
 Configurar las variables de entorno (una sola vez):
@@ -318,9 +318,9 @@ APP_VERSION=<git-sha o version>   # opcional, aparece como service.version en lo
 - Si `otel_exporter_otlp_endpoint` no está definida, la app arranca igual pero
   no exporta trazas (modo no-op); así es como funcionan tests, CI y el
   desarrollo local por defecto.
-- El host `fitcoach-otel-collector` solo es resoluble si el contenedor de la
-  app está en la misma red que el Collector (`proxy-network`); en
-  `docker-compose.yml`/`docker-compose.dev.yml` ya lo está.
+- El host `fitcoach-otel-collector` solo es resoluble si el contenedor de la app está en la misma
+  red que el Collector. El Compose de observabilidad conecta el Collector a
+  `fitcoach-dev-internal` y `fitcoach-prod-internal`.
 - Ya está activada en `.env.dev`. Para producción, añadir la misma línea a
   `.env.prod` en el servidor (no está versionado, hay que editarlo a mano).
 
@@ -336,32 +336,21 @@ telemetría separa dev de prod de una forma distinta:
 - **Logs**: Alloy ingiere `fitcoach-ia` y `dev-fitcoach-ia` simultáneamente
   (ver `config/alloy/config.alloy`) y las distingue con la label
   `environment` (`dev`/`prod`), calculada a partir del nombre del contenedor.
-- **Tokens/SQL (`token_usage`)**: cada entorno tiene su propio servicio
-  Postgres, **nombrado de forma distinta a propósito**
+- **Tokens/SQL (`token_usage`)**: cada entorno tiene su propio servicio Postgres
   (`postgres-dev` en `docker-compose.dev.yml`, `postgres-prod` en
-  `docker-compose.yml`). Esto es importante: si ambos se llamaran `postgres`
-  y los dos estuvieran conectados a `proxy-network` a la vez, Docker
-  registraría el mismo alias DNS para los dos contenedores y la resolución
-  sería ambigua (potencialmente, `fitcoach-ia` de producción podría acabar
-  hablando con la base de datos de desarrollo). Al tener nombres de servicio
-  distintos, cada app resuelve siempre su propia base de datos sin ambigüedad,
-  y Grafana puede tener **dos datasources separados**
+  `docker-compose.yml`) y su propia red backend. Cada app solo puede resolver su base de datos.
+  Grafana se conecta a las dos redes y mantiene **dos datasources separados**
   (`PostgreSQL Dev` → `postgres-dev:5432`, `PostgreSQL Prod` →
   `postgres-prod:5432`), seleccionables en el dashboard con la variable
   `$datasource`.
-- **La misma regla vale para el servicio de la app**, y no es teórica: durante
-  un tiempo los dos Compose llamaron `fitcoach-ia` a su servicio, ambos
-  conectados a `proxy-network`. Como Compose registra el **nombre del servicio**
-  como alias de red, ese nombre resolvía a dos contenedores y el DNS los
-  alternaba, así que parte del tráfico del dominio de producción aterrizaba en
-  el contenedor de desarrollo: los mensajes al bot de producción los contestaba
-  el bot de desarrollo, con su base de datos y su skill recortada. Hoy los
-  servicios se llaman `fitcoach-ia-dev` y `fitcoach-ia-prod`.
+- **La API mantiene nombres distintos por entorno** (`fitcoach-ia-dev` /
+  `fitcoach-ia-prod`). Solo estas APIs comparten `proxy-network`, por lo que sus alias deben seguir
+  siendo únicos. Esta regla evita repetir el incidente histórico en el que ambos servicios se
+  llamaban `fitcoach-ia` y Docker alternaba la resolución DNS entre dev y producción.
 
-> **Regla general**: todo servicio conectado a `proxy-network` debe tener un
-> **nombre de servicio** único por entorno. El `container_name` no basta —
-> desambigua el contenedor, pero el alias de red sale del nombre del servicio, y
-> un `alias` declarado tampoco lo sustituye: se suma al implícito.
+> **Regla general**: `proxy-network` solo admite interfaces que deban recibir tráfico de nginx.
+> Sus nombres de servicio deben ser únicos. PostgreSQL, embedder, pgVector, jobs y Collector no se
+> conectan a esa red.
 - **Alertas**: duplicadas por entorno (`[dev]`/`[prod]` en el título), cada
   una apuntando a su propio datasource Postgres.
 

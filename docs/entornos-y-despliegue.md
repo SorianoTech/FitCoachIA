@@ -120,9 +120,11 @@ fichero de entorno es de root.
 | Base de datos | `postgres-dev` | `postgres-prod` |
 | Extras | Adminer | — |
 
-Ambos conviven en el mismo servidor. Los **nombres de servicio** son distintos por entorno a
-propósito: Compose los registra como alias en `proxy-network`, y si coincidieran, el DNS resolvería a
-dos contenedores. Ya ocurrió: el bot de producción respondía desde el contenedor de desarrollo.
+Ambos conviven en el mismo servidor sobre redes internas distintas:
+`fitcoach-dev-internal` y `fitcoach-prod-internal`. Los **nombres de servicio** también son distintos
+por claridad operativa y como defensa adicional frente a una conexión accidental a una red
+compartida. La separación evita repetir un incidente histórico en el que ambos entornos compartían
+alias en `proxy-network` y el bot de producción respondía desde el contenedor de desarrollo.
 
 ---
 

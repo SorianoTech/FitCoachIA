@@ -14,13 +14,14 @@
 | Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `fitcoach-ia-dev` | `dev-fitcoach-ia` | servicio `postgres-dev`, volumen `fitcoach-dev-postgres` |
 | Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia-prod` | `fitcoach-ia` | servicio `postgres-prod`, volumen `fitcoach-prod-postgres` |
 
-Servicio y contenedor se llaman distinto a propósito, y conviene no confundirlos. El **nombre del
-servicio** es el que Compose registra como alias en `proxy-network`, así que debe ser único por
-entorno: cuando los dos Compose llamaban `fitcoach-ia` a su servicio, ese nombre resolvía a dos
-contenedores y el bot de desarrollo acabó contestando mensajes de producción. El **`container_name`**
-es fijo porque de él dependen el filtro de Alloy, el workflow de despliegue y los Proxy Hosts de
-Nginx Proxy Manager. Ambos Compose se apoyan además en ese nombre fijo para que sea imposible tener
-dos contenedores del mismo rol conviviendo: un duplicado choca de nombre y falla en alto.
+Servicio y contenedor se llaman distinto a propósito, y conviene no confundirlos. Cada entorno tiene
+su propia red backend externa (`fitcoach-dev-internal` / `fitcoach-prod-internal`), mientras que
+`proxy-network` contiene únicamente las interfaces publicadas mediante Nginx Proxy Manager. Los
+nombres de servicio siguen siendo distintos por claridad y como defensa adicional ante una conexión
+accidental a una red compartida. El **`container_name`** es fijo porque de él dependen el filtro de
+Alloy, el workflow de despliegue y los Proxy Hosts de Nginx Proxy Manager. Ambos Compose se apoyan
+además en ese nombre fijo para que sea imposible tener dos contenedores del mismo rol conviviendo:
+un duplicado choca de nombre y falla en alto.
 
 `APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
 `.env.<APP_ENV>` si existe y después `.env`; las variables del sistema tienen prioridad.
@@ -80,10 +81,9 @@ arranca. `bot_telegram_webhook_base_url` es la URL pública de **tu app**, sin p
 de Telegram y vale igual en los dos entornos. Detalle en
 [telegram-environments.md](telegram-environments.md).
 
-`database_url` se utiliza cuando la API se ejecuta con Python local. Los Compose crean su propia URL
-interna contra el servicio `postgres-dev`/`postgres-prod` (nombre distinto por entorno para evitar que
-ambos reclamen el mismo alias de red en `proxy-network`), por lo que cada entorno conserva el
-historial del agente `interviewer` en una base de datos independiente.
+`database_url` se utiliza cuando la API se ejecuta con Python local. Los Compose crean su propia URL interna contra el servicio `postgres-dev`/`postgres-prod`. Cada
+Postgres solo pertenece a la red backend de su entorno, por lo que desarrollo y producción conservan
+el historial del agente `interviewer` en bases de datos aisladas.
 
 ## Cuota de consumo por chat
 
@@ -155,9 +155,12 @@ Esta opción ejecuta PostgreSQL y la API en contenedores. El contenedor de la AP
 automáticamente `alembic upgrade head` antes de iniciar FastAPI.
 
 ```bash
-docker network inspect proxy-network >/dev/null 2>&1 || docker network create proxy-network
 make dev-up
 ```
+
+El target crea automáticamente `fitcoach-dev-internal` y `proxy-network` si todavía no existen.
+PostgreSQL y el embedder solo publican sus puertos en `127.0.0.1`; desde otros equipos se accede a
+las interfaces HTTP autorizadas mediante Nginx Proxy Manager.
 
 Tras cambiar el código, los prompts o las skills, reconstruye solo la API sin volver a construir el
 embedder ni reiniciar PostgreSQL (deben estar ya levantados con `make dev-up`). Al arrancar también
@@ -198,9 +201,10 @@ make dev-down
 
 ## Desplegar producción
 
-Producción utiliza `docker-compose.yml`, el proyecto `fitcoach-prod`, la red externa
-`proxy-network`. Nginx Proxy Manager publica la API; antes del primer despliegue, crea esa red y
-el fichero `/etc/fitcoachia/prod/.env.prod` exclusivo del servidor de producción (ver
+Producción utiliza `docker-compose.yml`, el proyecto `fitcoach-prod`, la red backend externa
+`fitcoach-prod-internal` y `proxy-network` únicamente para publicar la API. `make prod-up` crea
+ambas redes si todavía no existen. Antes del primer despliegue, crea el fichero
+`/etc/fitcoachia/prod/.env.prod` exclusivo del servidor de producción (ver
 [Entornos y variables](#entornos-y-variables)). `make prod-up` falla si ese fichero no existe o no
 tiene permisos de acceso.
 
@@ -214,7 +218,6 @@ mediante `sudo -n`, así que ese usuario necesita una regla `sudoers` sin contra
 ```
 
 ```bash
-docker network inspect proxy-network >/dev/null 2>&1 || docker network create proxy-network
 make prod-up VERSION=0.3.0
 ```
 

@@ -122,7 +122,8 @@ Telegram reintenta los updates, así que no se pierden mensajes.
 **Prerrequisitos que CI nunca provee**, deben existir ya en el servidor: el fichero
 `/etc/fitcoachia/prod/.env.prod` con permisos restringidos (no legible por el usuario de
 despliegue), una regla `sudoers` NOPASSWD para ese usuario (ver [`docs/how-to.md`](how-to.md)) y la
-red Docker externa `proxy-network`.
+capacidad de crear las redes Docker externas `fitcoach-prod-internal` y `proxy-network`.
+`make prod-up` las crea de forma idempotente si todavía no existen.
 
 ### 2.6 Continuous Monitoring
 

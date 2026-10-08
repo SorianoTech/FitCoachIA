@@ -60,6 +60,11 @@ class InterviewerChain(BaseLLMChain):
 
 
 def _build_model(settings: IASettings) -> ChatOpenAI:
+    reasoning_effort = (
+        None
+        if settings.interviewer_reasoning_effort == "default"
+        else settings.interviewer_reasoning_effort
+    )
     return ChatOpenAI(
         base_url=settings.base_url,
         api_key=settings.token,
@@ -68,6 +73,7 @@ def _build_model(settings: IASettings) -> ChatOpenAI:
         max_tokens=settings.max_tokens or None,
         timeout=settings.timeout_seconds or None,
         max_retries=settings.max_retries,
+        reasoning_effort=reasoning_effort,
         model_kwargs={"response_format": {"type": "json_object"}},
     )
 

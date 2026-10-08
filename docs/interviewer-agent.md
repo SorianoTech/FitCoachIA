@@ -160,6 +160,12 @@ que una pregunta normal. Configura `ia_max_tokens` en `.env.dev` con margen sufi
 informe y el perfil; `2048` es un punto de partida razonable y algunos modelos necesitarán `4096`.
 Reinicia el entorno con `make dev-down && make dev-up` tras cambiar la configuración.
 
+Para `gpt-5-nano-2025-08-07`, el razonamiento no configurado usa esfuerzo `medium`.
+FitCoachIA envía `reasoning_effort=minimal` por defecto para reducir tiempo hasta la respuesta y
+consumo en una tarea principalmente conversacional y de extracción. Puede ajustarse a `low`,
+`medium` o `high`; el valor `default` omite el parámetro si el proveedor OpenAI-compatible no lo
+admite. Reducirlo no evita un timeout causado por indisponibilidad o saturación del proveedor.
+
 ## Componentes principales
 
 | Componente | Ubicación |
@@ -181,6 +187,7 @@ ia_base_url=https://.../v1
 ia_token=<secreto>
 ia_model=<proveedor/modelo>
 ia_temperature=0.5
+ia_interviewer_reasoning_effort=minimal
 ia_timeout_seconds=60
 ia_max_tokens=2048
 ia_history_window_messages=20

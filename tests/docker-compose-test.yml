@@ -18,6 +18,7 @@ services:
       - ia_token=test-token
       - ia_model=test-model
       - ia_temperature=0.5
+      - ia_interviewer_reasoning_effort=minimal
       # Limite por grupo; los filtros de target y material siguen siendo obligatorios.
       - ia_rag_top_k=10
       - database_url=postgresql+asyncpg://fitcoach:fitcoach@postgres:5432/fitcoach

@@ -8,7 +8,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
 from fitcoach.domain.conversation import ConversationMessage
+from fitcoach.infrastructure.config.settings import IASettings
 from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerResultError
+from fitcoach.service.agent.interviewer_chain import _build_model as build_interviewer_model
 
 
 @pytest.fixture
@@ -18,6 +20,32 @@ def model() -> MagicMock:
         return_value=AIMessage(content='{"status":"in_progress","reply":"Hola"}')
     )
     return model
+
+
+def _settings(**overrides: object) -> IASettings:
+    return IASettings.model_validate({
+        "base_url": "http://localhost:9999",
+        "token": "test",
+        "model": "gpt-5-nano-2025-08-07",
+        "temperature": 0.2,
+        **overrides,
+    })
+
+
+def test_builds_model_with_minimal_reasoning_by_default() -> None:
+    model = build_interviewer_model(_settings())
+
+    payload = model._get_request_payload([("human", "test")])
+
+    assert payload["reasoning_effort"] == "minimal"
+
+
+def test_omits_reasoning_effort_for_provider_default() -> None:
+    model = build_interviewer_model(_settings(interviewer_reasoning_effort="default"))
+
+    payload = model._get_request_payload([("human", "test")])
+
+    assert "reasoning_effort" not in payload
 
 
 @pytest.mark.asyncio

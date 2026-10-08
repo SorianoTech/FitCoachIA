@@ -21,6 +21,7 @@ class TestIASettings:
         assert settings.temperature == 0.5
         assert settings.timeout_seconds == 60
         assert settings.max_tokens == 0
+        assert settings.interviewer_reasoning_effort == "minimal"
         assert settings.exercise_curator_model == "gpt-5.4-mini"
         assert settings.exercise_curator_temperature == 0.1
         assert settings.exercise_curator_max_tokens == 1200
@@ -40,6 +41,30 @@ class TestIASettings:
 
         assert settings.timeout_seconds == 30
         assert settings.max_tokens == 128
+
+    @pytest.mark.parametrize("value", ["minimal", "low", "medium", "high", "default"])
+    def test_accepts_supported_interviewer_reasoning_effort(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv("ia_base_url", "http://test-llm:9999")
+        monkeypatch.setenv("ia_token", "test-token")
+        monkeypatch.setenv("ia_model", "test-model")
+        monkeypatch.setenv("ia_temperature", "0.5")
+        monkeypatch.setenv("ia_interviewer_reasoning_effort", value)
+
+        assert IASettings(_env_file=None).interviewer_reasoning_effort == value
+
+    def test_rejects_invalid_interviewer_reasoning_effort(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ia_base_url", "http://test-llm:9999")
+        monkeypatch.setenv("ia_token", "test-token")
+        monkeypatch.setenv("ia_model", "test-model")
+        monkeypatch.setenv("ia_temperature", "0.5")
+        monkeypatch.setenv("ia_interviewer_reasoning_effort", "none")
+
+        with pytest.raises(ValidationError):
+            IASettings(_env_file=None)
 
     def test_exercise_curator_model_can_be_configured_independently(
         self, monkeypatch: pytest.MonkeyPatch

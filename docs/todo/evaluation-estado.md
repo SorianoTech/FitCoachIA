@@ -93,7 +93,7 @@ el código propuesto y escribe los tests, la documentación y `.env.example`.
 | Verificación | `make tests` en local (unitarios + IT con cobertura ≥ 80 %), `ruff`, `mypy`. Nada de lo escrito desde el paso 2 se ha ejecutado |
 | Pruebas manuales | Tabla de la sección 4 de [evaluation-tests.md](evaluation-tests.md) |
 | Aplicar migraciones | `c2d8e4f6a1b3` → `d9a1b3c5e7f2` → `e5c7a9b1d3f4` (las aplica el `alembic upgrade head` del contenedor) |
-| 9. Panel de Grafana (backlog) | Aplazado por decisión del desarrollador: media semanal, distribución 0-5 y tasa de respuesta sobre `training_evaluation` con el datasource PostgreSQL existente |
+| 9. Panel de Grafana | Hecho en parte (N4 de `fitcoach-business`): satisfacción media por cliente, % sin contestar, % no generadas y detalle por `chat_id`. Pendientes: media semanal y distribución 0-5 |
 
 ---
 

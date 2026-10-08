@@ -56,9 +56,61 @@
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "WITH costs AS (SELECT sum(cost_usd) AS known_cost_usd,count(*) AS calls,count(cost_usd) AS priced_calls FROM token_usage WHERE $__timeFilter(created_at)), users AS (SELECT count(DISTINCT chat_id) AS users_with_plan FROM training_plans WHERE $__timeFilter(created_at)) SELECT known_cost_usd,users_with_plan,known_cost_usd/NULLIF(users_with_plan,0) AS known_usd_per_user,100.0*priced_calls/NULLIF(calls,0) AS price_coverage_pct FROM costs CROSS JOIN users"}]
     },
     {
+      "id": 8, "title": "N4 · Satisfacción media por cliente (0-5)", "type": "stat",
+      "description": "Media de las medias por chat_id (cada cliente pesa igual) de las encuestas contestadas, cohorte por sent_at. La nota sobrevive a /interview. Sin datos muestra 0: leer junto al nº de encuestas contestadas (0 encuestas = sin datos, no insatisfacción).",
+      "gridPos": {"x": 0, "y": 19, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "options": {"textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "fieldConfig": {"defaults": {}, "overrides": [
+        {"matcher": {"id": "byName", "options": "satisfaction_avg"}, "properties": [{"id": "displayName", "value": "media"}, {"id": "decimals", "value": 2}, {"id": "min", "value": 0}, {"id": "max", "value": 5}]},
+        {"matcher": {"id": "byName", "options": "answered_polls"}, "properties": [{"id": "displayName", "value": "encuestas contestadas"}, {"id": "decimals", "value": 0}]}
+      ]},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(avg(chat_avg),0) AS satisfaction_avg, COALESCE(sum(answered),0) AS answered_polls FROM (SELECT chat_id, avg(score) AS chat_avg, count(*) AS answered FROM training_evaluation WHERE answer_status='answered' AND score IS NOT NULL AND $__timeFilter(sent_at) GROUP BY chat_id) c"}]
+    },
+    {
+      "id": 9, "title": "N4 · Encuestas sin contestar (%)", "type": "stat",
+      "description": "unanswered / (answered + unanswered), cohorte por sent_at. Las awaiting quedan fuera: su poll sigue abierto. Sin datos muestra 0: leer junto al nº de encuestas cerradas.",
+      "gridPos": {"x": 8, "y": 19, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "options": {"textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "fieldConfig": {"defaults": {}, "overrides": [
+        {"matcher": {"id": "byName", "options": "unanswered_pct"}, "properties": [{"id": "displayName", "value": "sin contestar"}, {"id": "unit", "value": "percent"}, {"id": "min", "value": 0}, {"id": "max", "value": 100}]},
+        {"matcher": {"id": "byName", "options": "closed_polls"}, "properties": [{"id": "displayName", "value": "encuestas cerradas"}, {"id": "decimals", "value": 0}]}
+      ]},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(100.0 * count(*) FILTER (WHERE answer_status='unanswered') / NULLIF(count(*) FILTER (WHERE answer_status IN ('answered','unanswered')),0),0) AS unanswered_pct, count(*) FILTER (WHERE answer_status IN ('answered','unanswered')) AS closed_polls FROM training_evaluation WHERE $__timeFilter(sent_at)"}]
+    },
+    {
+      "id": 10, "title": "N4 · Encuestas no generadas (%)", "type": "stat",
+      "description": "Jobs evaluation_poll failed / (done + failed), por executed_at (resultado final). Las cancelled (ciclo cerrado, /interview, semana superada) no son fallos y quedan fuera. Sin datos muestra 0: leer junto al nº de envíos intentados.",
+      "gridPos": {"x": 16, "y": 19, "w": 8, "h": 5},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "options": {"textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "fieldConfig": {"defaults": {}, "overrides": [
+        {"matcher": {"id": "byName", "options": "not_generated_pct"}, "properties": [{"id": "displayName", "value": "no generadas"}, {"id": "unit", "value": "percent"}, {"id": "min", "value": 0}, {"id": "max", "value": 100}]},
+        {"matcher": {"id": "byName", "options": "attempted_polls"}, "properties": [{"id": "displayName", "value": "envíos intentados"}, {"id": "decimals", "value": 0}]}
+      ]},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(100.0 * count(*) FILTER (WHERE state='failed') / NULLIF(count(*) FILTER (WHERE state IN ('done','failed')),0),0) AS not_generated_pct, count(*) FILTER (WHERE state IN ('done','failed')) AS attempted_polls FROM job_execution WHERE job_type='evaluation_poll' AND $__timeFilter(executed_at)"}]
+    },
+    {
       "id": 7, "title": "Métricas de negocio pendientes", "type": "text",
-      "gridPos": {"x": 0, "y": 19, "w": 24, "h": 5},
-      "options": {"mode": "markdown", "content": "**N4 satisfacción:** falta encuesta; confirmar un borrador no equivale a valorarlo. **N5a coste por plan:** falta atribuir cada llamada a una acción y evento de generación; coste medio por llamada NO es coste por plan. No se añaden eventos, tablas de negocio ni cambios en flujos para estos dashboards."}
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 5},
+      "options": {"mode": "markdown", "content": "**N5a coste por plan:** falta atribuir cada llamada a una acción y evento de generación; coste medio por llamada NO es coste por plan. No se añaden eventos, tablas de negocio ni cambios en flujos para estos dashboards."}
+    },
+    {
+      "id": 11, "title": "N4 · Detalle por cliente", "type": "row", "collapsed": true,
+      "gridPos": {"x": 0, "y": 29, "w": 24, "h": 1},
+      "panels": [
+        {
+          "id": 12, "title": "N4 · Satisfacción por cliente", "type": "table",
+          "description": "Una fila por chat_id con encuestas enviadas en el rango (cohorte por sent_at). Media de las contestadas; sin respuestas muestra 0 con answered=0 y se ordena al final, tras los clientes con nota real (peor media primero).",
+          "gridPos": {"x": 0, "y": 30, "w": 24, "h": 8},
+          "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+          "fieldConfig": {"defaults": {}, "overrides": [
+            {"matcher": {"id": "byName", "options": "satisfaction_avg"}, "properties": [{"id": "decimals", "value": 2}]}
+          ]},
+          "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT chat_id, COALESCE(avg(score) FILTER (WHERE answer_status='answered'),0) AS satisfaction_avg, count(*) FILTER (WHERE answer_status='answered') AS answered, count(*) FILTER (WHERE answer_status='unanswered') AS unanswered, count(*) FILTER (WHERE answer_status='awaiting') AS awaiting FROM training_evaluation WHERE $__timeFilter(sent_at) GROUP BY chat_id ORDER BY count(*) FILTER (WHERE answer_status='answered')=0, satisfaction_avg, chat_id"}]
+        }
+      ]
     }
   ]
 }

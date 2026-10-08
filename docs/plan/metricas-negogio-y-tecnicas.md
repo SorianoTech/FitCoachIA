@@ -35,6 +35,7 @@ cada métrica implementable tiene panel propio en el dashboard de su tipo.
   ausencia de actividad.
 - Porcentajes sin denominador y costes completamente desconocidos quedan sin
   datos, no se transforman en cero. Los errores de datasource no se ocultan.
+  Excepción: los paneles N4 muestran 0 junto a su recuento (ver N4).
 - Ventanas LogQL de 24 horas son **móviles**, no días de calendario disjuntos.
   Los mensajes editados cuentan como updates; callbacks y duplicados no
   registrados como `update recibido` no forman parte del denominador.
@@ -51,7 +52,7 @@ cada métrica implementable tiene panel propio en el dashboard de su tipo.
 | **N1. Entrevistas completadas** | Implementada | Cohorte con `started_at` dentro del rango: completadas / total. Caducidad estimada de `in_progress` con selector 7/14/30 días respecto a ahora, sin actualizar estado. No reconstruye intentos borrados. |
 | **N2. Perfiles con plan** | Implementada | Perfiles con `completed_at` en rango y `EXISTS(training_plans)` / perfiles. No multiplica usuarios por versiones ni cuenta borradores pendientes. |
 | **N3. Adopción de agentes** | Implementada | Media de agentes distintos por usuario con llamadas `success` en el rango (30 días por defecto); desglose de usuarios por agente. No incluye uso determinista de la Mini App. |
-| **N4. Aceptación/satisfacción del plan** | Pendiente | Falta encuesta. Confirmar un borrador no equivale a satisfacción; la activación inicial tampoco implica aceptación explícita. |
+| **N4. Satisfacción del plan** | Implementada | Encuestas semanales de `training_evaluation`, cohorte por `sent_at`. Satisfacción = media de las medias por `chat_id` de las contestadas (cada cliente pesa igual). Sin contestar = `unanswered / (answered + unanswered)`; las `awaiting` quedan fuera. No generadas = jobs `evaluation_poll` `failed / (done + failed)` por `executed_at`; las `cancelled` no son fallos. **Excepción a la regla común**: sin datos muestran 0, y cada stat enseña su recuento (encuestas contestadas, cerradas o envíos intentados) para distinguir un 0 real de la falta de datos. Detalle por cliente en una fila plegable (`chat_id`, media, contestadas, sin contestar, abiertas); los clientes sin respuestas salen con media 0 al final. Confirmar un borrador sigue sin equivaler a satisfacción. |
 | **N5a. Coste por plan generado** | Pendiente | Falta atribución persistida de llamadas/reparaciones a acción y evento de generación. `avg(cost_usd)` del trainer mide coste por llamada, no por plan; no se presenta como sustituto. |
 | **N5b. Coste por usuario activado** | Proxy operativo | Coste LLM conocido del rango / usuarios distintos con un plan confirmado creado en ese rango, incluyendo versiones. Se muestra cobertura de precios. No es CAC, coste de cohorte causal ni cuenta exclusivamente primeros planes. |
 

@@ -180,6 +180,15 @@ Detalle y matriz de métricas:
 Los nuevos paneles Loki usan exclusivamente la etiqueta `environment` de Alloy
 para evitar doble recuento con OTLP; no muestran texto de usuarios.
 
+**Negocio y activación** incluye la satisfacción de clientes (N4) a partir de las
+encuestas semanales (`training_evaluation`) y de sus jobs de envío (`job_execution`):
+satisfacción media por cliente (0-5, media de medias por `chat_id`), % de encuestas sin
+contestar y % de encuestas que no se pudieron generar (`failed`, sin contar las
+`cancelled`). A diferencia del resto, sin datos muestran 0 y cada stat enseña el nº de
+encuestas en que se basa. La fila plegada **N4 · Detalle por cliente** contiene la tabla
+por `chat_id`; restringir el acceso a operadores. Flujo de las encuestas en
+[encuestas-satisfaccion.md](encuestas-satisfaccion.md).
+
 **RAG y catálogo** incorpora cuatro paneles basados en `RAG ranking` (nivel INFO):
 media de opciones por grupo, porcentaje de consultas vacías por grupo, media de
 distancia del mejor resultado y tabla de los últimos 100 eventos como máximo.

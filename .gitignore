@@ -13,7 +13,8 @@ env-*/
 
 #local IDE files
 .vscode/
-.claude/
+.claude/*
+!.claude/skills/
 
 #code review validation
 .ruff_cache

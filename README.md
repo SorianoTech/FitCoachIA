@@ -35,6 +35,10 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 
 ```
 FitCoachIA/
+├── .claude/
+│   └── skills/
+│       └── langchain-docs/
+│           └── SKILL.md          # Consulta de LangChain para Copilot y Claude Code
 ├── src/
 │   ├── fitcoach/
 │   │   ├── api/                  # Controladores y endpoints REST (webhook de Telegram)
@@ -107,6 +111,13 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
 
 El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md).
+
+### Asistentes de desarrollo
+
+GitHub Copilot y Claude Code comparten la skill `langchain-docs` en `.claude/skills/` para
+consultar la documentación oficial de LangChain y contrastarla con las versiones del proyecto.
+No es una skill de los agentes de la aplicación. Activación, requisitos de acceso web y ejemplos
+en [docs/how-to.md](docs/how-to.md#skill-de-langchain-para-asistentes-de-desarrollo).
 
 
 ## Instalación y Despliegue

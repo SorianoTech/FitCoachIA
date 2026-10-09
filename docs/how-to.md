@@ -7,6 +7,48 @@
 - Docker y Docker Compose, para PostgreSQL
 - Un bot de Telegram y un endpoint compatible con OpenAI para probar el flujo completo
 
+## Skill de LangChain para asistentes de desarrollo
+
+El repositorio incluye `.claude/skills/langchain-docs/SKILL.md`, una skill compartida por
+GitHub Copilot y Claude Code para responder preguntas sobre el uso de LangChain. Se obtiene al
+clonar o actualizar el repositorio; no requiere instalar paquetes ni configurar un servidor MCP.
+Es independiente de las skills de los agentes de FitCoachIA en
+`src/fitcoach/infrastructure/ia/skills/`: no se carga en los prompts de la aplicación.
+
+Ambos asistentes pueden seleccionarla automáticamente cuando la consulta coincide con su
+descripción; esa selección no garantiza que se active en todas las preguntas. Por ejemplo:
+
+> Usa la skill langchain-docs para explicar cómo utilizar la salida estructurada de ChatOpenAI
+> con las versiones de este proyecto y cita la documentación oficial.
+
+En Claude Code también se puede invocar explícitamente:
+
+```text
+/langchain-docs ¿Cómo se utiliza ainvoke con ChatOpenAI en este proyecto?
+```
+
+En Copilot CLI, `/skills` permite gestionar las skills. Utiliza una versión de tu cliente con
+soporte de Agent Skills y abre una sesión nueva si acabas de añadirla y todavía no aparece.
+
+La skill contrasta las restricciones de `pyproject.toml`, las versiones resueltas de
+`src/requirements.txt` y el código pertinente. Consulta
+<https://docs.langchain.com/llms.txt> y sigue sus índices anidados hasta las páginas concretas,
+priorizando Python y citando las fuentes. No descarga toda la documentación al repositorio ni
+presupone que los ejemplos más recientes sean compatibles con nuestras dependencias.
+
+El asistente necesita una herramienta de acceso web y permiso para consultar esas páginas.
+Si no dispone de acceso o la consulta falla, debe indicar la limitación y distinguir lo
+verificado en el repositorio de lo no comprobado en la documentación. No debe enviar código
+ni secretos a servicios externos, ni instalar dependencias o modificar archivos por una
+simple pregunta.
+
+La carpeta `.claude/skills/` se versiona; el resto de la configuración local de `.claude/`
+permanece ignorado. El contexto Docker, basado en una lista de permitidos, excluye estas skills
+de desarrollo.
+
+Referencias: [Agent Skills en Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills)
+y [skills en Claude Code](https://code.claude.com/docs/en/skills).
+
 ## Entornos y variables
 
 | Entorno | Compose | Proyecto | Servicio de la app | Contenedor | Base de datos |

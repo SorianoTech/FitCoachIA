@@ -119,6 +119,11 @@ Key facts per layer:
 
 ## 3. Agents (today: Interviewer, Trainer; designed to grow)
 
+- **Developer assistant skills** live in `.claude/skills/`, shared by GitHub Copilot and
+  Claude Code. `langchain-docs/SKILL.md` guides LangChain questions through the official
+  documentation indexes and checks compatibility with repository dependencies. These are
+  separate from runtime agent skills in `infrastructure/ia/skills/` and are not loaded by
+  the app. Usage and web-access requirements are documented in `docs/how-to.md`.
 - **Interviewer (agent 1)**: structured interview -> `InterviewerProfile` (JSON validated by Pydantic).
 - **Trainer (agent 2)**: profile + RAG exercises -> 4-week `TrainingPlan`; must pick exercises only from the retrieved corpus.
 - `AgentType` already reserves `NUTRITIONIST` and `COACH` (placeholders, no implementation).
@@ -279,4 +284,6 @@ Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/tra
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
 `docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
 `docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`.
-`docs/plan/` holds design notes and `docs/todo/` the backlog.
+`docs/plan/` holds design notes, including
+`docs/plan/langchain-agents-langgraph.md` (proposed adoption and four-agent orchestration;
+not implemented), and `docs/todo/` the backlog.

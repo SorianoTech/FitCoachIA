@@ -261,7 +261,7 @@ entorno: `scheduler_enabled=true`, que activa todos los tipos de job. Detalle en
 - **Cierre best effort.** Si `stopPoll` falla, la encuesta queda `unanswered` en la base aunque el poll siga
   abierto en Telegram.
 - **Grafana**: el dashboard *Negocio y activación* muestra satisfacción media por cliente, % sin
-  contestar, % no generadas y el detalle por `chat_id` (N4 en
+  contestar y % no generadas (cada uno con su nº absoluto y su total) y el detalle por `chat_id` (N4 en
   [metricas-negogio-y-tecnicas.md](plan/metricas-negogio-y-tecnicas.md)). La media semanal y la
   distribución 0-5 siguen en el backlog ([evaluation-estado.md](todo/evaluation-estado.md)).
 - Plan de pruebas y casos manuales: [evaluation-tests.md](todo/evaluation-tests.md) (histórico: describe los workers

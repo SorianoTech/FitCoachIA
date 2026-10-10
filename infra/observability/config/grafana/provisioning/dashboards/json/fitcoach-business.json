@@ -69,27 +69,29 @@
     },
     {
       "id": 9, "title": "N4 · Encuestas sin contestar (%)", "type": "stat",
-      "description": "unanswered / (answered + unanswered), cohorte por sent_at. Las awaiting quedan fuera: su poll sigue abierto. Sin datos muestra 0: leer junto al nº de encuestas cerradas.",
+      "description": "unanswered / (answered + unanswered), cohorte por sent_at, con el nº de encuestas sin contestar. Las awaiting quedan fuera: su poll sigue abierto. Sin datos muestra 0: leer junto al nº de encuestas cerradas.",
       "gridPos": {"x": 8, "y": 19, "w": 8, "h": 5},
       "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
       "options": {"textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "fieldConfig": {"defaults": {}, "overrides": [
         {"matcher": {"id": "byName", "options": "unanswered_pct"}, "properties": [{"id": "displayName", "value": "sin contestar"}, {"id": "unit", "value": "percent"}, {"id": "min", "value": 0}, {"id": "max", "value": 100}]},
+        {"matcher": {"id": "byName", "options": "unanswered_polls"}, "properties": [{"id": "displayName", "value": "sin contestar (nº)"}, {"id": "decimals", "value": 0}]},
         {"matcher": {"id": "byName", "options": "closed_polls"}, "properties": [{"id": "displayName", "value": "encuestas cerradas"}, {"id": "decimals", "value": 0}]}
       ]},
-      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(100.0 * count(*) FILTER (WHERE answer_status='unanswered') / NULLIF(count(*) FILTER (WHERE answer_status IN ('answered','unanswered')),0),0) AS unanswered_pct, count(*) FILTER (WHERE answer_status IN ('answered','unanswered')) AS closed_polls FROM training_evaluation WHERE $__timeFilter(sent_at)"}]
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(100.0 * count(*) FILTER (WHERE answer_status='unanswered') / NULLIF(count(*) FILTER (WHERE answer_status IN ('answered','unanswered')),0),0) AS unanswered_pct, count(*) FILTER (WHERE answer_status='unanswered') AS unanswered_polls, count(*) FILTER (WHERE answer_status IN ('answered','unanswered')) AS closed_polls FROM training_evaluation WHERE $__timeFilter(sent_at)"}]
     },
     {
       "id": 10, "title": "N4 · Encuestas no generadas (%)", "type": "stat",
-      "description": "Jobs evaluation_poll failed / (done + failed), por executed_at (resultado final). Las cancelled (ciclo cerrado, /interview, semana superada) no son fallos y quedan fuera. Sin datos muestra 0: leer junto al nº de envíos intentados.",
+      "description": "Jobs evaluation_poll failed / (done + failed), por executed_at (resultado final), con el nº de no generadas. Las cancelled (ciclo cerrado, /interview, semana superada) no son fallos y quedan fuera. Sin datos muestra 0: leer junto al nº de envíos intentados.",
       "gridPos": {"x": 16, "y": 19, "w": 8, "h": 5},
       "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
       "options": {"textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "fieldConfig": {"defaults": {}, "overrides": [
         {"matcher": {"id": "byName", "options": "not_generated_pct"}, "properties": [{"id": "displayName", "value": "no generadas"}, {"id": "unit", "value": "percent"}, {"id": "min", "value": 0}, {"id": "max", "value": 100}]},
+        {"matcher": {"id": "byName", "options": "failed_polls"}, "properties": [{"id": "displayName", "value": "no generadas (nº)"}, {"id": "decimals", "value": 0}]},
         {"matcher": {"id": "byName", "options": "attempted_polls"}, "properties": [{"id": "displayName", "value": "envíos intentados"}, {"id": "decimals", "value": 0}]}
       ]},
-      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(100.0 * count(*) FILTER (WHERE state='failed') / NULLIF(count(*) FILTER (WHERE state IN ('done','failed')),0),0) AS not_generated_pct, count(*) FILTER (WHERE state IN ('done','failed')) AS attempted_polls FROM job_execution WHERE job_type='evaluation_poll' AND $__timeFilter(executed_at)"}]
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT COALESCE(100.0 * count(*) FILTER (WHERE state='failed') / NULLIF(count(*) FILTER (WHERE state IN ('done','failed')),0),0) AS not_generated_pct, count(*) FILTER (WHERE state='failed') AS failed_polls, count(*) FILTER (WHERE state IN ('done','failed')) AS attempted_polls FROM job_execution WHERE job_type='evaluation_poll' AND $__timeFilter(executed_at)"}]
     },
     {
       "id": 7, "title": "Métricas de negocio pendientes", "type": "text",

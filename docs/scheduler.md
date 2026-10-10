@@ -46,6 +46,19 @@ fijo de 2 minutos, así que el scheduler y la interacción nunca lo envían dos 
 ERROR, pero no detiene el scheduler. Un job que supera `max_attempts` tras una interrupción se marca `failed` sin
 ejecutarse. Un error de base de datos aborta el tick y se reintenta en el siguiente.
 
+## Logs
+
+Logger `fitcoach.infrastructure.jobs.scheduler`. Cada job deja su id y su tipo, de modo que se puede seguir de
+principio a fin filtrando por el id o por `(evaluation_poll)` / `(training_reminder)`:
+
+| Nivel | Mensaje | Cuándo |
+|---|---|---|
+| INFO | `Job <id> (<tipo>) claimed: chat=… attempt=… due=… payload=…` | Al reclamarlo |
+| INFO | `Job <id> (<tipo>) cancelled: <motivo>` | El handler decide no enviarlo (`reminder no longer due`, `no open cycle with a current plan`, `week N is no longer the current one`) |
+| INFO | `Job <id> (<tipo>) finished: state=… retry_at=…` | Al registrar el resultado (`done`, `failed`, `cancelled` o `pending` con reintento) |
+| WARNING/ERROR | `Job <id> (<tipo>) not delivered to chat …` | Fallo de Telegram (ver arriba) |
+| INFO | `Scheduler tick finished: processed=N` | Al final de cada tick |
+
 ## Configuración
 
 | Variable | Defecto | Significado |

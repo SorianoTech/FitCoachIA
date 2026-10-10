@@ -267,6 +267,54 @@ async def test_a_poll_that_no_longer_applies_is_cancelled_without_sending(
     assert [outcome.state for outcome in fixture.outcomes()] == [JobState.CANCELLED]
 
 
+# --- logs ---------------------------------------------------------------------
+
+
+def _messages(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [record.getMessage() for record in caplog.records]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("job_type", list(JobType))
+async def test_a_sent_job_logs_its_type_when_claimed_and_finished(
+    fixture: _Fixture, caplog: pytest.LogCaptureFixture, job_type: JobType
+) -> None:
+    fixture.queue(_job(job_type))
+    caplog.set_level("INFO", logger=scheduler.__name__)
+
+    await _scheduler(fixture).tick()
+
+    messages = _messages(caplog)
+    assert f"Job {_JOB_ID} ({job_type}) claimed: chat=7 attempt=1" in messages[0]
+    assert f"Job {_JOB_ID} ({job_type}) finished: state=done retry_at=None" in messages
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("job", "reason"),
+    [
+        (_job(JobType.TRAINING_REMINDER), "reminder no longer due"),
+        (_job(week=1), "no open cycle with a current plan"),
+        (_job(week=0), "week 0 is no longer the current one"),
+    ],
+    ids=["reminder-not-due", "poll-cycle-closed", "poll-superseded"],
+)
+async def test_a_cancelled_job_logs_why(
+    fixture: _Fixture, caplog: pytest.LogCaptureFixture, job: ClaimedJob, reason: str
+) -> None:
+    fixture.training.reminder_target.return_value = None
+    if reason.startswith("no open cycle"):
+        fixture.evaluations.open_current_plan.return_value = None
+    fixture.queue(job)
+    caplog.set_level("INFO", logger=scheduler.__name__)
+
+    await _scheduler(fixture).tick()
+
+    messages = _messages(caplog)
+    assert f"Job {_JOB_ID} ({job.job_type}) cancelled: {reason}" in messages
+    assert f"Job {_JOB_ID} ({job.job_type}) finished: state=cancelled retry_at=None" in messages
+
+
 @pytest.mark.asyncio
 async def test_a_telegram_answer_without_a_poll_fails_the_job(fixture: _Fixture) -> None:
     fixture.bot.send_poll.return_value = MagicMock(message_id=1, poll=None)

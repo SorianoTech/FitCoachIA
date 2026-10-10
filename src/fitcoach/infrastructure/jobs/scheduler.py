@@ -115,6 +115,15 @@ class JobScheduler:
             if job is None:
                 break
             processed += 1
+            logger.info(
+                "Job %s (%s) claimed: chat=%s attempt=%s due=%s payload=%s",
+                job.id,
+                job.job_type,
+                job.chat_id,
+                job.attempts,
+                job.execution_date.isoformat(),
+                job.payload,
+            )
             outcome = await self._execute(job, session, runner)
             try:
                 await jobs.finish(job, outcome, self._clock())
@@ -124,6 +133,14 @@ class JobScheduler:
                     job.id,
                     job.job_type,
                 )
+                continue
+            logger.info(
+                "Job %s (%s) finished: state=%s retry_at=%s",
+                job.id,
+                job.job_type,
+                outcome.state,
+                outcome.retry_at,
+            )
         return processed
 
     async def _execute(
@@ -142,6 +159,11 @@ class JobScheduler:
             logger.exception("Job %s (%s) crashed", job.id, job.job_type)
             await session.rollback()
             return JobOutcome.failed()
+
+    @staticmethod
+    def _cancelled(job: ClaimedJob, reason: str) -> JobOutcome:
+        logger.info("Job %s (%s) cancelled: %s", job.id, job.job_type, reason)
+        return JobOutcome.cancelled()
 
     def _failure(self, job: ClaimedJob, error: TelegramError, policy: RetryPolicy) -> JobOutcome:
         outcome = classify_failure(error, job.attempts, policy, self._clock())
@@ -168,7 +190,7 @@ class JobScheduler:
             job.chat_id, int(str(job.payload["mesocycle_id"])), now
         )
         if target is None:
-            return JobOutcome.cancelled()
+            return self._cancelled(job, "reminder no longer due")
         try:
             await self._bot.send_message(
                 chat_id=job.chat_id,
@@ -186,8 +208,10 @@ class JobScheduler:
         week = int(str(job.payload["week_number"]))
         evaluations = PostgresEvaluationRepository(session)
         target = await evaluations.open_current_plan(int(str(job.payload["mesocycle_id"])))
-        if target is None or is_superseded(target.started_at, week, now):
-            return JobOutcome.cancelled()
+        if target is None:
+            return self._cancelled(job, "no open cycle with a current plan")
+        if is_superseded(target.started_at, week, now):
+            return self._cancelled(job, f"week {week} is no longer the current one")
         await self._close_previous(job, await evaluations.previous_unanswered(job.chat_id))
         try:
             message = await self._bot.send_poll(

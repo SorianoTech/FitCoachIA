@@ -13,13 +13,14 @@ from tests.unit_test.conftest import build_plan_payload
 
 
 def _settings(**overrides: object) -> IASettings:
-    return IASettings.model_validate({
+    values: dict[str, object] = {
         "base_url": "http://localhost:9999",
         "token": "test",
         "model": "base",
         "temperature": 0.5,
         **overrides,
-    })
+    }
+    return IASettings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])

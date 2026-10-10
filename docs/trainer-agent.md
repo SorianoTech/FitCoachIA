@@ -110,7 +110,10 @@ la generación y requieren atención profesional.
 El resultado es un **borrador no activo**, con informe de cambios y su justificación.
 `/train confirmar PROPUESTA [AAAA-MM-DD]` lo activa y asigna una versión. La fecha opcional
 es el inicio del nuevo mesociclo, en UTC; por defecto se usa la confirmación.
-`/train cancelar` descarta la propuesta sin cambiar el plan. Confirmar dos veces no crea
+`/train cancelar` (o «Descartar borrador») descarta la propuesta sin cambiar el plan. El cierre del
+mesociclo no se deshace: si la renovación ya lo había cerrado, el bloque anterior sigue cerrado y sin
+encuestas ni avisos pendientes, y el mensaje lo indica e invita a `/train revisar`; si se descarta
+antes del cierre (o es un cambio de ejercicio), el ciclo y sus jobs siguen igual. Confirmar dos veces no crea
 dos versiones. Si cambió el plan base, la propuesta no puede activarse.
 `/train editar CAMPO TEXTO` corrige una respuesta e invalida el borrador; los campos son
 `adherence`, `results`, `recovery`, `discomfort`, `preferences` y `changes`.

@@ -270,6 +270,68 @@ class TestTrainerFlowIntegration:
         )
         assert "TU SIGUIENTE MESOCICLO" in stub.get("/__sent").json()[-1]["text"]
 
+    async def test_discarding_renewal_after_closure_warns_cycle_stays_closed(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        cycle_id = await app_db.fetchval(
+            "SELECT id FROM training_mesocycles WHERE chat_id=$1", CHAT_ID
+        )
+        client.post("/webhook/response", json=_update(20, "/train revisar"))
+        keyboard = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])["inline_keyboard"]
+        client.post("/webhook/response", json=_callback(21, keyboard[0][0]["callback_data"]))
+        keyboard = json.loads(stub.get("/__sent").json()[-1]["reply_markup"])["inline_keyboard"]
+        discard = next(
+            button
+            for row in keyboard
+            for button in row
+            if button["callback_data"].startswith("tr:cancel:")
+        )
+        client.post("/webhook/response", json=_callback(22, discard["callback_data"]))
+        assert stub.get("/__sent").json()[-1]["text"].startswith("Borrador descartado")
+        assert await app_db.fetchval(
+            "SELECT completed_at IS NOT NULL FROM training_mesocycles WHERE id=$1", cycle_id
+        )
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM job_execution WHERE state='pending' "
+                "AND payload->>'mesocycle_id' = $1",
+                str(cycle_id),
+            )
+            == 0
+        )
+
+    async def test_cancelling_renewal_before_closure_keeps_generic_message_and_jobs(
+        self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
+    ) -> None:
+        _complete_interview(client)
+        _run_train(client)
+        cycle_id = await app_db.fetchval(
+            "SELECT id FROM training_mesocycles WHERE chat_id=$1", CHAT_ID
+        )
+        pending = await app_db.fetchval(
+            "SELECT count(*) FROM job_execution WHERE state='pending' "
+            "AND payload->>'mesocycle_id' = $1",
+            str(cycle_id),
+        )
+        client.post("/webhook/response", json=_update(20, "/train revisar"))
+        client.post("/webhook/response", json=_update(21, "/train cancelar"))
+        assert stub.get("/__sent").json()[-1]["text"] == (
+            "Propuesta cancelada. Tu plan vigente no ha cambiado."
+        )
+        assert await app_db.fetchval(
+            "SELECT completed_at IS NULL FROM training_mesocycles WHERE id=$1", cycle_id
+        )
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM job_execution WHERE state='pending' "
+                "AND payload->>'mesocycle_id' = $1",
+                str(cycle_id),
+            )
+            == pending
+        )
+
     async def test_review_draft_and_repeated_confirmation(
         self, client: httpx.Client, app_db: asyncpg.Connection, stub: httpx.Client
     ) -> None:

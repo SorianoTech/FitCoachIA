@@ -16,7 +16,9 @@ cada tipo de job a su método. Sustituye a los contenedores `training-reminders`
    resultado y `executed_at`. Si otro scheduler lo reclamó, lanza `JobConflictError` y no escribe nada.
 
 Cancelan los jobs pendientes: `close_cycle` (por ciclo), `/interview` (por chat) y posponer (solo el aviso, que se
-sustituye por otro en la nueva fecha). Un job en curso termina y queda registrado.
+sustituye por otro en la nueva fecha). Un job en curso termina y queda registrado. Estas cancelaciones no
+escriben log y dejan `attempts = 0`. Descartar el borrador de una renovación no reabre el ciclo ni recrea
+sus jobs: los del ciclo nuevo solo se registran al confirmar el plan.
 
 ## Tipos
 

@@ -15,6 +15,7 @@ def training_keyboard(
         for item in (
             Constants.TRAINING_CONFLICT_MESSAGE,
             Constants.TRAINING_CANCELLED_MESSAGE,
+            Constants.TRAINING_CANCELLED_CLOSED_MESSAGE,
             Constants.TRAINING_CALLBACK_INVALID,
         )
     ):

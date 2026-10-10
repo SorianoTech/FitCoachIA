@@ -157,7 +157,7 @@ class TrainingService:
         if action == "cancel":
             workflow.state = "cancelled"
             await self._repository.save(chat_id, workflow)
-            return [Constants.TRAINING_CANCELLED_MESSAGE]
+            return [await self._cancelled_message(chat_id, workflow)]
         if action == "select" and value.isdigit():
             return await self._select(chat_id, workflow, workflow.id, int(value))
         if action == "swap" and workflow.draft is not None:
@@ -360,8 +360,9 @@ class TrainingService:
         if command == "/progress":
             return await self.status(chat_id)
         if action == "cancelar":
+            workflow = await self._repository.get_workflow(chat_id)
             await self._repository.cancel(chat_id)
-            return [Constants.TRAINING_CANCELLED_MESSAGE]
+            return [await self._cancelled_message(chat_id, workflow)]
         if action == "avisos":
             if len(arguments) != 2 or arguments[1] not in ("on", "off"):
                 raise TrainingInputError(Constants.TRAINING_MESSAGES["reminders_usage"])
@@ -493,6 +494,14 @@ class TrainingService:
             return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
         except ValueError as error:
             raise TrainingInputError(Constants.TRAINING_MESSAGES["invalid_date"]) from error
+
+    async def _cancelled_message(self, chat_id: int, workflow: TrainingWorkflow | None) -> str:
+        # A renewal discarded after the closure leaves the previous cycle closed, without jobs.
+        if workflow is not None and workflow.kind == "renewal":
+            cycle = await self._repository.get_cycle(chat_id)
+            if cycle is not None and cycle.completed_at is not None:
+                return Constants.TRAINING_CANCELLED_CLOSED_MESSAGE
+        return Constants.TRAINING_CANCELLED_MESSAGE
 
     async def _next_question(self, chat_id: int, workflow: TrainingWorkflow) -> str:
         cycle = await self._repository.get_cycle(chat_id)

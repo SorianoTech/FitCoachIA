@@ -48,7 +48,7 @@ class PostgresTrainingRepository:
         await self._session.execute(select(func.pg_advisory_xact_lock(chat_id)))
 
     async def _cycle_record(self, chat_id: int) -> TrainingMesocycleRecord | None:
-        return await self._session.scalar(
+        cycle: TrainingMesocycleRecord | None = await self._session.scalar(
             select(TrainingMesocycleRecord)
             .join(TrainingPlanRecord, TrainingPlanRecord.mesocycle_id == TrainingMesocycleRecord.id)
             .join(
@@ -58,6 +58,7 @@ class PostgresTrainingRepository:
             .where(TrainingSessionRecord.chat_id == chat_id, TrainingPlanRecord.chat_id == chat_id)
             .execution_options(populate_existing=True)
         )
+        return cycle
 
     async def get_cycle(self, chat_id: int) -> Mesocycle | None:
         record = await self._cycle_record(chat_id)

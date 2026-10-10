@@ -247,6 +247,10 @@ Tu nueva vida te espera, ¡Adelante!
         "Usa /train cancelar para cerrar esta propuesta."
     )
     TRAINING_CANCELLED_MESSAGE: Final = "Propuesta cancelada. Tu plan vigente no ha cambiado."
+    TRAINING_CANCELLED_CLOSED_MESSAGE: Final = (
+        "Borrador descartado. Tu bloque anterior queda cerrado: no recibirás más encuestas "
+        "ni avisos de él. Cuando quieras, usa /train revisar para preparar el siguiente."
+    )
     TRAINING_CONFLICT_MESSAGE: Final = (
         "La propuesta ha cambiado, está en proceso o ya no corresponde al plan vigente. "
         "Envía /train y pulsa «Continuar propuesta pendiente» para consultar su estado."

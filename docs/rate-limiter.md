@@ -100,8 +100,10 @@ salida:       15 × (150 + 300)        =  6.750   (respuesta + razonamiento)
 entrevista completa ≈ 50.000 tokens ≈ $0.005
 ```
 
-Dos tercios de la salida son **tokens de razonamiento**. Con `reasoning_effort: "minimal"` la
-entrevista bajaría a ~35.000 tokens, y estos umbrales podrían estrecharse en consecuencia.
+Dos tercios de la salida estimada con el esfuerzo por defecto son **tokens de razonamiento**.
+El entrevistador configura `ia_interviewer_reasoning_effort=minimal`, por lo que una entrevista
+debería acercarse a ~35.000 tokens. Se mantienen los umbrales conservadores hasta medir suficientes
+entrevistas reales completas; no deben estrecharse solo a partir de esta estimación.
 
 ### 2.2 Los tres valores
 

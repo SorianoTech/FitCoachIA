@@ -67,6 +67,7 @@ ia_base_url=...
 ia_token=...
 ia_model=...
 ia_temperature=0.5
+ia_interviewer_reasoning_effort=minimal
 ia_history_window_messages=20
 
 POSTGRES_USER=fitcoach
@@ -74,6 +75,12 @@ POSTGRES_PASSWORD=elige-una-contrasena
 POSTGRES_DB=fitcoach
 database_url=postgresql+asyncpg://fitcoach:elige-una-contrasena@localhost:5432/fitcoach
 ```
+
+`ia_interviewer_reasoning_effort=minimal` reduce los tokens de razonamiento y la latencia de
+`gpt-5-nano-2025-08-07`. Los valores admitidos son `minimal`, `low`, `medium`, `high` y `default`;
+`default` omite el parámetro para proveedores compatibles con OpenAI que no implementen este
+control. Cambiarlo puede afectar a la consistencia del perfil final, por lo que debe validarse el
+flujo completo de entrevista.
 
 Las dos variables del webhook son **obligatorias y distintas por entorno**; sin ellas la app no
 arranca. `bot_telegram_webhook_base_url` es la URL pública de **tu app**, sin path y con HTTPS

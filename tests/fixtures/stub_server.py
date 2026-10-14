@@ -11,6 +11,7 @@ Rutas:
   GET  /health                                       -> sonda del compose
   GET  /__sent                                       -> mensajes que la app envio
   GET  /__polls                                      -> encuestas enviadas y cerradas
+  GET  /__llm_requests                               -> cuerpos recibidos por el LLM
 """
 
 import copy
@@ -31,6 +32,7 @@ SENT_MESSAGES: list[dict[str, object]] = []
 SENT_POLLS: list[dict[str, object]] = []
 STOPPED_POLLS: list[dict[str, object]] = []
 REQUEST_COUNTS = {"embed": 0, "llm": 0}
+LLM_REQUESTS: list[dict[str, object]] = []
 REGISTERED_WEBHOOK_URL = ""
 
 _INTERVIEW_PROFILE = {
@@ -179,12 +181,15 @@ class StubHandler(BaseHTTPRequestHandler):
             self._respond(SENT_MESSAGES)
         elif self.path == "/__counts":
             self._respond(REQUEST_COUNTS)
+        elif self.path == "/__llm_requests":
+            self._respond(LLM_REQUESTS)
         elif self.path == "/__polls":
             self._respond({"sent": SENT_POLLS, "stopped": STOPPED_POLLS})
         elif self.path == "/__reset":
             SENT_MESSAGES.clear()
             SENT_POLLS.clear()
             STOPPED_POLLS.clear()
+            LLM_REQUESTS.clear()
             REQUEST_COUNTS["embed"] = 0
             REQUEST_COUNTS["llm"] = 0
             self._respond({"ok": True})
@@ -198,6 +203,7 @@ class StubHandler(BaseHTTPRequestHandler):
 
         if self.path.startswith("/v1/chat/completions"):
             REQUEST_COUNTS["llm"] += 1
+            LLM_REQUESTS.append(body)
             self._respond(_completion(self._turn_for(body)))
             return
         if self.path.startswith("/embed"):

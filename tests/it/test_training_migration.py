@@ -72,7 +72,7 @@ async def test_legacy_migration_preserves_plan_and_leaves_dates_unknown() -> Non
             assert row["current_plan_id"] == plan_id
             assert row["started_at"] is None
             assert row["expected_end_at"] is None
-            assert await connection.fetchval("SELECT count(*) FROM training_notifications") == 0
+            assert await connection.fetchval("SELECT count(*) FROM job_execution") == 0
         finally:
             await connection.close()
         await migrate("f3a8c1d4e6b2", "downgrade")

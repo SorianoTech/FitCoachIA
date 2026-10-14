@@ -8,17 +8,23 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from fitcoach.domain.scheduled_job import JobType
 from fitcoach.domain.trainer_plan import TrainingPlan
 from fitcoach.infrastructure.database.models import (
+    JobExecutionRecord,
+    TrainingEvaluationRecord,
     TrainingMesocycleRecord,
-    TrainingNotificationRecord,
     TrainingPlanRecord,
 )
 from fitcoach.infrastructure.database.postgres_conversation_repository import (
     PostgresConversationRepository,
 )
 from fitcoach.infrastructure.database.postgres_training_repository import PostgresTrainingRepository
-from fitcoach.repository.training_repository import TrainingConflictError
+from fitcoach.repository.training_repository import (
+    ReminderDelivery,
+    ReminderTarget,
+    TrainingConflictError,
+)
 from tests.unit_test.conftest import build_plan_payload
 
 CHAT_ID = 882299
@@ -48,6 +54,13 @@ async def training_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     finally:
         async with factory() as session:
             await PostgresConversationRepository(session).restart_interview(CHAT_ID)
+            await session.execute(
+                delete(TrainingEvaluationRecord).where(TrainingEvaluationRecord.chat_id == CHAT_ID)
+            )
+            await session.execute(
+                delete(JobExecutionRecord).where(JobExecutionRecord.chat_id == CHAT_ID)
+            )
+            await session.commit()
         await engine.dispose()
 
 
@@ -108,39 +121,195 @@ async def test_generation_claim_is_exclusive_and_cancel_rejects_late_result(
             await training.save(CHAT_ID, generation)
 
 
+async def _reminder_jobs(
+    factory: async_sessionmaker[AsyncSession],
+) -> list[JobExecutionRecord]:
+    async with factory() as session:
+        return list(
+            await session.scalars(
+                select(JobExecutionRecord)
+                .where(
+                    JobExecutionRecord.chat_id == CHAT_ID,
+                    JobExecutionRecord.job_type == JobType.TRAINING_REMINDER,
+                )
+                .order_by(JobExecutionRecord.dedup_key)
+            )
+        )
+
+
+async def _reserve(
+    factory: async_sessionmaker[AsyncSession], now: datetime, thread_id: int | None = 22
+) -> ReminderDelivery | None:
+    async with factory() as session:
+        return await PostgresTrainingRepository(session).reserve_interaction_reminder(
+            CHAT_ID, thread_id, now
+        )
+
+
+async def _postpone_to(factory: async_sessionmaker[AsyncSession], until: datetime) -> None:
+    async with factory() as session:
+        await PostgresTrainingRepository(session).postpone(CHAT_ID, until)
+
+
 @pytest.mark.asyncio
 async def test_postponing_before_first_reminder_does_not_double_notify(
     training_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
+
+    delivery = await _reserve(training_factory, now)
+    assert delivery is not None
+    assert delivery.chat_id == CHAT_ID
     async with training_factory() as session:
-        training = PostgresTrainingRepository(session)
-        await training.postpone(CHAT_ID, now + timedelta(days=1))
-        await training.enqueue_due(now + timedelta(days=2))
-        delivery = await training.claim_reminder(now + timedelta(days=2))
-        assert delivery is not None
-        assert delivery.chat_id == CHAT_ID
-        await training.finish_reminder(delivery)
-        assert await training.claim_reminder(now + timedelta(days=2)) is None
-        events = list(await session.scalars(select(TrainingNotificationRecord.state)))
-        assert "cancelled" in events
-        assert "sent" in events
+        await PostgresTrainingRepository(session).finish_reminder(delivery)
+
+    assert await _reserve(training_factory, now) is None
+    assert [job.state for job in await _reminder_jobs(training_factory)] == ["cancelled", "done"]
 
 
 @pytest.mark.asyncio
-async def test_interaction_and_worker_share_one_delivery_reservation(
+async def test_reserved_reminder_stays_locked_for_two_minutes(
     training_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
+
+    delivery = await _reserve(training_factory, now)
+
+    assert delivery is not None
+    assert delivery.thread_id == 22
+    [_, job] = await _reminder_jobs(training_factory)
+    assert (job.state, job.locked_until) == ("running", now + timedelta(minutes=2))
+    # Locked before the lease expires, claimable again afterwards.
+    assert await _reserve(training_factory, now + timedelta(minutes=1)) is None
+    again = await _reserve(training_factory, now + timedelta(minutes=3))
+    assert again is not None
+    assert (again.id, again.attempts) == (delivery.id, 2)
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_reserved_before_the_cycle_is_due(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    assert await _reserve(training_factory, datetime.now(UTC)) is None
+
+    assert [job.state for job in await _reminder_jobs(training_factory)] == ["pending"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocker", ["disabled", "closed", "open_workflow"])
+async def test_nothing_is_reserved_when_the_reminder_does_not_apply(
+    training_factory: async_sessionmaker[AsyncSession], blocker: str
+) -> None:
+    now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
     async with training_factory() as session:
         training = PostgresTrainingRepository(session)
-        await training.postpone(CHAT_ID, now - timedelta(seconds=1))
-        delivery = await training.reserve_interaction_reminder(CHAT_ID, 22, now)
-        assert delivery is not None
-        assert delivery.thread_id == 22
-        assert await training.claim_reminder(now) is None
-        await training.finish_reminder(delivery)
-        assert await training.reserve_interaction_reminder(CHAT_ID, 22, now) is None
+        if blocker == "disabled":
+            await training.set_reminders(CHAT_ID, False)
+        elif blocker == "closed":
+            await training.close_cycle(CHAT_ID, now)
+        else:
+            await training.start(CHAT_ID, "renewal")
+
+    assert await _reserve(training_factory, now) is None
+
+
+@pytest.mark.asyncio
+async def test_finishing_with_a_retry_reschedules_the_reminder(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
+    delivery = await _reserve(training_factory, now)
+    assert delivery is not None
+    retry_at = now + timedelta(minutes=5)
+
+    async with training_factory() as session:
+        await PostgresTrainingRepository(session).finish_reminder(delivery, retry_at=retry_at)
+
+    [_, job] = await _reminder_jobs(training_factory)
+    assert (job.state, job.execution_date, job.locked_until) == ("pending", retry_at, None)
+    assert await _reserve(training_factory, now) is None
+
+
+@pytest.mark.asyncio
+async def test_finishing_as_failed_is_final(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
+    delivery = await _reserve(training_factory, now)
+    assert delivery is not None
+
+    async with training_factory() as session:
+        await PostgresTrainingRepository(session).finish_reminder(delivery, failed=True)
+
+    assert [job.state for job in await _reminder_jobs(training_factory)] == ["cancelled", "failed"]
+    assert await _reserve(training_factory, now + timedelta(hours=1)) is None
+
+
+@pytest.mark.asyncio
+async def test_a_reservation_whose_lease_was_taken_cannot_be_finished(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
+    stale = await _reserve(training_factory, now)
+    assert stale is not None
+    assert await _reserve(training_factory, now + timedelta(minutes=3)) is not None
+
+    async with training_factory() as session:
+        with pytest.raises(TrainingConflictError, match="lease"):
+            await PostgresTrainingRepository(session).finish_reminder(stale)
+
+    [_, job] = await _reminder_jobs(training_factory)
+    assert job.state == "running"
+
+
+@pytest.mark.asyncio
+async def test_reminder_target_reports_the_thread_of_a_due_cycle(
+    training_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    now = datetime.now(UTC)
+    await _postpone_to(training_factory, now - timedelta(seconds=1))
+    async with training_factory() as session:
+        training = PostgresTrainingRepository(session)
+        await training.remember_thread(CHAT_ID, 33)
+        cycle = await training.get_cycle(CHAT_ID)
+        assert cycle is not None
+
+        target = await training.reminder_target(CHAT_ID, cycle.id, now)
+
+    assert target == ReminderTarget(thread_id=33)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "blocker", ["not_due", "other_cycle", "disabled", "closed", "open_workflow"]
+)
+async def test_reminder_target_is_empty_when_the_reminder_does_not_apply(
+    training_factory: async_sessionmaker[AsyncSession], blocker: str
+) -> None:
+    now = datetime.now(UTC)
+    await _postpone_to(
+        training_factory,
+        now + timedelta(days=1) if blocker == "not_due" else now - timedelta(seconds=1),
+    )
+    async with training_factory() as session:
+        training = PostgresTrainingRepository(session)
+        cycle = await training.get_cycle(CHAT_ID)
+        assert cycle is not None
+        cycle_id = cycle.id + 1 if blocker == "other_cycle" else cycle.id
+        if blocker == "disabled":
+            await training.set_reminders(CHAT_ID, False)
+        elif blocker == "closed":
+            await training.close_cycle(CHAT_ID, now)
+        elif blocker == "open_workflow":
+            await training.start(CHAT_ID, "renewal")
+
+        assert await training.reminder_target(CHAT_ID, cycle_id, now) is None
 
 
 @pytest.mark.asyncio
@@ -233,6 +402,9 @@ async def test_confirmation_is_atomic_and_swap_preserves_dates() -> None:
             await conversation.restart_interview(CHAT_ID)
             await session.execute(
                 delete(TrainingMesocycleRecord).where(TrainingMesocycleRecord.chat_id == CHAT_ID)
+            )
+            await session.execute(
+                delete(TrainingEvaluationRecord).where(TrainingEvaluationRecord.chat_id == CHAT_ID)
             )
             await session.commit()
     finally:

@@ -2,25 +2,11 @@ name: fitcoach-local
 
 # El nombre de servicio es el alias de red: debe ser unico por entorno en proxy-network.
 services:
-  training-reminders:
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    entrypoint: ["python", "-m", "fitcoach.infrastructure.jobs.training_reminders"]
-    restart: unless-stopped
-    env_file:
-      - .env
-    depends_on:
-      fitcoach-ia:
-        condition: service_healthy
-    networks:
-      - fit-coach-net
-
   postgres:
     image: postgres:16-alpine
     container_name: fitcoach-postgres
     env_file:
-      - .env
+      - .env.local
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
@@ -85,7 +71,7 @@ services:
       # Sondeo rapido solo durante el arranque; en regimen estable basta cada 5 min.
       start_interval: 5s
     env_file:
-      - path: .env
+      - path: .env.local
     depends_on:
       postgres:
         condition: service_healthy

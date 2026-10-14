@@ -16,10 +16,11 @@ from functools import lru_cache
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from fitcoach.domain.rate_limiter import UsageLimits
+from fitcoach.domain.retry_policy import RetryPolicy
 
 _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 TaskTemperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | Literal["default"]
@@ -92,11 +93,6 @@ class Settings(BaseSettings):
         if not _SECRET_TOKEN_RE.fullmatch(value.get_secret_value()):
             raise ValueError("bot_telegram_secret_token: 1-256 caracteres de A-Z a-z 0-9 _ -")
         return value
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
 
 
 class IASettings(BaseSettings):
@@ -213,6 +209,62 @@ class UsageSettings(BaseSettings):
         )
 
 
+class _RetrySettings(BaseSettings):
+    """Retry fields shared by every scheduled delivery; each subclass sets its prefix."""
+
+    max_attempts: int = Field(default=5, ge=1, le=10)
+    retry_delay_seconds: int = Field(default=30, ge=1)
+    retry_max_delay_seconds: int = Field(default=3600, ge=1)
+    sending_timeout_seconds: int = Field(default=120, ge=10)
+    batch_size: int = Field(default=100, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def _check_delays(self) -> "_RetrySettings":
+        if self.retry_max_delay_seconds < self.retry_delay_seconds:
+            raise ValueError("retry_max_delay_seconds must be >= retry_delay_seconds")
+        return self
+
+    def to_retry_policy(self) -> RetryPolicy:
+        return RetryPolicy(
+            max_attempts=self.max_attempts,
+            retry_delay=timedelta(seconds=self.retry_delay_seconds),
+            retry_max_delay=timedelta(seconds=self.retry_max_delay_seconds),
+            sending_timeout=timedelta(seconds=self.sending_timeout_seconds),
+            batch_size=self.batch_size,
+        )
+
+
+class TrainingSettings(_RetrySettings):
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        env_prefix="training_reminder_",
+        extra="ignore",
+    )
+
+
+class EvaluationSettings(_RetrySettings):
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE, env_file_encoding="utf-8", env_prefix="evaluation_", extra="ignore"
+    )
+
+
+class SchedulerSettings(BaseSettings):
+    """One scheduler task for every job type; each type keeps its own retry settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE, env_file_encoding="utf-8", env_prefix="scheduler_", extra="ignore"
+    )
+
+    enabled: bool = False
+    interval_seconds: int = Field(default=300, ge=10)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
 @lru_cache
 def get_database_settings() -> DatabaseSettings:
     return DatabaseSettings()
@@ -238,16 +290,16 @@ def get_usage_settings() -> UsageSettings:
     return UsageSettings()
 
 
-class TrainingSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=_ENV_FILE, env_file_encoding="utf-8", env_prefix="training_", extra="ignore"
-    )
-
-    reminders_enabled: bool = False
-    reminder_interval_seconds: int = Field(default=300, ge=10)
-    reminder_max_attempts: int = Field(default=5, ge=1, le=10)
-
-
 @lru_cache
 def get_training_settings() -> TrainingSettings:
     return TrainingSettings()
+
+
+@lru_cache
+def get_evaluation_settings() -> EvaluationSettings:
+    return EvaluationSettings()
+
+
+@lru_cache
+def get_scheduler_settings() -> SchedulerSettings:
+    return SchedulerSettings()

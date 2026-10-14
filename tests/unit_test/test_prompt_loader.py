@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from fitcoach.domain.constants import Constants
 from fitcoach.infrastructure.prompts.prompt_loader import (
     PromptAssetNotFoundError,
     PromptLoader,
@@ -22,6 +23,45 @@ def loader(tmp_path: Path) -> PromptLoader:
         "# fitness-interviewer skill body", encoding="utf-8"
     )
     return PromptLoader(prompts_root=prompts_root, skills_root=skills_root)
+
+
+_PROMPTS_ROOT = PromptLoader()._prompts_root
+# renewal_prompt.txt is appended to trainer/system_prompt.txt, which already carries the rule.
+_STANDALONE_PROMPTS = sorted(
+    path for path in _PROMPTS_ROOT.rglob("*.txt") if path.name != "renewal_prompt.txt"
+)
+
+
+class TestLanguagePolicy:
+    @pytest.mark.parametrize(
+        "path", _STANDALONE_PROMPTS, ids=lambda path: path.parent.name + "/" + path.name
+    )
+    def test_every_prompt_forces_spanish(self, path: Path) -> None:
+        prompt = path.read_text(encoding="utf-8")
+
+        assert "LANGUAGE (MANDATORY)" in prompt
+        assert "ALWAYS in Spanish" in prompt
+        assert 'never "intervista"' in prompt
+
+    @pytest.mark.parametrize(
+        "path", _STANDALONE_PROMPTS, ids=lambda path: path.parent.name + "/" + path.name
+    )
+    def test_no_prompt_follows_the_user_language(self, path: Path) -> None:
+        prompt = path.read_text(encoding="utf-8")
+
+        assert "user's language" not in prompt
+        assert "default to Spanish" not in prompt.replace("\n", " ")
+
+    def test_interview_seed_message_is_spanish(self) -> None:
+        assert "entrevista" in Constants.INTERVIEW_SEED_MESSAGE
+        assert "interview" not in Constants.INTERVIEW_SEED_MESSAGE.lower()
+
+    def test_renewal_inherits_the_rule_from_the_trainer_prompt(self) -> None:
+        assert "ALWAYS in Spanish" in PromptLoader().load_assembled_system_prompt("trainer")
+
+    @pytest.mark.parametrize("skill_name", ["interviewer", "interviewer-dev"])
+    def test_interviewer_skills_do_not_reintroduce_user_language(self, skill_name: str) -> None:
+        assert "user's language" not in PromptLoader().load_skill(skill_name)
 
 
 class TestPromptLoader:

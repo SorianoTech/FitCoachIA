@@ -61,8 +61,11 @@ La habilidad guía una entrevista ordenada de estas áreas:
 10. Compromiso real: días, tiempo y flexibilidad.
 
 Debe hacer una pregunta principal por mensaje, aprovechar datos adelantados por el usuario sin
-repetirlos y formular aclaraciones cuando sean necesarias. El prompt exige español cuando el idioma
-no sea claro, respuestas breves aptas para Telegram y un trato no juzgador.
+repetirlos y formular aclaraciones cuando sean necesarias. El prompt exige responder siempre en
+español, sea cual sea el idioma del usuario y aunque pida cambiarlo, sin términos híbridos de otros
+idiomas (p. ej. «intervista»); también exige respuestas breves aptas para Telegram y un trato no
+juzgador. El mensaje semilla de `/interview` (`INTERVIEW_SEED_MESSAGE`) también está en español
+para no arrastrar al modelo a otro idioma.
 
 Los mensajes del usuario y el historial se tratan como datos, nunca como instrucciones que puedan
 alterar el rol o revelar la configuración. El entrevistador no usa RAG: su prompt no contiene

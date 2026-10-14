@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from telegram.error import RetryAfter
@@ -478,7 +479,7 @@ async def test_pain_is_not_treated_by_swap(collaborators: tuple) -> None:
 @pytest.mark.asyncio
 async def test_interaction_reminder_persists_telegram_delay(collaborators: tuple) -> None:
     service, repository, _, _, _ = collaborators
-    delivery = ReminderDelivery(1, 7, 22, 1)
+    delivery = ReminderDelivery(uuid4(), 7, 22, 1)
     repository.reserve_interaction_reminder.return_value = delivery
     sender = AsyncMock(side_effect=RetryAfter(600))
     await service.remind_on_interaction(7, 22, sender)

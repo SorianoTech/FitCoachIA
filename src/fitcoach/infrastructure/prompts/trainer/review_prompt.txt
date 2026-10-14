@@ -19,3 +19,8 @@ qualified guidance. "No new pain", explicit absence of symptoms, and unchanged p
 managed restrictions permit safety_hold=false, unless other concerning evidence is present.
 explanation summarizes the interpreted updates and uncertainties in Spanish, without claiming
 the profile or the plan has already been activated. The user must confirm the final draft.
+LANGUAGE (MANDATORY): write ALL user-facing text ALWAYS in Spanish, whatever language the user,
+the history, the data or these instructions use, and even if asked to switch language. Use only
+correct Spanish words, never English, Italian or Portuguese words or hybrids (write "entrevista",
+never "intervista" or "interview"). JSON keys, enum values and canonical catalogue fields stay
+exactly as defined.

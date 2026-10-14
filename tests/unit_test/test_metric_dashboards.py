@@ -17,11 +17,25 @@ METRIC_FILES = [
 ]
 
 
+def flatten(panels: list[dict]) -> list[dict]:
+    """Panels with those nested in collapsed rows; rows themselves are left out."""
+    flat: list[dict] = []
+    for panel in panels:
+        if panel["type"] == "row":
+            flat.extend(panel.get("panels", []))
+        else:
+            flat.append(panel)
+    return flat
+
+
 @pytest.mark.parametrize("filename", METRIC_FILES)
 def test_dashboards_have_distinct_panels_and_environment_scoped_sources(filename: str) -> None:
     dashboard = json.loads((DASHBOARDS / filename).read_text())
-    panels = dashboard["panels"]
-    assert len({panel["id"] for panel in panels}) == len(panels)
+    ids = [panel["id"] for panel in dashboard["panels"]] + [
+        nested["id"] for panel in dashboard["panels"] for nested in panel.get("panels", [])
+    ]
+    assert len(set(ids)) == len(ids)
+    panels = flatten(dashboard["panels"])
     environment = next(
         item for item in dashboard["templating"]["list"] if item["name"] == "environment"
     )
@@ -60,6 +74,36 @@ def test_cost_and_catalogue_panels_expose_coverage_instead_of_silent_defaults() 
     catalogue = next(panel for panel in rag["panels"] if panel["id"] == 5)
     assert "('initial','renewal')" in catalogue["targets"][0]["rawSql"]
     assert "used_outside_catalogue" in catalogue["targets"][0]["rawSql"]
+
+
+def test_satisfaction_panels_default_to_zero_and_expose_their_denominator() -> None:
+    business = json.loads((DASHBOARDS / METRIC_FILES[0]).read_text())
+    panels = {panel["id"]: panel for panel in flatten(business["panels"])}
+    counts = {8: "answered_polls", 9: "closed_polls", 10: "attempted_polls"}
+    for panel_id, count in counts.items():
+        sql = panels[panel_id]["targets"][0]["rawSql"]
+        assert sql.startswith("SELECT COALESCE(")
+        assert f"AS {count}" in sql
+        assert panels[panel_id]["options"]["textMode"] == "value_and_name"
+    assert "answer_status='answered'" in panels[8]["targets"][0]["rawSql"]
+    assert "GROUP BY chat_id" in panels[8]["targets"][0]["rawSql"]
+    assert "awaiting" not in panels[9]["targets"][0]["rawSql"]
+    not_generated = panels[10]["targets"][0]["rawSql"]
+    assert "job_type='evaluation_poll'" in not_generated
+    assert "state IN ('done','failed')" in not_generated
+    assert "cancelled" not in not_generated
+    assert "N4" not in panels[7]["options"]["content"]
+
+
+def test_customer_detail_is_a_collapsed_row_and_ranks_unanswered_last() -> None:
+    business = json.loads((DASHBOARDS / METRIC_FILES[0]).read_text())
+    row = next(panel for panel in business["panels"] if panel["id"] == 11)
+    assert row["type"] == "row"
+    assert row["collapsed"] is True
+    assert [nested["id"] for nested in row["panels"]] == [12]
+    assert all(panel["id"] != 12 for panel in business["panels"])
+    sql = row["panels"][0]["targets"][0]["rawSql"]
+    assert "ORDER BY count(*) FILTER (WHERE answer_status='answered')=0" in sql
 
 
 def test_rag_rankings_do_not_present_similarity_as_quality() -> None:

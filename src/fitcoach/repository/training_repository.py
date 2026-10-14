@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
+from uuid import UUID
 
 from fitcoach.domain.interviewer_profile import InterviewerProfile
 from fitcoach.domain.training_lifecycle import Mesocycle, TrainingWorkflow
@@ -12,10 +13,15 @@ class TrainingConflictError(RuntimeError):
 
 @dataclass(frozen=True)
 class ReminderDelivery:
-    id: int
+    id: UUID
     chat_id: int
     thread_id: int | None
     attempts: int
+
+
+@dataclass(frozen=True)
+class ReminderTarget:
+    thread_id: int | None
 
 
 class TrainingRepository(Protocol):
@@ -40,6 +46,9 @@ class TrainingRepository(Protocol):
     ) -> None: ...
     async def effective_profile(self, chat_id: int) -> InterviewerProfile | None: ...
     async def remember_thread(self, chat_id: int, thread_id: int | None) -> None: ...
+    async def reminder_target(
+        self, chat_id: int, mesocycle_id: int, now: datetime
+    ) -> ReminderTarget | None: ...
     async def reserve_interaction_reminder(
         self, chat_id: int, thread_id: int | None, now: datetime
     ) -> ReminderDelivery | None: ...

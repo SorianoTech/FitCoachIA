@@ -14,7 +14,8 @@ FILES = ["fitcoach-business", "fitcoach-interviews", "fitcoach-agents", "fitcoac
 SQL_TARGETS = [
     (name, panel["id"], target["rawSql"])
     for name in FILES
-    for panel in json.loads((DASHBOARDS / f"{name}.json").read_text())["panels"]
+    for top in json.loads((DASHBOARDS / f"{name}.json").read_text())["panels"]
+    for panel in [top, *top.get("panels", [])]
     for target in panel.get("targets", [])
     if "rawSql" in target
 ]
@@ -87,6 +88,86 @@ async def test_empty_cohort_is_unknown_and_unknown_prices_are_not_free() -> None
         assert row["price_coverage_pct"] == 0
     finally:
         await transaction.rollback()
+        await connection.close()
+
+
+def business_sql(panel_id: int, start: str, end: str) -> str:
+    sql = next(sql for name, pid, sql in SQL_TARGETS if name == FILES[0] and pid == panel_id)
+    return render_sql(sql).replace("2026-01-01", start).replace("2027-01-01", end)
+
+
+@pytest.mark.asyncio
+async def test_satisfaction_weights_customers_equally_and_excludes_open_or_cancelled() -> None:
+    connection = await connect()
+    transaction = connection.transaction()
+    await transaction.start()
+    try:
+        evaluations = [
+            (876543301, "answered", 1),
+            (876543301, "answered", 2),
+            (876543301, "unanswered", None),
+            (876543302, "answered", 5),
+            (876543302, "awaiting", None),
+            (876543303, "awaiting", None),
+        ]
+        for chat_id, status, score in evaluations:
+            await connection.execute(
+                """INSERT INTO training_evaluation(chat_id,week_number,answer_status,score,sent_at)
+                   VALUES ($1,1,$2,$3,TIMESTAMPTZ '2090-01-02')""",
+                chat_id,
+                status,
+                score,
+            )
+        jobs = [
+            ("evaluation_poll", "done"),
+            ("evaluation_poll", "done"),
+            ("evaluation_poll", "done"),
+            ("evaluation_poll", "failed"),
+            ("evaluation_poll", "cancelled"),
+            ("training_reminder", "failed"),
+        ]
+        for index, (job_type, state) in enumerate(jobs):
+            await connection.execute(
+                """INSERT INTO job_execution(job_type,chat_id,payload,dedup_key,state,
+                   execution_date,executed_at) VALUES ($1,876543301,'{}',$2,$3,
+                   TIMESTAMPTZ '2090-01-02',TIMESTAMPTZ '2090-01-02')""",
+                job_type,
+                f"dashboard-test:{index}",
+                state,
+            )
+        satisfaction = await connection.fetchrow(business_sql(8, "2090-01-01", "2091-01-01"))
+        assert satisfaction["satisfaction_avg"] == 3.25
+        assert satisfaction["answered_polls"] == 3
+        unanswered = await connection.fetchrow(business_sql(9, "2090-01-01", "2091-01-01"))
+        assert unanswered["unanswered_pct"] == 25
+        assert unanswered["closed_polls"] == 4
+        not_generated = await connection.fetchrow(business_sql(10, "2090-01-01", "2091-01-01"))
+        assert not_generated["not_generated_pct"] == 25
+        assert not_generated["attempted_polls"] == 4
+        rows = await connection.fetch(business_sql(12, "2090-01-01", "2091-01-01"))
+        assert [row["chat_id"] for row in rows] == [876543301, 876543302, 876543303]
+        assert rows[2]["satisfaction_avg"] == 0
+        assert rows[2]["answered"] == 0
+    finally:
+        await transaction.rollback()
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_satisfaction_panels_show_zero_without_data() -> None:
+    connection = await connect()
+    try:
+        expected = {
+            8: ("satisfaction_avg", "answered_polls"),
+            9: ("unanswered_pct", "closed_polls"),
+            10: ("not_generated_pct", "attempted_polls"),
+        }
+        for panel_id, (metric, count) in expected.items():
+            row = await connection.fetchrow(business_sql(panel_id, "2100-01-01", "2101-01-01"))
+            assert row[metric] == 0
+            assert row[count] == 0
+        assert await connection.fetch(business_sql(12, "2100-01-01", "2101-01-01")) == []
+    finally:
         await connection.close()
 
 

@@ -19,3 +19,8 @@ training function (compound versus isolation), not merely the same primary muscl
 If metadata does not establish equivalence, explain that uncertainty; never invent a pattern
 or claim clinical safety. Prefer the closest supported option over arbitrary novelty.
 Never use excluded_equipment even if it appears in the saved profile.
+LANGUAGE (MANDATORY): write ALL user-facing text ALWAYS in Spanish, whatever language the user,
+the history, the data or these instructions use, and even if asked to switch language. Use only
+correct Spanish words, never English, Italian or Portuguese words or hybrids (write "entrevista",
+never "intervista" or "interview"). JSON keys, enum values and canonical catalogue fields stay
+exactly as defined.

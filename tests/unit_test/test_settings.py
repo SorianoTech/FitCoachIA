@@ -6,8 +6,11 @@ from pydantic import ValidationError
 from fitcoach.infrastructure.config.settings import (
     DatabaseSettings,
     EmbedderSettings,
+    EvaluationSettings,
     IASettings,
+    SchedulerSettings,
     Settings,
+    TrainingSettings,
     UsageSettings,
     VectorDatabaseSettings,
 )
@@ -273,3 +276,103 @@ class TestUsageSettings:
         # Un ratio de 0 cortaria desde el primer mensaje; uno mayor que 1 nunca cortaria.
         with pytest.raises(ValidationError):
             UsageSettings(_env_file=None, **{field: value})
+
+
+class TestTrainingSettings:
+    def test_defaults_reproduce_the_previous_hardcoded_policy(self) -> None:
+        policy = TrainingSettings(_env_file=None).to_retry_policy()
+
+        assert policy.max_attempts == 5
+        assert policy.retry_delay == timedelta(seconds=30)
+        assert policy.retry_max_delay == timedelta(seconds=3600)
+        assert policy.sending_timeout == timedelta(seconds=120)
+        assert policy.batch_size == 100
+
+    def test_keeps_reading_the_existing_variable_names(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("training_reminder_max_attempts", "3")
+
+        assert TrainingSettings(_env_file=None).max_attempts == 3
+
+    def test_ignores_the_removed_enabled_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("training_reminders_enabled", "true")
+
+        assert TrainingSettings(_env_file=None).max_attempts == 5
+
+    def test_reads_the_new_retry_variables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("training_reminder_retry_delay_seconds", "15")
+        monkeypatch.setenv("training_reminder_sending_timeout_seconds", "60")
+
+        policy = TrainingSettings(_env_file=None).to_retry_policy()
+
+        assert policy.retry_delay == timedelta(seconds=15)
+        assert policy.sending_timeout == timedelta(seconds=60)
+
+
+class TestEvaluationSettings:
+    def test_reads_the_retry_policy_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("evaluation_retry_delay_seconds", "10")
+        monkeypatch.setenv("evaluation_retry_max_delay_seconds", "600")
+
+        policy = EvaluationSettings(_env_file=None).to_retry_policy()
+
+        assert policy.retry_delay == timedelta(seconds=10)
+        assert policy.retry_max_delay == timedelta(seconds=600)
+
+    def test_rejects_a_max_delay_below_the_initial_delay(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("evaluation_retry_delay_seconds", "100")
+        monkeypatch.setenv("evaluation_retry_max_delay_seconds", "50")
+
+        with pytest.raises(ValidationError):
+            EvaluationSettings(_env_file=None)
+
+    @pytest.mark.parametrize(
+        ("variable", "value"),
+        [
+            ("evaluation_max_attempts", "0"),
+            ("evaluation_sending_timeout_seconds", "1"),
+            ("evaluation_batch_size", "0"),
+        ],
+    )
+    def test_rejects_out_of_range_values(
+        self, monkeypatch: pytest.MonkeyPatch, variable: str, value: str
+    ) -> None:
+        monkeypatch.setenv(variable, value)
+
+        with pytest.raises(ValidationError):
+            EvaluationSettings(_env_file=None)
+
+
+class TestSchedulerSettings:
+    def test_is_disabled_by_default_with_a_five_minute_interval(self) -> None:
+        settings = SchedulerSettings(_env_file=None)
+
+        assert not settings.enabled
+        assert settings.interval_seconds == 300
+
+    def test_reads_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("scheduler_enabled", "true")
+        monkeypatch.setenv("scheduler_interval_seconds", "60")
+
+        settings = SchedulerSettings(_env_file=None)
+
+        assert settings.enabled
+        assert settings.interval_seconds == 60
+
+    def test_rejects_an_interval_below_ten_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("scheduler_interval_seconds", "5")
+
+        with pytest.raises(ValidationError):
+            SchedulerSettings(_env_file=None)
+
+    def test_ignores_the_retired_per_type_intervals(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("training_reminder_interval_seconds", "5")
+        monkeypatch.setenv("evaluation_interval_seconds", "5")
+
+        TrainingSettings(_env_file=None)
+        EvaluationSettings(_env_file=None)

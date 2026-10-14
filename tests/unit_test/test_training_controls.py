@@ -205,6 +205,68 @@ async def test_discard_button_cancels_only_the_identified_workflow(collaborators
     repository.cancel.assert_not_awaited()
 
 
+def _close_cycle(repository: AsyncMock) -> None:
+    repository.get_cycle.return_value = repository.get_cycle.return_value.model_copy(
+        update={"completed_at": datetime(2026, 10, 1, tzinfo=UTC)}
+    )
+
+
+@pytest.mark.asyncio
+async def test_discard_button_warns_when_renewal_already_closed_the_cycle(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, _, _ = collaborators
+    _close_cycle(repository)
+    workflow = repository.start.return_value
+    repository.get_workflow.return_value = workflow
+    assert await service.callback(7, "tr:cancel:1:0") == [
+        Constants.TRAINING_CANCELLED_CLOSED_MESSAGE
+    ]
+    assert workflow.state == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_command_warns_when_renewal_already_closed_the_cycle(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, _, _ = collaborators
+    _close_cycle(repository)
+    repository.get_workflow.return_value = repository.start.return_value
+    assert await service.handle(7, "/train cancelar") == [
+        Constants.TRAINING_CANCELLED_CLOSED_MESSAGE
+    ]
+    repository.cancel.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["renewal", "exercise_swap"])
+async def test_cancel_command_keeps_generic_message_when_cycle_stays_open_or_is_a_swap(
+    collaborators: tuple, kind: str
+) -> None:
+    service, repository, _, _, _ = collaborators
+    if kind == "exercise_swap":
+        _close_cycle(repository)
+    repository.get_workflow.return_value = TrainingWorkflow(
+        id=1, kind=kind, base_plan_id=10, state="reviewing"
+    )
+    assert await service.handle(7, "/train cancelar") == [Constants.TRAINING_CANCELLED_MESSAGE]
+
+
+@pytest.mark.asyncio
+async def test_cancel_command_without_workflow_keeps_generic_message(
+    collaborators: tuple,
+) -> None:
+    service, repository, _, _, _ = collaborators
+    _close_cycle(repository)
+    assert await service.handle(7, "/train cancelar") == [Constants.TRAINING_CANCELLED_MESSAGE]
+    repository.get_cycle.assert_not_awaited()
+
+
+def test_closed_cycle_discard_message_has_no_keyboard() -> None:
+    workflow = TrainingWorkflow(id=1, kind="renewal", base_plan_id=10, state="cancelled")
+    assert training_keyboard(workflow, [Constants.TRAINING_CANCELLED_CLOSED_MESSAGE]) is None
+
+
 @pytest.mark.asyncio
 async def test_details_button_does_not_modify_or_activate_the_draft(collaborators: tuple) -> None:
     service, repository, conversation, _, _ = collaborators

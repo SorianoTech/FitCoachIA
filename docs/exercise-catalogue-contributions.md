@@ -80,7 +80,8 @@ pertenecer a uno de los targets anatómicos conocidos; el grupo muscular se deri
 no se acepta como una clasificación libre del modelo.
 
 Las instrucciones se guardan en inglés para mantener la coherencia con el corpus actual. El texto
-conversacional que recibe el usuario sigue su idioma, con español como valor predeterminado.
+conversacional que recibe el usuario va siempre en español, sea cual sea el idioma en que escriba;
+los campos canónicos del catálogo siguen en inglés.
 
 ## Evaluación de calidad mediante IA
 

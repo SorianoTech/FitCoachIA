@@ -24,6 +24,12 @@ storage:
       path: /var/tempo/wal
 
 metrics_generator:
+  processor:
+    span_metrics:
+      dimensions:
+        - command
+        - agent
+        - deployment.environment.name
   registry:
     external_labels:
       source: tempo

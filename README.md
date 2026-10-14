@@ -9,14 +9,9 @@ El sistema es capaz de transformar una entrevista inicial en un **Plan Personali
 El núcleo de FitCoach IA se basa en LLMs con prompts específicos para orquestar cuatro agentes especializados:
 
 *   **Agente 1 (Secretario):** Transcribe entrevistas y genera informes estructurados del cliente.
-*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o abre el menú del vigente; los botones permiten consultar la semana actual sin LLM. `/train revisar` inicia la renovación, que requiere aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
+*   **Agente 2 (Entrenador):** Diseña mesociclos anclados al catálogo RAG, revisa resultados para proponer el siguiente bloque y ofrece sustituciones confirmables de ejercicios. `/train` inicia el primer plan o revisa el vigente; las renovaciones requieren aceptar un borrador. Ver [docs/trainer-agent.md](docs/trainer-agent.md).
 *   **Agente 3 (Nutricionista):** Elabora planes de alimentación y suplementación a medida.
 *   **Agente 4 (Coaching):** Proporciona soporte motivacional y recursos multimedia personalizados (bibliografía, vídeos, RRSS).
-
-Un **curator auxiliar de ejercicios** permite proponer ampliaciones del catálogo mediante
-`/add_exercise` o lenguaje natural. Genera una propuesta estructurada, evalúa su calidad, detecta
-posibles duplicados y exige moderación humana antes de publicarla en el RAG. Ver
-[docs/exercise-catalogue-contributions.md](docs/exercise-catalogue-contributions.md).
 
 ## Stack Tecnológico y Requisitos Técnicos
 Este proyecto cumple con los estándares de desarrollo profesional exigidos en el máster:
@@ -35,32 +30,30 @@ Este proyecto cumple con los estándares de desarrollo profesional exigidos en e
 ### Interfaces de Usuario
 - **Web Panel:** Interfaz visual para que el usuario consulte sus datos, rutinas y nutrición.
 - **Chatbot (Telegram):** Canal de comunicación directo para actualizar progresos e interactuar con el entrenador en tiempo real.
-- **Telegram Mini App:** Consulta de semanas, registro de series, descansos, historial y
-  progreso sin LLM. Cambios de ejercicio y renovación continúan en el chat con confirmación.
-  Configuración y límites en [docs/telegram-miniapp.md](docs/telegram-miniapp.md).
-  Incluye [panel administrador de cuotas](docs/admin-panel.md), autorizado por
-  `miniapp_admin_chat_ids`, con límites globales y excepciones por usuario sin reiniciar.
 
 ## Estructura del Proyecto
 
 ```
 FitCoachIA/
-├── frontend/                     # Telegram Mini App: React, TypeScript y Vite
 ├── src/
 │   ├── fitcoach/
-│   │   ├── api/                  # Controladores y endpoints REST
-│   │   ├── domain/               # Entidades y lógica de dominio
+│   │   ├── api/                  # Controladores y endpoints REST (webhook de Telegram)
+│   │   ├── domain/               # Entidades, enums, errores y textos de usuario
 │   │   ├── infrastructure/
-│   │   │   ├── config/           # Configuración de la aplicación
-│   │   │   ├── database/         # Conexión y setup de base de datos
-│   │   │   ├── ia/               # Clientes LLM, skills y cliente de embeddings
+│   │   │   ├── bot/              # Cliente de Telegram
+│   │   │   ├── config/           # Configuración (settings) y logging
+│   │   │   ├── database/         # PostgreSQL conversacional (modelos, sesión, repositorio)
+│   │   │   ├── ia/               # Cliente de embeddings y skills de los agentes
+│   │   │   ├── jobs/             # Scheduler de la app: avisos de fin de ciclo y encuestas semanales
+│   │   │   ├── observability/    # Telemetría OpenTelemetry
 │   │   │   ├── prompts/          # Plantillas de prompts por agente
-│   │   │   └── vectordb/         # Lectura RAG y publicación moderada en pgVector
-│   │   ├── repository/           # Acceso a datos (patrón Repository)
-│   │   ├── service/              # Casos de uso y lógica de negocio
+│   │   │   └── vectordb/         # Acceso de solo lectura a pgVector (ejercicios)
+│   │   ├── repository/           # Puertos de acceso a datos (Protocol)
+│   │   ├── service/              # Casos de uso; agent/ contiene las chains de los agentes
 │   │   └── main.py               # Punto de entrada de la aplicación
 │   ├── Dockerfile                # Dockerización de la aplicación
 │   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
+├── alembic/                      # Migraciones de la base de datos conversacional
 ├── infra/
 │   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
 │   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
@@ -68,30 +61,26 @@ FitCoachIA/
 ├── tests/
 │   ├── unit_test/                # Tests unitarios
 │   ├── it/                       # Tests de integración
-│   └── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
-├── docs/                         # Documentación técnica
-│   ├── AUTHORS.md
-│   ├── interviewer-agent.md      # Agente 1 (Secretario)
-│   ├── trainer-agent.md          # Agente 2 (Entrenador)
-│   ├── exercise-catalogue-contributions.md # Propuestas y moderación del catálogo
-│   ├── vector-db.md              # Base de datos vectorial y embeddings
-│   ├── Dockerfile-guide.md
-│   └── Makefile.md
+│   ├── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
+│   └── docker-compose-test.yml   # Entorno de los tests de integración
+├── docs/                         # Documentación técnica (en español)
 ├── .github/
 │   ├── actions/
-│   │   └── python-setup.yml      # Action reutilizable: instala Python + uv + audita dependencias
-│   ├── workflows/
-│   │   ├── build.yml             # Pipeline de calidad, seguridad y tests (feature branches)
-│   │   ├── release.yml           # Publicación de imagen Docker y release en GitHub (main)
-│   │   └── validate-merge-source.yml  # Valida que los PRs a main vengan de develop
-│   └── requirements-ci.txt       # Dependencias del entorno CI: runtime + dev + ci (generado desde pyproject.toml)
-├── scripts/                      # Scripts de utilidad
-├── .env.development              # Variables de entorno para desarrollo
+│   │   ├── python-setup/         # Action reutilizable: Python + uv + auditoría de dependencias
+│   │   └── quality-check/        # Action reutilizable: ruff, mypy, gitleaks, pip-audit, bandit
+│   ├── workflows/                # build, release, deploy y validate-develop/main-merge
+│   ├── copilot-instructions.md   # Puntero a AGENTS.md
+│   └── requirements-ci.txt       # Dependencias del entorno CI (generado desde pyproject.toml)
 ├── .env.example                  # Plantilla de variables de entorno
+├── .dockerignore                 # Contexto de build de la imagen (lista de permitidos)
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit)
-├── docker-compose.yml            # Configuración de Docker Compose
+├── alembic.ini                   # Configuración de alembic
+├── docker-compose.dev.yml        # Entorno de desarrollo
+├── docker-compose.local.yml      # Entorno local para probar cambios
+├── docker-compose.yml            # Entorno de producción
 ├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
-├── pyproject.toml                # Configuración de ruff, mypy y pytest
+├── AGENTS.md                     # Mapa del proyecto e instrucciones para asistentes de IA
+├── CLAUDE.md                     # Importa AGENTS.md
 ├── LICENSE.md
 ├── Makefile                      # Automatización de tareas
 └── README.md
@@ -110,11 +99,14 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make clean` | Detiene el contenedor y elimina todas las imágenes locales de la aplicación |
 | `make all` | Secuencia completa: limpia, construye y arranca |
 | `make container` | Lista todos los contenedores (activos y detenidos) |
-| `make images` | Lista todas las imágenes Docker locales |
 | `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
-| `make tag version=x.y.z` | Aplica un tag de versión a la imagen `latest` local |
-| `make tests` | Todos los tests con cobertura (falla si < 80%) |
+| `make tests` | Levanta el entorno de tests, ejecuta unitarios e integración con cobertura (falla si < 80%) y lo detiene |
+| `make dev-up` / `dev-down` / `dev-logs` | Entorno de desarrollo (`docker-compose.dev.yml`) |
+| `make prod-up [VERSION=x.y.z]` / `prod-down` / `prod-logs` | Entorno de producción (`docker-compose.yml`) |
+| `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
+
+El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md).
 
 
 ## Instalación y Despliegue
@@ -126,8 +118,7 @@ git clone https://github.com/usuario/proyecto-jupiter.git
 
 ## 🐳 Docker — Construcción manual de la imagen
 
-El `Dockerfile` se encuentra en `src/`, pero el contexto de construcción es la raíz
-del repositorio: necesita `frontend/`, `src/` y las migraciones de `alembic/`.
+El `Dockerfile` se encuentra en `src/`, pero el contexto de construcción es la **raíz del repositorio**: copia `src/requirements.txt`, `src/fitcoach`, `alembic` y `alembic.ini`. El `.dockerignore` es una lista de permitidos, de modo que solo esos ficheros entran en el contexto.
 
 ### 1. Construir la imagen
 
@@ -136,7 +127,7 @@ del repositorio: necesita `frontend/`, `src/` y las migraciones de `alembic/`.
 docker build -t fitcoach-ia:latest -f src/Dockerfile .
 ```
 
-> **Nota:** La etiqueta `fitcoach-ia:latest` puede sustituirse por cualquier nombre y versión que prefieras (p. ej. `fitcoach-ia:1.0.0`).
+> **Nota:** La etiqueta `fitcoach-ia:latest` puede sustituirse por cualquier nombre y versión que prefieras (p. ej. `fitcoach-ia:1.0.0`). `make build` hace lo mismo con la imagen `fitcoachia/fitcoach-app`.
 
 ### 2. Ejecutar el contenedor
 
@@ -163,27 +154,30 @@ Una vez en marcha, la API estará disponible en `http://localhost:8000`.
 | Opción | Descripción |
 |--------|-------------|
 | `-t fitcoach-ia:latest` | Nombre y etiqueta de la imagen resultante |
-| `-f src/Dockerfile .` | Dockerfile en `src/` y contexto en la raíz del repositorio |
+| `-f src/Dockerfile` | Ruta del `Dockerfile` |
+| `.` | Contexto de construcción (raíz del repositorio) |
 | `--no-cache` | Fuerza la reconstrucción de todas las capas sin caché |
 | `--platform linux/amd64` | Construye para una plataforma específica (útil en Apple Silicon) |
 
 ## CI/CD
 
-El proyecto tiene tres pipelines en `.github/workflows/`:
+El proyecto tiene estos workflows en `.github/workflows/`:
 
 | Workflow | Trigger | Qué hace |
 |----------|---------|----------|
-| `build.yml` | PRs a ramas `feature/**`, `fix/**` | Calidad y seguridad (Ruff, Mypy, Gitleaks, pip-audit, Bandit, Semgrep) → tests unitarios y de integración (cobertura >= 80%)|
-| `validate-merge-source.yml` | PRs a `main` | Bloquea merges que no provengan de `develop` |
-| `release.yml` | Push a `main` | Construye la imagen Docker, escanea vulnerabilidades con Trivy, publica en el registry, crea la GitHub Release con versionado semver automático y despliega al servidor |
+| `build.yml` | Push y PRs en ramas `feat/**`, `feature/**`, `fix/**`, `bugfix/**` (ignora cambios solo de docs y `.md`) y ejecución manual | Calidad y seguridad (Ruff, Mypy, Gitleaks, pip-audit, Bandit, Semgrep) → `make tests` (unitarios e integración, cobertura >= 80%) |
+| `validate-develop-merge.yml` | PRs a `develop` | Bloquea merges que no provengan de ramas `feat/`, `feature/` o `fix/` |
+| `validate-main-merge.yml` | PRs a `main` | Bloquea merges que no provengan de `develop` |
+| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye la imagen Docker, la escanea con Trivy, publica en el registry, crea la GitHub Release y lanza `deploy.yml` |
+| `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en el servidor por SSH con `make prod-up`, verifica el arranque y hace rollback si falla |
 
-La action `.github/actions/python-setup.yml` es reutilizable entre los workflows: instala la versión de Python configurada, instala `uv` con caché de dependencias y audita `requirements-ci.txt` antes de instalar.
+Las actions reutilizables están en `.github/actions/`: `python-setup` instala Python y `uv` con caché y audita `requirements-ci.txt` antes de instalar; `quality-check` agrupa Ruff, Mypy, Gitleaks, pip-audit y Bandit. El detalle está en [docs/ci-cd.md](docs/ci-cd.md).
 
 ## Tests
 
 Los imports de la aplicación se resuelven solos: `pythonpath = ["src"]` en `pyproject.toml` ya apunta a `src/`, sin necesidad de exportar `PYTHONPATH` a mano.
 
-Los tests de integración (`tests/it`) atacan por HTTP el contenedor construido desde `src/Dockerfile`, así que requieren Docker en marcha. `make tests` e `make it_tests` lo levantan y lo detienen automáticamente.
+Los tests de integración (`tests/it`) atacan por HTTP el contenedor construido desde `src/Dockerfile`, así que requieren Docker en marcha. `make tests` lo levanta y lo detiene automáticamente.
 
 ```bash
 # Todos los tests: unitarios con cobertura (falla si < 80%) + integración contra el contenedor

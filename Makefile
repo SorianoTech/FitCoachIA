@@ -124,7 +124,7 @@ build:
 dev-up:
 	@$(ensure_dev_networks); \
 	$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build
+	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --remove-orphans
 
 # Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y postgres,
 # que deben estar ya levantados con `make dev-up`.
@@ -144,7 +144,7 @@ dev-logs:
 prod-up:
 	@$(ensure_prod_networks); \
 	$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d
+	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d --remove-orphans
 
 prod-down:
 	@$(resolve_prod_env); \

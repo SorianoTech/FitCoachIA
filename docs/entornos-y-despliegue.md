@@ -2,6 +2,8 @@
 
 Cómo encajan el workflow de CI/CD, el `Makefile`, los dos Compose y los ficheros de entorno. Para el
 detalle de las fases del pipeline, ver [ci-cd.md](ci-cd.md); para los comandos, [Makefile.md](Makefile.md).
+Para replicar este mismo esquema en una instancia EC2 de AWS, ver
+[despliegue-aws-ec2.md](despliegue-aws-ec2.md).
 
 ---
 

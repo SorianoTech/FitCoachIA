@@ -2,12 +2,16 @@
 
 Variante de despliegue en AWS que **reproduce el servidor actual** en una instancia EC2 con los
 mínimos cambios en el repositorio. Los Compose, el `Makefile`, el `deploy.yml` por SSH, los ficheros
-`/etc/fitcoachia/<entorno>/.env.<entorno>` y Nginx Proxy Manager se usan igual que hoy; lo único que
-cambia es la máquina en la que corren.
+`/etc/fitcoachia/<entorno>/.env.<entorno>`, Nginx Proxy Manager y el stack de observabilidad del
+proyecto (Grafana, Loki, Tempo, Prometheus, OTel Collector y Alloy) se usan igual que hoy; lo único
+que cambia es la máquina en la que corren. La infraestructura de AWS se crea con una plantilla de
+**CloudFormation**: [`infra/aws/ec2/fitcoach-ec2.cfn.yaml`](../infra/aws/ec2/fitcoach-ec2.cfn.yaml).
+
+No se usan servicios de observabilidad de AWS (CloudWatch Logs, X-Ray, Managed Grafana): trazas,
+logs y métricas siguen en el stack de [observabilidad.md](observabilidad.md).
 
 Para el contexto general ver [entornos-y-despliegue.md](entornos-y-despliegue.md) y
-[ci-cd.md](ci-cd.md). La alternativa con ECS Fargate + RDS está descrita fuera del repositorio, en la
-documentación de arquitectura del proyecto.
+[ci-cd.md](ci-cd.md).
 
 ---
 
@@ -16,151 +20,164 @@ documentación de arquitectura del proyecto.
 | Pieza | Hoy (servidor actual) | En AWS | ¿Cambia algo en el repo? |
 |---|---|---|---|
 | Máquina | Servidor propio | EC2 `t3.large` (2 vCPU, 8 GB, x86_64), Ubuntu 24.04 LTS | No |
+| Infraestructura | Manual | Plantilla CloudFormation | Fichero nuevo |
 | Contenedores | `docker-compose.yml` + Compose de pgVector | Los mismos | No |
+| Observabilidad | `infra/observability/compose.yml` | El mismo, en la misma instancia | No |
 | Proxy y TLS | Nginx Proxy Manager en `proxy-network` | El mismo, con [nginx-proxy-manager.compose.yml](../infra/aws/ec2/nginx-proxy-manager.compose.yml) | Fichero nuevo de referencia |
-| Secretos | `/etc/fitcoachia/prod/.env.prod` (root) | Igual | No |
+| Secretos | `/etc/fitcoachia/prod/.env.prod` (root) e `infra/*/.env` | Igual | No |
 | Despliegue | `deploy.yml`: SSH + `sudo make prod-up` | Igual; solo cambian los secretos `SERVER_*` de GitHub | No |
 | Imágenes | Docker Hub | Docker Hub | No |
-| Dominio | DNS actual | Mismo dominio; registro `A` a la Elastic IP | No |
+| Dominio | DNS actual | Mismos dominios; registros `A` a la Elastic IP | No |
 | Backups | — | Snapshots EBS diarios (DLM) + `pg_dump` nocturno a S3 | Script nuevo |
-| Arranque del host | Manual | [user-data.sh](../infra/aws/ec2/user-data.sh) (cloud-init) | Script nuevo |
 | Huérfanos al desplegar | `prod-up` no los quitaba | `dev-up` y `prod-up` llevan `--remove-orphans` | Arreglo en el `Makefile` |
 
-Se elige **x86_64** (`t3`) y no Graviton (`t4g`, ~13 $/mes más barato) porque las imágenes actuales
-solo se publican para `amd64` y porque permite copiar los volúmenes de Postgres tal cual. Pasar a
-ARM exige builds multiarquitectura y queda como mejora posterior.
+Se elige **x86_64** (`t3`) y no Graviton (`t4g`) porque las imágenes actuales solo se publican para
+`amd64` y porque permite copiar los volúmenes de Postgres tal cual. Pasar a ARM exige builds
+multiarquitectura y queda como mejora posterior.
 
-Coste orientativo en `eu-west-1`, bajo demanda: **≈ 75 USD/mes** solo producción (≈ 52 $ con un
-Savings Plan de 1 año). Detalle en la [sección 7](#7-coste).
+Coste orientativo en `eu-west-1`, bajo demanda: **≈ 77 USD/mes** solo producción con observabilidad
+(≈ 54 $ con un Savings Plan de 1 año). Detalle en la [sección 8](#8-coste).
 
 ## 2. Diagrama
 
 ```
                         Internet
-   Telegram ──webhook──┐        ┌── Usuario (Mini App)
-                       ▼        ▼
-              DNS: api.<dominio>  A  →  Elastic IP
+   Telegram ──webhook──┐        ┌── Usuario (Mini App)      Operador ──► grafana.<dominio>
+                       ▼        ▼                                              │
+         DNS: api.<dominio>, grafana.<dominio>  A  →  Elastic IP ◄─────────────┘
                        │
-┌──────────── EC2 t3.large · Ubuntu 24.04 · SG: 80, 443, 22 ─────────────────┐
-│                                                                             │
-│  proxy-network                                                              │
-│   ├─ nginx-proxy-manager  :80 :443  (admin :81 solo en 127.0.0.1)           │
-│   └─ fitcoach-ia (API + bot + scheduler) :8000                              │
-│                                                                             │
-│  fitcoach-prod-internal                                                     │
-│   ├─ fitcoach-ia ──► fitcoach-embedder :8100                                │
-│   ├─ fitcoach-ia ──► fitcoach-postgres (PG 16)       volumen EBS            │
-│   ├─ fitcoach-ia ──► pgvector-prod (PG 18 + pgvector) volumen EBS           │
-│   └─ pgadmin (sin publicar; acceso por túnel)                               │
-│                                                                             │
-│  cron 03:30 ─► backup-postgres.sh ─► S3 (fitcoach-backups-…)                │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │ salida HTTPS: Telegram, OpenAI/OpenRouter, Sentry, Docker Hub
+┌──────────── EC2 t3.large · Ubuntu 24.04 · SG: 80, 443, 22 ─────────────────────────┐
+│  proxy-network                                                                      │
+│   ├─ nginx-proxy-manager :80 :443 (admin :81 solo en 127.0.0.1)                     │
+│   ├─ fitcoach-ia (API + bot + scheduler) :8000                                      │
+│   └─ fitcoach-grafana :3000                                                         │
+│                                                                                     │
+│  fitcoach-prod-internal                                                             │
+│   ├─ fitcoach-ia ──► fitcoach-embedder :8100                                        │
+│   ├─ fitcoach-ia ──► fitcoach-postgres (PG 16) ◄── Grafana (dashboards de negocio)  │
+│   ├─ fitcoach-ia ──► pgvector-prod (PG 18 + pgvector)                               │
+│   └─ fitcoach-ia ──OTLP──► fitcoach-otel-collector :4317                            │
+│                                                                                     │
+│  observability                                                                      │
+│   collector ─► Loki / Tempo / Prometheus ◄── Grafana                                │
+│   Alloy ─► Loki (logs de fitcoach-ia vía socket de Docker)                          │
+│                                                                                     │
+│  Volumen raíz gp3 (no se borra al terminar la instancia) · cron 03:30 ─► S3         │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+        │ salida HTTPS: Telegram, OpenAI/OpenRouter, Sentry, Docker Hub, GitHub
         ▼
 GitHub Actions ──SSH (deploy.yml sin cambios)──► sudo make prod-up VERSION=x.y.z
 ```
 
-## 3. Recursos de AWS
+## 3. Qué crea la plantilla
 
-Todo se puede crear desde la consola; abajo van los valores. Región por defecto `eu-west-1`
-(Irlanda); `eu-south-2` (Madrid) también vale si se prefiere latencia o residencia en España.
+| Recurso | Para qué |
+|---|---|
+| Security group | 443 y 80 desde internet (IPv4 e IPv6); 22 desde `SshIngressCidr` |
+| Instancia EC2 | Ubuntu 24.04, `t3.large` por defecto, crédito *unlimited*, IMDSv2 obligatorio, protección contra terminación, disco gp3 cifrado de 60 GB que **no** se borra si se termina la instancia |
+| Elastic IP | IP fija para el DNS y para el secreto `SERVER_HOST`; se reasocia sola si la instancia se sustituye |
+| Rol de instancia | Session Manager (shell y túneles sin abrir puertos) y escritura en `postgres/` del bucket de backups |
+| Bucket S3 | Backups de Postgres, cifrado, sin acceso público, borra los volcados a los `BackupRetentionDays` días. Se conserva si se borra la pila |
+| Política DLM | Snapshot diario de la instancia a las 03:00 UTC, conserva `SnapshotRetentionCount` |
 
-### 3.1 Red y seguridad
-- **VPC por defecto** y una subred pública. No hace falta NAT ni balanceador.
-- **Elastic IP** asociada a la instancia: el DNS y los secretos de GitHub no cambian si se
-  reemplaza la máquina.
-- **Security group `fitcoach-ec2`**:
+El *user data* de la instancia deja la máquina como el servidor actual:
 
-  | Puerto | Origen | Para qué |
-  |---|---|---|
-  | 443/tcp | 0.0.0.0/0 | Webhook de Telegram y Mini App |
-  | 80/tcp | 0.0.0.0/0 | Redirección a HTTPS y reto HTTP-01 de Let's Encrypt |
-  | 22/tcp | 0.0.0.0/0 | `deploy.yml` desde los runners de GitHub (IPs variables). Solo clave, sin contraseña |
-
-  No abrir 81 (admin de NPM), 8000 (la API publica ese puerto en el host, pero solo debe llegarle
-  NPM), 5432/5433 ni 8100. Docker publica puertos saltándose `ufw`, así que **el security group es la
-  barrera real**.
-- Si se quiere cerrar el 22 más adelante: runner autoalojado o SSM Run Command desde el workflow.
-  Implica tocar `deploy.yml` y queda fuera de esta variante.
-
-### 3.2 Instancia
-- AMI **Ubuntu Server 24.04 LTS (x86_64)**, tipo **`t3.large`**, crédito *unlimited* (el valor por
-  defecto en `t3`; el embedder tiene picos cortos de CPU).
-- Disco raíz **gp3 de 40 GB** (imágenes: ~3 GB el embedder; volúmenes: ~1 GB). Con dev en la misma
-  máquina, 60 GB.
-- **Rol de instancia** `fitcoach-ec2-role` con:
-  - `AmazonSSMManagedInstanceCore` (consola y túneles por Session Manager, sin abrir puertos).
-  - Una política propia que permita `s3:PutObject` sobre `arn:aws:s3:::<bucket-backups>/*`.
-- **User data**: el contenido de [`infra/aws/ec2/user-data.sh`](../infra/aws/ec2/user-data.sh),
-  editando antes `DEPLOY_USER` y `DEPLOY_SSH_PUBKEY` (la clave pública cuya privada está en el secreto
-  `SERVER_PKEY` de GitHub).
-- Protección contra terminación activada.
-
-### 3.3 Backups
-- **S3**: bucket privado `fitcoach-backups-<sufijo>`, cifrado SSE-S3, bloqueo de acceso público y
-  regla de ciclo de vida que borre `postgres/` a los 30 días.
-- **Data Lifecycle Manager**: política de snapshots diarios del volumen raíz, con retención de 7.
-  Recupera la máquina entera; el `pg_dump` a S3 recupera una base concreta y es portable.
-
-### 3.4 Vigilancia mínima
-- Alarma de CloudWatch sobre `StatusCheckFailed_System` con la acción *Recover this instance*
-  (conserva la Elastic IP y el disco).
-- Alarma sobre `CPUCreditBalance` bajo y `CPUSurplusCreditsCharged` > 0, para detectar si `t3.large`
-  se queda corta.
-- Sentry y, si se mantiene, el stack de [observabilidad](observabilidad.md) siguen igual. Ese stack
-  no cabe con holgura en 8 GB junto a producción: ver la [sección 7](#7-coste).
-
-## 4. Preparar la instancia
-
-`user-data.sh` deja la máquina como el servidor actual:
-
-1. Docker Engine (≥ 25, necesario por `start_interval` de los healthchecks) y el plugin Compose
-   desde el repositorio oficial de Docker, `make`, `git` y la AWS CLI.
-2. Rotación de logs de Docker (`json-file`, 3 × 10 MB por contenedor) para no llenar el disco.
-3. 2 GB de swap, como colchón ante picos de memoria.
+1. Docker Engine (≥ 25, necesario por `start_interval` de los healthchecks), el plugin Compose,
+   `make`, `git` y la AWS CLI.
+2. Rotación de logs de Docker (`json-file`, 3 × 10 MB por contenedor). Alloy los sigue leyendo por
+   la API de Docker.
+3. 2 GB de swap.
 4. Usuario de despliegue en el grupo `docker`, con la clave pública de GitHub Actions y la regla
    `sudoers` que exige `deploy.yml` ([how-to.md](how-to.md#desplegar-producción)).
 5. `/etc/fitcoachia/prod` y `/etc/fitcoachia/dev` propiedad de root con permisos `700`.
-6. Las redes `proxy-network` y `fitcoach-prod-internal`.
+6. Las redes `proxy-network`, `fitcoach-prod-internal` y `fitcoach-dev-internal` (el Compose de
+   observabilidad exige las dos internas aunque dev no corra aquí).
+7. El repositorio en `/opt/fitcoachia` (rama o tag `RepositoryRef`), y una copia de
+   `docker-compose.yml` y `Makefile` en el *home* del usuario de despliegue, que es donde
+   `deploy.yml` los sobrescribe.
+8. El backup nocturno (`/etc/cron.d/fitcoach-backup`) y Nginx Proxy Manager arrancado.
 
-Su salida queda en `/var/log/cloud-init-output.log`. Después, a mano y una sola vez:
+No arranca la app, pgVector ni la observabilidad: necesitan ficheros `.env` con secretos, que no
+deben pasar por CloudFormation (quedarían visibles en el *user data*). Su salida queda en
+`/var/log/cloud-init-output.log`.
+
+**Cuidado con las actualizaciones de la pila**: cambiar `ImageId` o `SubnetId` **sustituye la
+instancia**. El disco antiguo no se borra, pero la nueva arranca vacía. Por eso la AMI va fijada como
+parámetro y no se resuelve sola. Cambiar `InstanceType` solo la para y la arranca. Cambiar parámetros
+del *user data* no lo vuelve a ejecutar.
+
+## 4. Crear la pila
+
+Región por defecto `eu-west-1` (Irlanda); `eu-south-2` (Madrid) también vale.
 
 ```bash
-# Entrar sin abrir más puertos
-aws ssm start-session --target <instance-id>
+# AMI actual de Ubuntu 24.04 amd64 (queda fijada en la pila)
+AMI=$(aws ssm get-parameter --region eu-west-1 \
+  --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
+  --query Parameter.Value --output text)
 
-# Repositorio en el host: hace falta para el Compose de pgVector (build con el DDL)
-sudo git clone https://github.com/SorianoTech/FitCoachIA.git /opt/fitcoachia
-cd /opt/fitcoachia && sudo git checkout <tag-o-rama-desplegada>
+aws cloudformation deploy --region eu-west-1 \
+  --stack-name fitcoach-prod \
+  --template-file infra/aws/ec2/fitcoach-ec2.cfn.yaml \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides \
+    VpcId=<vpc-por-defecto> SubnetId=<subred-publica> ImageId="$AMI" \
+    DeploySshPublicKey="$(cat deploy_key.pub)" RepositoryRef=<rama-o-tag>
 
-# Secretos de producción: copiar los dos ficheros del servidor actual. Son distintos:
-# el de la app y el del Compose de pgVector (credenciales de esa base y de sus roles).
+aws cloudformation describe-stacks --region eu-west-1 --stack-name fitcoach-prod \
+  --query 'Stacks[0].Outputs'
+```
+
+`DeploySshPublicKey` es la clave pública cuya privada está en el secreto `SERVER_PKEY` de GitHub. El
+resto de parámetros tiene valores por defecto (ver la plantilla). La primera vez tarda unos minutos
+más tras crearse la pila, mientras el *user data* instala Docker.
+
+Para validar la plantilla tras modificarla: `cfn-lint infra/aws/ec2/fitcoach-ec2.cfn.yaml`.
+
+## 5. Completar la instancia
+
+Una sola vez, por Session Manager (`SessionCommand` en las salidas de la pila):
+
+```bash
+# Secretos: copiar los ficheros del servidor actual. Son distintos entre sí.
 sudo install -m 600 -o root -g root ./app.env.prod /etc/fitcoachia/prod/.env.prod
 sudo install -m 600 -o root -g root ./vector-db.env.prod /opt/fitcoachia/infra/vector-db/.env.prod
+sudo install -m 600 -o root -g root ./observability.env /opt/fitcoachia/infra/observability/.env
 
 # Si los repositorios de Docker Hub son privados, login como usuario de despliegue
 sudo -iu <DEPLOY_USER> docker login
 ```
 
-## 5. Migrar desde el servidor actual
+Valores a revisar en esos ficheros, que dependen de esta máquina:
+
+- `.env.prod` de la app: `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317`, igual que
+  hoy ([observabilidad.md](observabilidad.md)).
+- `infra/observability/.env`: `DEPLOYMENT_ENVIRONMENT=prod` y `FITCOACH_POSTGRES_PROD_*` con las
+  credenciales del Postgres de producción. `FITCOACH_POSTGRES_DEV_PASSWORD` es obligatoria para el
+  Compose; si dev no corre en esta instancia, cualquier valor sirve y el datasource «PostgreSQL Dev»
+  quedará en error.
+
+## 6. Migrar desde el servidor actual
 
 El orden importa: **nunca puede haber dos producciones vivas con el mismo bot**, porque las dos
 registrarían el webhook y sus schedulers enviarían avisos y encuestas desde bases distintas.
 
-1. **Días antes**: bajar el TTL del registro DNS del dominio de la API a 60 s.
-2. **Preparar el proxy** en la EC2:
+1. **Días antes**: bajar a 60 s el TTL de los registros DNS de la API y de Grafana.
+2. **Proxy Hosts** en Nginx Proxy Manager (ya arrancado por la plantilla). Admin por túnel:
 
    ```bash
-   cd /opt/fitcoachia
-   sudo docker compose -f infra/aws/ec2/nginx-proxy-manager.compose.yml up -d
-   # Admin por túnel: aws ssm start-session --target <id> \
-   #   --document-name AWS-StartPortForwardingSession --parameters portNumber=81,localPortNumber=8081
+   aws ssm start-session --target <instance-id> \
+     --document-name AWS-StartPortForwardingSession --parameters portNumber=81,localPortNumber=8081
    ```
 
-   Crear el Proxy Host igual que hoy ([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)):
-   destino `fitcoach-ia-prod`, puerto `8000`, `http`, Force SSL. Para tener el certificado **antes**
-   del cambio de DNS, pedirlo con reto DNS-01 desde NPM (si el proveedor de DNS está soportado); si
-   no, pedirlo justo después del paso 5, con unos minutos de errores TLS que Telegram reintenta.
+   - API, igual que hoy ([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)): destino
+     `fitcoach-ia-prod`, puerto `8000`, `http`, Force SSL.
+   - Grafana, igual que hoy ([observabilidad.md](observabilidad.md)): destino `fitcoach-grafana`,
+     puerto `3000`, Force SSL y, si se quiere, una *Access List*.
+
+   Para tener los certificados **antes** del cambio de DNS, pedirlos con reto DNS-01 desde NPM (si
+   el proveedor de DNS está soportado); si no, pedirlos justo después del paso 5, con unos minutos de
+   errores TLS que Telegram reintenta.
 3. **Parar producción en el servidor actual** (Telegram guarda los updates pendientes hasta 24 h):
 
    ```bash
@@ -168,9 +185,9 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
    docker compose -f infra/vector-db/docker-compose.vector-db.prod.yml down   # desde infra/vector-db
    ```
 
-4. **Copiar los dos volúmenes de Postgres.** Misma imagen, misma versión mayor y misma
-   arquitectura (x86_64), así que se copian los ficheros tal cual, sin `pg_dump`/`pg_restore` y sin
-   tocar el DDL de pgVector:
+4. **Copiar los volúmenes de Postgres.** Misma imagen, misma versión mayor y misma arquitectura
+   (x86_64), así que se copian los ficheros tal cual, sin `pg_dump`/`pg_restore` y sin tocar el DDL
+   de pgVector:
 
    ```bash
    # En el servidor actual: localizar los volúmenes (llevan el prefijo del proyecto Compose)
@@ -189,86 +206,87 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
    lugar de crear unos vacíos (que, en el caso de pgVector, se rellenarían con la carga inicial y
    perderían los ejercicios publicados después). Compose avisará de que el volumen "ya existe pero no
    lo creó Compose": es esperado y lo usa igualmente.
+
+   Los volúmenes de observabilidad (`fitcoach-observability-*`) son opcionales: los dashboards y
+   datasources se aprovisionan desde el repositorio, así que solo se pierde el histórico de métricas,
+   logs y trazas y lo que se haya creado a mano en Grafana. Si se quiere conservar, se copian igual.
 5. **Arrancar en la EC2 y mover el DNS**:
 
    ```bash
-   cd /opt/fitcoachia/infra/vector-db
-   sudo docker compose -f docker-compose.vector-db.prod.yml up -d --build
-   cd /home/<DEPLOY_USER>
-   # Propiedad del usuario de despliegue: deploy.yml los sobrescribe por rsync con ese usuario
-   sudo install -m 644 -o <DEPLOY_USER> -g <DEPLOY_USER> /opt/fitcoachia/docker-compose.yml /opt/fitcoachia/Makefile .
-   sudo make prod-up VERSION=<versión en servicio>
+   cd /opt/fitcoachia/infra/observability && sudo docker compose up -d
+   cd /opt/fitcoachia/infra/vector-db && sudo docker compose -f docker-compose.vector-db.prod.yml up -d --build
+   cd /home/<DEPLOY_USER> && sudo make prod-up VERSION=<versión en servicio>
    ```
 
-   Cambiar el registro `A` a la Elastic IP. Al arrancar, la API vuelve a registrar el webhook con
+   Cambiar los registros `A` a la Elastic IP. Al arrancar, la API vuelve a registrar el webhook con
    `bot_telegram_webhook_base_url`, que no cambia.
 6. **Actualizar los secretos de GitHub** `SERVER_HOST` (Elastic IP o nombre DNS) y, si cambia,
    `SERVER_USER`. `SERVER_PKEY`, `DOCKER_IMAGE_NAME` y `ENV_FILE_PATH` siguen igual. A partir de aquí
    los despliegues van por `deploy.yml` como hoy.
 7. **Comprobar**: `docker ps` (todo `healthy`), `getWebhookInfo` del bot sin errores, un mensaje de
-   prueba, la Mini App, y el primer backup en S3 al día siguiente.
+   prueba, la Mini App, que en Grafana aparecen logs y trazas de `prod`, y el primer backup en S3 al
+   día siguiente (`/var/log/fitcoach-backup.log`).
 8. **Rollback** mientras no se borre nada en el servidor antiguo: devolver el DNS, `make prod-up`
    allí. Los datos escritos en la EC2 entretanto se perderían, así que conviene decidir pronto.
 
-## 6. Backups
+## 7. Backups
 
 [`infra/aws/ec2/backup-postgres.sh`](../infra/aws/ec2/backup-postgres.sh) hace un `pg_dump` en
 formato custom de cada base (relacional y vectorial) **dentro de su contenedor**, con las
-credenciales que ya tiene el propio contenedor, y lo sube a S3 con el rol de la instancia:
-
-```bash
-sudo install -m 750 /opt/fitcoachia/infra/aws/ec2/backup-postgres.sh /usr/local/bin/fitcoach-backup
-echo '30 3 * * * root BACKUP_BUCKET=fitcoach-backups-<sufijo> /usr/local/bin/fitcoach-backup >> /var/log/fitcoach-backup.log 2>&1' \
-  | sudo tee /etc/cron.d/fitcoach-backup
-```
+credenciales que ya tiene el propio contenedor, y lo sube a `s3://<bucket>/postgres/<fecha>/` con el
+rol de la instancia. La plantilla lo instala en `/usr/local/bin/fitcoach-backup` y lo programa a las
+03:30 UTC.
 
 Restaurar una base:
 
 ```bash
-aws s3 cp s3://fitcoach-backups-<sufijo>/postgres/<fecha>/fitcoach-postgres.dump .
+aws s3 cp s3://<bucket>/postgres/<fecha>/fitcoach-postgres.dump .
 docker exec -i fitcoach-postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < fitcoach-postgres.dump
 ```
 
-## 7. Coste
+Los snapshots diarios de DLM recuperan la máquina entera, incluido el histórico de observabilidad.
+
+## 8. Coste
 
 `eu-west-1`, bajo demanda, USD/mes, precios de lista de referencia (confirmar en el
 [AWS Pricing Calculator](https://calculator.aws/)). No incluye el LLM.
 
-| Concepto | Solo prod (`t3.large`, 8 GB) | Prod + dev (`t3.xlarge`, 16 GB) |
+| Concepto | Prod + observabilidad (`t3.large`, 8 GB) | Prod + dev + observabilidad (`t3.xlarge`, 16 GB) |
 |---|---|---|
 | Instancia | 66,60 | 133,20 |
-| EBS gp3 (40 / 60 GB) | 3,50 | 5,30 |
+| EBS gp3 (60 / 80 GB) | 5,30 | 7,05 |
 | Elastic IP | 3,65 | 3,65 |
-| Snapshots + S3 de backups | ~1 | ~1,50 |
+| Snapshots + S3 de backups | ~1,50 | ~2 |
 | Transferencia (< 100 GB/mes) | 0 | 0 |
-| **Total** | **≈ 75** | **≈ 143** |
+| **Total** | **≈ 77** | **≈ 146** |
 
-- Con un **Savings Plan de 1 año** sin pago inicial, la instancia baja ~35 %: ≈ 52 $ y ≈ 100 $.
-- El **stack de observabilidad** (Grafana, Loki, Tempo, Prometheus, Collector, Alloy) añade 1,5–2 GB:
-  con producción sola cabe justo en `t3.large`; con dev, ya en `t3.xlarge`.
-- `t3.medium` (4 GB, ≈ 40 $) no se recomienda: embedder + dos Postgres + API rondan 3–4 GB.
-  Medir con `docker stats --no-stream` en el servidor actual antes de bajar de tamaño.
+- Con un **Savings Plan de 1 año** sin pago inicial, la instancia baja ~35 %: ≈ 54 $ y ≈ 100 $.
+- Memoria estimada con `t3.large`: producción 3–4,3 GB (embedder 1,5–2 GB, API, dos Postgres) más
+  1,2–1,6 GB del stack de observabilidad y ~0,4 GB del sistema: **≈ 4,6–6,3 GB de 8**, más 2 GB de
+  swap. Cabe, pero sin mucho margen. Medir con `docker stats --no-stream` en el servidor actual y, si
+  pasa de 6 GB, usar `t3.xlarge`.
+- Disco: Prometheus guarda 30 días, Loki 14 y Tempo 7. Con el tráfico actual son pocos GB.
+- El stack no incluye métricas del host (CPU, RAM, disco de la instancia). Si se quieren en
+  Grafana, el paso natural es añadir `node-exporter` al Compose de observabilidad.
 
-## 8. Qué no cambia y por qué
+## 9. Qué no cambia y por qué
 
 Para mantener los cambios al mínimo, esta variante deja a propósito como está:
 
 - **Migraciones en el `ENTRYPOINT`** (`src/Dockerfile`): con una sola réplica de la API no hay
-  carreras. Solo habría que sacarlas al pasar a varias réplicas (ECS).
-- **Dos Postgres en contenedor** y el nombre `fitcoach` en ambas: siguen en contenedores separados,
-  así que no chocan.
-- **Volcado `pg_dumpall` de PG 18** en la imagen de pgVector: el contenedor es el mismo y se migra el
-  volumen, así que no se vuelve a cargar.
+  carreras.
+- **Dos Postgres en contenedor** y el nombre `fitcoach` en ambas: siguen en contenedores separados.
+- **Volcado `pg_dumpall` de PG 18** en la imagen de pgVector: se migra el volumen, así que no se
+  vuelve a cargar.
 - **Docker Hub** como registro y **el DNS** donde esté hoy: Route 53 y ECR no aportan nada aquí.
+- **Observabilidad**: el mismo Compose y la misma configuración; ningún servicio de AWS la sustituye.
 - **`proxy-network` y las redes internas**: idénticas.
 
-## 9. Puntos a confirmar antes de migrar
+## 10. Puntos a confirmar antes de migrar
 
 1. **Imagen del embedder.** `docker-compose.yml` usa `fitcoachia/embedder:${VERSION}`, pero ningún
    workflow construye ni publica esa imagen. En una máquina nueva, `make prod-up` falla al no poder
-   descargarla salvo que se haya publicado a mano para esa versión. Opciones: publicarla en
-   `release.yml` junto a la de la app, o construirla en el host con la misma etiqueta antes del
-   primer despliegue.
+   descargarla salvo que se haya publicado a mano para esa versión.
 2. **Entorno de desarrollo**: dejarlo en el servidor actual (por defecto en este documento) o
    moverlo a la EC2 con `t3.xlarge`.
 3. **Región**: `eu-west-1` (por defecto) o `eu-south-2`.

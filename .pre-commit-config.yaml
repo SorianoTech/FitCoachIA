@@ -62,3 +62,10 @@ repos:
       - id: bandit                      # busca patrones inseguros (eval, subprocess, etc.)
         args: ["-r", "src/"]
         files: ^src/
+
+  # 5. Plantillas de CloudFormation: recursos, propiedades, tipos y referencias.
+  - repo: https://github.com/aws-cloudformation/cfn-lint
+    rev: v1.57.2
+    hooks:
+      - id: cfn-lint
+        files: ^infra/aws/ec2/.*[.]cfn[.]yaml$

@@ -243,7 +243,7 @@ stays out of the build context.
 
 Always try to run, when available, what the repo enforces (report anything you could not run):
 
-1. `pre-commit run --all-files` (hooks in `.pre-commit-config.yaml`: hygiene, gitleaks, ruff, ruff-format, bandit).
+1. `pre-commit run --all-files` (hooks in `.pre-commit-config.yaml`: hygiene, gitleaks, ruff, ruff-format, bandit, cfn-lint).
 2. `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src/` (strict), `uv run pip-audit`.
 3. `make tests` (needs Docker).
 

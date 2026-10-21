@@ -132,7 +132,9 @@ aws cloudformation describe-stacks --region eu-west-1 --stack-name fitcoach-prod
 resto de parámetros tiene valores por defecto (ver la plantilla). La primera vez tarda unos minutos
 más tras crearse la pila, mientras el *user data* instala Docker.
 
-Para validar la plantilla tras modificarla: `cfn-lint infra/aws/ec2/fitcoach-ec2.cfn.yaml`.
+La plantilla se valida con `cfn-lint`, el validador de AWS para CloudFormation. Corre como hook de
+pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-lint --all-files`, o
+`cfn-lint infra/aws/ec2/fitcoach-ec2.cfn.yaml` si está instalado (`uv tool install cfn-lint`).
 
 ## 5. Completar la instancia
 

@@ -210,6 +210,8 @@ ia_exercise_curator_model=gpt-5.4-mini
 ia_exercise_curator_temperature=0.1
 ia_exercise_curator_max_tokens=1200
 ia_exercise_curator_timeout=30
+# opcional: minimal|low|medium|high|default (sin definir no se envía)
+ia_exercise_curator_reasoning_effort=minimal
 ia_exercise_duplicate_similarity_threshold=0.92
 
 vector_database_writer_url=postgresql+asyncpg://fitcoach_writer:CONTRASEÑA@pgvector-prod:5432/fitcoach

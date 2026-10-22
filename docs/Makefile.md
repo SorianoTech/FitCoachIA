@@ -99,6 +99,16 @@ de pytest**, no el del `down`: si los tests fallan, el comando falla aunque la l
 
 ---
 
+## Depuración del entrenador
+
+| Comando | Qué hace |
+|---|---|
+| `make trainer-debug ARGS="..."` | Ejecuta el entrenador offline sobre un caso |
+| `make trainer-compare ARGS="..."` | Compara skills/modelos sobre el golden set |
+| `make trainer-refresh-catalogues` | Regenera los catálogos congelados de los casos |
+
+Opciones y artefactos en [devtools.md](devtools.md).
+
 ## Imagen y contenedor sueltos
 
 Utilidades de desarrollo local, sin Compose de por medio.

@@ -82,6 +82,11 @@ database_url=postgresql+asyncpg://fitcoach:elige-una-contrasena@localhost:5432/f
 control. Cambiarlo puede afectar a la consistencia del perfil final, por lo que debe validarse el
 flujo completo de entrevista.
 
+El resto de agentes tienen su propia variable opcional con los mismos valores:
+`ia_trainer_generation_reasoning_effort`, `ia_trainer_consultation_reasoning_effort`,
+`ia_trainer_extraction_reasoning_effort` e `ia_exercise_curator_reasoning_effort`. Sin definir, no
+se envía el parámetro.
+
 Las dos variables del webhook son **obligatorias y distintas por entorno**; sin ellas la app no
 arranca. `bot_telegram_webhook_base_url` es la URL pública de **tu app**, sin path y con HTTPS
 —Telegram no acepta `http://` ni `localhost`—, mientras que `bot_telegram_url` es la base de la API

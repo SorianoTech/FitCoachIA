@@ -262,6 +262,11 @@ def build_trainer_model(
         if task_temperature == "default"
         else task_temperature
     )
+    reasoning_effort = {
+        "generation": settings.trainer_generation_reasoning_effort,
+        "consultation": settings.trainer_consultation_reasoning_effort,
+        "extraction": settings.trainer_extraction_reasoning_effort,
+    }[task]
     schema: type[TrainerTurn] = TrainerTurn
     if task == "consultation":
         model = settings.trainer_consultation_model or settings.model
@@ -281,6 +286,7 @@ def build_trainer_model(
         max_tokens=max_tokens or None,
         timeout=timeout,
         max_retries=settings.max_retries,
+        reasoning_effort=None if reasoning_effort == "default" else reasoning_effort,
         model_kwargs={"response_format": strict_response_format(schema)},
     )
 

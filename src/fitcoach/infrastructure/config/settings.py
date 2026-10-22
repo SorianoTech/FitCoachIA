@@ -129,6 +129,10 @@ class IASettings(BaseSettings):
     trainer_generation_temperature: TaskTemperature | None = None
     trainer_consultation_temperature: TaskTemperature | None = None
     trainer_extraction_temperature: TaskTemperature | None = None
+    # None or "default" omits reasoning_effort from the request.
+    trainer_generation_reasoning_effort: ReasoningEffort | None = None
+    trainer_consultation_reasoning_effort: ReasoningEffort | None = None
+    trainer_extraction_reasoning_effort: ReasoningEffort | None = None
     trainer_consultation_model: str | None = Field(default=None, min_length=1)
     trainer_consultation_max_tokens: int | None = Field(default=None, gt=0)
     trainer_consultation_timeout: float | None = Field(default=None, gt=0)
@@ -143,6 +147,7 @@ class IASettings(BaseSettings):
     exercise_curator_temperature: TaskTemperature = 0.1
     exercise_curator_max_tokens: int = Field(default=1200, gt=0)
     exercise_curator_timeout: float = Field(default=30, gt=0)
+    exercise_curator_reasoning_effort: ReasoningEffort | None = None
     exercise_duplicate_similarity_threshold: float = Field(default=0.92, ge=0, le=1)
 
 

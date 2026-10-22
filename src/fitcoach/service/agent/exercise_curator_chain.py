@@ -52,6 +52,11 @@ def build_exercise_curator_model(settings: IASettings) -> ChatOpenAI:
         max_tokens=settings.exercise_curator_max_tokens,
         timeout=settings.exercise_curator_timeout,
         max_retries=settings.max_retries,
+        reasoning_effort=(
+            None
+            if settings.exercise_curator_reasoning_effort == "default"
+            else settings.exercise_curator_reasoning_effort
+        ),
         model_kwargs={"response_format": strict_response_format(ExerciseCuratorTurn)},
     )
 

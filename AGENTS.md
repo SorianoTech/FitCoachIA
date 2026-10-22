@@ -278,5 +278,5 @@ Update every item that the change touches, in the same change:
 Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`,
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
 `docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
-`docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`.
+`docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`, `docs/devtools.md` (offline trainer debugging and comparison).
 `docs/plan/` holds design notes and `docs/todo/` the backlog.

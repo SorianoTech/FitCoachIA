@@ -176,6 +176,12 @@ revisiones y restricciones. La entrevista conserva `ia_temperature`.
 Por ejemplo, `ia_trainer_generation_temperature=default` evita enviar `0.2`
 al modelo de planes sin cambiar la configuración de las otras tareas.
 
+`ia_trainer_generation_reasoning_effort`, `ia_trainer_consultation_reasoning_effort` y
+`ia_trainer_extraction_reasoning_effort` admiten `minimal`, `low`, `medium`, `high` o `default`.
+Si se omiten (o valen `default`) no se envía `reasoning_effort` y el proveedor usa su valor
+predeterminado; solo tienen efecto en modelos de razonamiento. Para reducir la latencia de las
+respuestas sobre el plan, prueba `ia_trainer_consultation_reasoning_effort=minimal`.
+
 El presupuesto nominal de una tarea con reparación es
 `2 × (1 + ia_max_retries) × timeout`; el backoff del proveedor y red pueden añadir
 tiempo. No es un deadline del workflow. Un swap por texto puede además sumar detección,
@@ -513,6 +519,8 @@ El span `conversation.turn` añade, además de los atributos habituales:
 Los atributos `rag.*` corresponden a generación, no a consultas: estas no realizan recuperación.
 
 ## Depuración offline del prompt y la skill
+
+Guía unificada de las devtools: [devtools.md](devtools.md).
 
 `fitcoach.devtools.trainer_debug` ejecuta el entrenador sin Telegram ni BD de conversaciones: una
 ejecución depende solo de (perfil, catálogo, variante de prompt/skill, modelo), así que se puede

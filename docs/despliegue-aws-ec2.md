@@ -108,29 +108,168 @@ del *user data* no lo vuelve a ejecutar.
 
 ## 4. Crear la pila
 
-Región por defecto `eu-west-1` (Irlanda); `eu-south-2` (Madrid) también vale.
+Región por defecto `eu-west-1` (Irlanda); `eu-south-2` (Madrid) también vale. Los comandos van en
+dos versiones, cada una con su etiqueta: **PowerShell (Windows)** y **bash (Linux, macOS, WSL)**;
+los que sirven igual en las dos se indican como tales. Todos usan explícitamente el perfil de
+la AWS CLI, aquí `fitcoach`: si el perfil se llama de otra forma, `aws configure list-profiles` lo
+muestra.
+
+### 4.1 Requisitos en el equipo desde el que se lanza
+
+- **AWS CLI v2** (`aws --version`). La v1 no admite SSO.
+- **Plugin de Session Manager** para la AWS CLI, necesario para `aws ssm start-session` (instalador
+  oficial de AWS para Windows, macOS o Linux).
+- **Perfil SSO** de un usuario de IAM Identity Center con permisos de administrador (la pila crea
+  roles de IAM). Nunca el usuario root. Se crea una vez con `aws configure sso`; la sesión caduca a las
+  pocas horas y se renueva con `aws sso login`.
+
+Las variables de PowerShell de esta sección (`$AwsProfile`, `$Region`, `$PubKey`, `$Ami`...) son
+variables normales de la sesión: no llevan `$env:`, que solo se usa para variables de entorno
+([about_Variables](https://learn.microsoft.com/es-es/powershell/module/microsoft.powershell.core/about/about_variables),
+[about_Environment_Variables](https://learn.microsoft.com/es-es/powershell/module/microsoft.powershell.core/about/about_environment_variables)).
+Funcionan porque PowerShell sustituye su valor en el argumento antes de lanzar `aws`. Duran lo que
+dura la ventana, así que los bloques se ejecutan en orden en la misma.
+
+**PowerShell (Windows):**
+
+```powershell
+$AwsProfile = "fitcoach"
+$Region = "eu-west-1"
+aws sso login --profile $AwsProfile
+aws sts get-caller-identity --profile $AwsProfile   # debe devolver la cuenta y el rol
+```
+
+**bash (Linux, macOS, WSL):**
 
 ```bash
-# AMI actual de Ubuntu 24.04 amd64 (queda fijada en la pila)
-AMI=$(aws ssm get-parameter --region eu-west-1 \
+AWS_PROFILE_NAME=fitcoach
+REGION=eu-west-1
+aws sso login --profile "$AWS_PROFILE_NAME"
+aws sts get-caller-identity --profile "$AWS_PROFILE_NAME"
+```
+
+### 4.2 Clave SSH de despliegue
+
+La instancia se crea con la clave pública que se le pase en `DeploySshPublicKey`, y la escribe en el
+`authorized_keys` del usuario de despliegue al arrancar. Es la clave que usará `deploy.yml`: su parte
+privada debe acabar en el secreto `SERVER_PKEY` de GitHub. Se genera una pareja nueva, sin contraseña
+(GitHub Actions no puede teclearla):
+
+**PowerShell (Windows):**
+
+```powershell
+New-Item -ItemType Directory -Force $HOME\.ssh | Out-Null
+ssh-keygen -t ed25519 -f $HOME\.ssh\fitcoach-deploy -C github-actions-deploy   # Enter dos veces
+$PubKey = (Get-Content $HOME\.ssh\fitcoach-deploy.pub -Raw).Trim()
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/fitcoach-deploy -C github-actions-deploy -N ''
+PUBKEY=$(cat ~/.ssh/fitcoach-deploy.pub)
+```
+
+- La clave privada (`fitcoach-deploy`, sin `.pub`) la guarda un administrador del repositorio en
+  `SERVER_PKEY` **en el momento de migrar** ([sección 6](#6-migrar-desde-el-servidor-actual), paso 6),
+  junto con `SERVER_HOST` y `SERVER_USER`. Hasta entonces `deploy.yml` sigue desplegando en el
+  servidor actual con la clave de siempre. Se entrega por un canal seguro, nunca por chat o correo
+  sin cifrar.
+- Para entrar en la instancia no hace falta esta clave: se usa Session Manager con la sesión SSO.
+- Cambiar `DeploySshPublicKey` en una actualización de la pila no tiene efecto (el *user data* solo
+  se ejecuta en el primer arranque): habría que editar el `authorized_keys` desde Session Manager.
+
+### 4.3 AMI, VPC y subred
+
+**PowerShell (Windows):**
+
+```powershell
+$Ami = aws ssm get-parameter --profile $AwsProfile --region $Region `
+  --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id `
+  --query Parameter.Value --output text
+$VpcId = aws ec2 describe-vpcs --profile $AwsProfile --region $Region `
+  --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text
+aws ec2 describe-subnets --profile $AwsProfile --region $Region `
+  --filters "Name=vpc-id,Values=$VpcId" --query "Subnets[].[SubnetId,AvailabilityZone]" --output table
+$SubnetId = "subnet-xxxxxxxx"   # una de la tabla anterior
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+AMI=$(aws ssm get-parameter --profile "$AWS_PROFILE_NAME" --region "$REGION" \
   --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
   --query Parameter.Value --output text)
+VPC_ID=$(aws ec2 describe-vpcs --profile "$AWS_PROFILE_NAME" --region "$REGION" \
+  --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+aws ec2 describe-subnets --profile "$AWS_PROFILE_NAME" --region "$REGION" \
+  --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[].[SubnetId,AvailabilityZone]' --output table
+SUBNET_ID=subnet-xxxxxxxx   # una de la tabla anterior
+```
 
-aws cloudformation deploy --region eu-west-1 \
+La AMI queda fijada en la pila: así una actualización no sustituye la instancia por sorpresa.
+
+### 4.4 Crear el change set, revisarlo y ejecutarlo
+
+`RepositoryRef` es la rama o el tag que la instancia clona en `/opt/fitcoachia`. Debe contener
+`infra/aws/ec2/`: si no, el arranque falla al no encontrar el script de backup. Mientras esta carpeta
+no esté en `develop` (el valor por defecto), usar `feat/cloud-architecture`.
+
+`--no-execute-changeset` prepara los cambios sin aplicarlos, para revisarlos antes:
+
+**PowerShell (Windows):**
+
+```powershell
+aws cloudformation deploy --profile $AwsProfile --region $Region `
+  --stack-name fitcoach-prod `
+  --template-file infra/aws/ec2/fitcoach-ec2.cfn.yaml `
+  --capabilities CAPABILITY_IAM `
+  --no-execute-changeset `
+  --parameter-overrides "VpcId=$VpcId" "SubnetId=$SubnetId" "ImageId=$Ami" `
+    "DeploySshPublicKey=$PubKey" "RepositoryRef=feat/cloud-architecture"
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+aws cloudformation deploy --profile "$AWS_PROFILE_NAME" --region "$REGION" \
   --stack-name fitcoach-prod \
   --template-file infra/aws/ec2/fitcoach-ec2.cfn.yaml \
   --capabilities CAPABILITY_IAM \
-  --parameter-overrides \
-    VpcId=<vpc-por-defecto> SubnetId=<subred-publica> ImageId="$AMI" \
-    DeploySshPublicKey="$(cat deploy_key.pub)" RepositoryRef=<rama-o-tag>
-
-aws cloudformation describe-stacks --region eu-west-1 --stack-name fitcoach-prod \
-  --query 'Stacks[0].Outputs'
+  --no-execute-changeset \
+  --parameter-overrides "VpcId=$VPC_ID" "SubnetId=$SUBNET_ID" "ImageId=$AMI" \
+    "DeploySshPublicKey=$PUBKEY" "RepositoryRef=feat/cloud-architecture"
 ```
 
-`DeploySshPublicKey` es la clave pública cuya privada está en el secreto `SERVER_PKEY` de GitHub. El
-resto de parámetros tiene valores por defecto (ver la plantilla). La primera vez tarda unos minutos
-más tras crearse la pila, mientras el *user data* instala Docker.
+El comando termina imprimiendo el ARN del change set. Para revisarlo y ejecutarlo (los mismos
+comandos en las dos shells, cada uno en una línea):
+
+**PowerShell y bash (iguales):**
+
+```shell
+aws cloudformation describe-change-set --profile fitcoach --region eu-west-1 --change-set-name <arn-del-change-set> --query "Changes[].ResourceChange.[Action,LogicalResourceId,Replacement]" --output table
+aws cloudformation execute-change-set --profile fitcoach --region eu-west-1 --change-set-name <arn-del-change-set>
+aws cloudformation wait stack-create-complete --profile fitcoach --region eu-west-1 --stack-name fitcoach-prod
+```
+
+En una **actualización** de la pila, comprobar antes de ejecutar que `Instance` no aparece con
+`Replacement` a `True`: eso sustituiría la máquina. Se usa `stack-update-complete` en lugar de
+`stack-create-complete`. También se puede revisar y ejecutar desde la consola de CloudFormation
+(pestaña *Change sets*).
+
+### 4.5 Después de crearla
+
+Protección contra borrado y salidas de la pila:
+
+**PowerShell y bash (iguales):**
+
+```shell
+aws cloudformation update-termination-protection --profile fitcoach --region eu-west-1 --enable-termination-protection --stack-name fitcoach-prod
+aws cloudformation describe-stacks --profile fitcoach --region eu-west-1 --stack-name fitcoach-prod --query "Stacks[0].Outputs" --output table
+```
+
+Tras crearse la pila, el *user data* tarda unos minutos más en instalar Docker y clonar el repositorio; su
+salida queda en `/var/log/cloud-init-output.log`.
 
 La plantilla se valida con `cfn-lint`, el validador de AWS para CloudFormation. Corre como hook de
 pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-lint --all-files`, o
@@ -138,7 +277,8 @@ pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-li
 
 ## 5. Completar la instancia
 
-Una sola vez, por Session Manager (`SessionCommand` en las salidas de la pila):
+Una sola vez, por Session Manager (`SessionCommand` en las salidas de la pila, añadiendo
+`--profile fitcoach`):
 
 ```bash
 # Secretos: copiar los ficheros del servidor actual. Son distintos entre sí.
@@ -167,10 +307,14 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
 1. **Días antes**: bajar a 60 s el TTL de los registros DNS de la API y de Grafana.
 2. **Proxy Hosts** en Nginx Proxy Manager (ya arrancado por la plantilla). Admin por túnel:
 
-   ```bash
-   aws ssm start-session --target <instance-id> \
-     --document-name AWS-StartPortForwardingSession --parameters portNumber=81,localPortNumber=8081
+   **PowerShell y bash (iguales):**
+
+   ```shell
+   aws ssm start-session --profile fitcoach --region eu-west-1 --target <instance-id> --document-name AWS-StartPortForwardingSession --parameters "portNumber=81,localPortNumber=8081"
    ```
+
+   Con el túnel abierto, el panel queda en `http://localhost:8081`. En PowerShell, las comillas de
+   `--parameters` son obligatorias: sin ellas la coma parte el argumento en dos.
 
    - API, igual que hoy ([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)): destino
      `fitcoach-ia-prod`, puerto `8000`, `http`, Force SSL.
@@ -222,8 +366,10 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
 
    Cambiar los registros `A` a la Elastic IP. Al arrancar, la API vuelve a registrar el webhook con
    `bot_telegram_webhook_base_url`, que no cambia.
-6. **Actualizar los secretos de GitHub** `SERVER_HOST` (Elastic IP o nombre DNS) y, si cambia,
-   `SERVER_USER`. `SERVER_PKEY`, `DOCKER_IMAGE_NAME` y `ENV_FILE_PATH` siguen igual. A partir de aquí
+6. **Actualizar los secretos de GitHub** (lo hace un administrador del repositorio): `SERVER_PKEY`
+   con la clave privada de la [sección 4.2](#42-clave-ssh-de-despliegue), `SERVER_HOST` (Elastic IP
+   o nombre DNS) y `SERVER_USER` (`DeployUser`, por defecto `fitcoach`). `DOCKER_IMAGE_NAME` y
+   `ENV_FILE_PATH` siguen igual. A partir de aquí
    los despliegues van por `deploy.yml` como hoy.
 7. **Comprobar**: `docker ps` (todo `healthy`), `getWebhookInfo` del bot sin errores, un mensaje de
    prueba, la Mini App, que en Grafana aparecen logs y trazas de `prod`, y el primer backup en S3 al

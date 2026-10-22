@@ -99,6 +99,25 @@ def _run_train(client: httpx.Client, update_id: int = 2) -> None:
 
 @pytest.mark.asyncio
 class TestTrainerFlowIntegration:
+    async def test_interview_sends_minimal_reasoning_effort(
+        self,
+        client: httpx.Client,
+        app_db: asyncpg.Connection,
+        stub: httpx.Client,
+    ) -> None:
+        _complete_interview(client)
+
+        requests = stub.get("/__llm_requests").json()
+
+        assert requests[0]["model"] == "test-model"
+        assert requests[0]["reasoning_effort"] == "minimal"
+        assert (
+            await app_db.fetchval(
+                "SELECT count(*) FROM interviewer_profiles WHERE chat_id=$1", CHAT_ID
+            )
+            == 1
+        )
+
     async def test_persistent_navigation_reads_week_without_llm_or_workflow(
         self,
         client: httpx.Client,

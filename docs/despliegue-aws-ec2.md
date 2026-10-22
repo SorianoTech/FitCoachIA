@@ -36,7 +36,7 @@ Se elige **x86_64** (`t3`) y no Graviton (`t4g`) porque las imágenes actuales s
 multiarquitectura y queda como mejora posterior.
 
 Coste orientativo en `eu-west-1`, bajo demanda: **≈ 77 USD/mes** solo producción con observabilidad
-(≈ 54 $ con un Savings Plan de 1 año). Detalle en la [sección 8](#8-coste).
+(≈ 54 $ con un Savings Plan de 1 año). Detalle en la [sección 9](#9-coste).
 
 ## 2. Diagrama
 
@@ -171,11 +171,12 @@ PUBKEY=$(cat ~/.ssh/fitcoach-deploy.pub)
 ```
 
 - La clave privada (`fitcoach-deploy`, sin `.pub`) la guarda un administrador del repositorio en
-  `SERVER_PKEY` **en el momento de migrar** ([sección 6](#6-migrar-desde-el-servidor-actual), paso 6),
+  `SERVER_PKEY` **en el momento de migrar** ([sección 7](#7-migrar-desde-el-servidor-actual), paso 6),
   junto con `SERVER_HOST` y `SERVER_USER`. Hasta entonces `deploy.yml` sigue desplegando en el
   servidor actual con la clave de siempre. Se entrega por un canal seguro, nunca por chat o correo
   sin cifrar.
-- Para entrar en la instancia no hace falta esta clave: se usa Session Manager con la sesión SSO.
+- Para entrar en la instancia no hace falta esta clave: cada integrante usa Session Manager con su
+  propio usuario ([sección 6](#6-acceso-del-equipo)).
 - Cambiar `DeploySshPublicKey` en una actualización de la pila no tiene efecto (el *user data* solo
   se ejecuta en el primer arranque): habría que editar el `authorized_keys` desde Session Manager.
 
@@ -299,7 +300,162 @@ Valores a revisar en esos ficheros, que dependen de esta máquina:
   Compose; si dev no corre en esta instancia, cualquier valor sirve y el datasource «PostgreSQL Dev»
   quedará en error.
 
-## 6. Migrar desde el servidor actual
+## 6. Acceso del equipo
+
+Cada integrante entra en la instancia **con su propio usuario de AWS a través de Session Manager**,
+sin claves SSH compartidas y sin usar el puerto 22 (que queda solo para `deploy.yml`). La plantilla ya
+da a la instancia el permiso de Session Manager; no hace falta cambiarla.
+
+- Cada sesión queda registrada a nombre de quien la abre.
+- No hay claves de equipo que guardar ni rotar.
+- Quitar el acceso a alguien es desactivar su usuario en IAM Identity Center.
+
+No se debe repartir una clave común ni la clave de `deploy.yml` ([sección 4.2](#42-clave-ssh-de-despliegue)):
+no se sabría quién hace qué y, si alguien deja el proyecto, habría que cambiarla para todos.
+
+### 6.1 Usuarios en IAM Identity Center (un administrador, una vez)
+
+1. En IAM Identity Center, crear un usuario por integrante (o un grupo `fitcoach` con los cuatro).
+2. Asignarles la cuenta de AWS con un *permission set*:
+   - `AdministratorAccess` para quien vaya a crear o actualizar la pila.
+   - Para quien solo necesita entrar en la máquina, un *permission set* propio (p. ej.
+     `FitCoachInstanceAccess`) con esta política en línea, sustituyendo `<cuenta>` e `<instance-id>`
+     (este último sale en las salidas de la pila, `InstanceId`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StartSessionOnFitCoachInstance",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": [
+        "arn:aws:ec2:eu-west-1:<cuenta>:instance/<instance-id>",
+        "arn:aws:ssm:eu-west-1::document/AWS-StartSSHSession",
+        "arn:aws:ssm:eu-west-1::document/AWS-StartPortForwardingSession",
+        "arn:aws:ssm:eu-west-1:<cuenta>:document/SSM-SessionManagerRunShell"
+      ]
+    },
+    {
+      "Sid": "ManageOwnSessions",
+      "Effect": "Allow",
+      "Action": ["ssm:TerminateSession", "ssm:ResumeSession"],
+      "Resource": "arn:aws:ssm:*:*:session/*"
+    },
+    {
+      "Sid": "TemporarySshKey",
+      "Effect": "Allow",
+      "Action": "ec2-instance-connect:SendSSHPublicKey",
+      "Resource": "arn:aws:ec2:eu-west-1:<cuenta>:instance/<instance-id>",
+      "Condition": { "StringEquals": { "ec2:osuser": "ubuntu" } }
+    },
+    {
+      "Sid": "Discover",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ssm:DescribeInstanceInformation",
+        "ssm:DescribeSessions",
+        "ssm:GetConnectionStatus"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### 6.2 Entrar en la instancia (cada integrante)
+
+Requisitos en su equipo, los mismos de la [sección 4.1](#41-requisitos-en-el-equipo-desde-el-que-se-lanza):
+AWS CLI v2, el plugin de Session Manager y un perfil SSO propio creado con `aws configure sso`. El
+`<instance-id>` está en las salidas de la pila.
+
+**PowerShell (Windows):**
+
+```powershell
+$AwsProfile = "fitcoach"            # el nombre de su perfil SSO
+$InstanceId = "i-xxxxxxxxxxxxxxxxx"
+aws sso login --profile $AwsProfile
+aws ssm start-session --profile $AwsProfile --region eu-west-1 --target $InstanceId
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+AWS_PROFILE_NAME=fitcoach            # el nombre de su perfil SSO
+INSTANCE_ID=i-xxxxxxxxxxxxxxxxx
+aws sso login --profile "$AWS_PROFILE_NAME"
+aws ssm start-session --profile "$AWS_PROFILE_NAME" --region eu-west-1 --target "$INSTANCE_ID"
+```
+
+Se entra como `ssm-user`, que tiene `sudo`. Para trabajar con más comodidad: `sudo -iu ubuntu` o
+`bash -l`. Los túneles a paneles internos (Nginx Proxy Manager, sección 7) usan la misma sesión.
+
+### 6.3 SSH de verdad, por encima de Session Manager (opcional)
+
+Para `scp`, `rsync` o VS Code Remote-SSH hace falta SSH. Se puede usar sin abrir el puerto 22 a las
+personas y sin claves permanentes en el servidor: cada integrante tiene **su propia clave**, la envía
+a la instancia con EC2 Instance Connect (vale 60 segundos, el tiempo de abrir la conexión) y la
+conexión viaja por Session Manager. Ubuntu 24.04 ya trae EC2 Instance Connect instalado.
+
+1. **Una vez**, generar la clave personal (con contraseña: es solo suya) y añadir el alias a
+   `~/.ssh/config`.
+
+   **PowerShell (Windows):**
+
+   ```powershell
+   New-Item -ItemType Directory -Force $HOME\.ssh | Out-Null
+   ssh-keygen -t ed25519 -f $HOME\.ssh\fitcoach-personal -C "<su-nombre>"
+   ```
+
+   Añadir a `$HOME\.ssh\config` (sustituyendo el perfil y el `instance-id`):
+
+   ```text
+   Host fitcoach-ec2
+       HostName i-xxxxxxxxxxxxxxxxx
+       User ubuntu
+       IdentityFile ~/.ssh/fitcoach-personal
+       ProxyCommand C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe "aws ssm start-session --profile fitcoach --region eu-west-1 --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p"
+   ```
+
+   **bash (Linux, macOS, WSL):**
+
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/fitcoach-personal -C "<su-nombre>"
+   ```
+
+   Añadir a `~/.ssh/config`:
+
+   ```text
+   Host fitcoach-ec2
+       HostName i-xxxxxxxxxxxxxxxxx
+       User ubuntu
+       IdentityFile ~/.ssh/fitcoach-personal
+       ProxyCommand sh -c "aws ssm start-session --profile fitcoach --region eu-west-1 --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+   ```
+
+2. **Cada vez**, enviar la clave pública y conectar en menos de 60 segundos.
+
+   **PowerShell (Windows):**
+
+   ```powershell
+   aws ec2-instance-connect send-ssh-public-key --profile $AwsProfile --region eu-west-1 --instance-id $InstanceId --instance-os-user ubuntu --ssh-public-key "file://$HOME/.ssh/fitcoach-personal.pub"
+   ssh fitcoach-ec2
+   ```
+
+   **bash (Linux, macOS, WSL):**
+
+   ```bash
+   aws ec2-instance-connect send-ssh-public-key --profile "$AWS_PROFILE_NAME" --region eu-west-1 --instance-id "$INSTANCE_ID" --instance-os-user ubuntu --ssh-public-key "file://$HOME/.ssh/fitcoach-personal.pub"
+   ssh fitcoach-ec2
+   ```
+
+   La clave solo hace falta para abrir la conexión: una sesión ya abierta sigue viva aunque pasen los
+   60 segundos. VS Code Remote-SSH usa el alias `fitcoach-ec2`; si se reconecta, hay que volver a
+   enviar la clave.
+
+## 7. Migrar desde el servidor actual
 
 El orden importa: **nunca puede haber dos producciones vivas con el mismo bot**, porque las dos
 registrarían el webhook y sus schedulers enviarían avisos y encuestas desde bases distintas.
@@ -377,7 +533,7 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
 8. **Rollback** mientras no se borre nada en el servidor antiguo: devolver el DNS, `make prod-up`
    allí. Los datos escritos en la EC2 entretanto se perderían, así que conviene decidir pronto.
 
-## 7. Backups
+## 8. Backups
 
 [`infra/aws/ec2/backup-postgres.sh`](../infra/aws/ec2/backup-postgres.sh) hace un `pg_dump` en
 formato custom de cada base (relacional y vectorial) **dentro de su contenedor**, con las
@@ -394,7 +550,7 @@ docker exec -i fitcoach-postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POST
 
 Los snapshots diarios de DLM recuperan la máquina entera, incluido el histórico de observabilidad.
 
-## 8. Coste
+## 9. Coste
 
 `eu-west-1`, bajo demanda, USD/mes, precios de lista de referencia (confirmar en el
 [AWS Pricing Calculator](https://calculator.aws/)). No incluye el LLM.
@@ -417,7 +573,7 @@ Los snapshots diarios de DLM recuperan la máquina entera, incluido el históric
 - El stack no incluye métricas del host (CPU, RAM, disco de la instancia). Si se quieren en
   Grafana, el paso natural es añadir `node-exporter` al Compose de observabilidad.
 
-## 9. Qué no cambia y por qué
+## 10. Qué no cambia y por qué
 
 Para mantener los cambios al mínimo, esta variante deja a propósito como está:
 
@@ -430,7 +586,7 @@ Para mantener los cambios al mínimo, esta variante deja a propósito como está
 - **Observabilidad**: el mismo Compose y la misma configuración; ningún servicio de AWS la sustituye.
 - **`proxy-network` y las redes internas**: idénticas.
 
-## 10. Puntos a confirmar antes de migrar
+## 11. Puntos a confirmar antes de migrar
 
 1. **Imagen del embedder.** `docker-compose.yml` usa `fitcoachia/embedder:${VERSION}`, pero ningún
    workflow construye ni publica esa imagen. En una máquina nueva, `make prod-up` falla al no poder

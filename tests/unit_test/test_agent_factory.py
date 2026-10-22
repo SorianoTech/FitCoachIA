@@ -64,7 +64,7 @@ class TestRealPromptAssets:
         agent = build_trainer_agent()
 
         assert "{{skill_content}}" not in agent.system_prompt
-        assert "fitness-trainer" in agent.system_prompt
+        assert "name: trainer\n" in agent.system_prompt
         # El hueco de RAG sigue sin resolver: se rellena en cada peticion.
         assert "{{rag_context}}" in agent.system_prompt
 

@@ -1,5 +1,5 @@
 ---
-name: fitness-trainer
+name: trainer
 description: Mesocycle design method for a fitness application. Turns a structured client profile into a safe, progressive 4-week training plan built exclusively from a provided exercise catalogue. Allocates weekly volume, splits sessions by available days and time, and substitutes movements around injuries.
 version: 1.0
 ---

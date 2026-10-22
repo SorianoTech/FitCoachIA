@@ -278,20 +278,72 @@ pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-li
 
 ## 5. Completar la instancia
 
-Una sola vez, por Session Manager (`SessionCommand` en las salidas de la pila, añadiendo
-`--profile fitcoach`):
+Una sola vez, al terminar la pila. Faltan los tres ficheros de entorno de producción (secretos, son
+distintos entre sí) y, si hace falta, el login de Docker Hub.
+
+### 5.1 Copiar los ficheros de entorno
+
+Los ficheros salen del servidor actual o del gestor de secretos del equipo, nunca del repositorio.
+Se llevan primero a la carpeta personal de `ubuntu` (no a `/tmp`, que es de todos) y desde ahí se
+instalan en su sitio con permisos `600` de `root`.
+
+**Opción A: `scp`.** Necesita el alias `fitcoach-ec2` de la [sección 6.3](#63-ssh-de-verdad-por-encima-de-session-manager-opcional).
+Desde la carpeta local donde estén los ficheros, enviar la clave y lanzar `scp` en menos de 60
+segundos:
+
+**PowerShell (Windows):**
+
+```powershell
+aws ec2-instance-connect send-ssh-public-key --profile $AwsProfile --region eu-west-1 --instance-id $InstanceId --instance-os-user ubuntu --ssh-public-key "file://$HOME/.ssh/fitcoach-personal.pub"
+scp .\app.env.prod .\vector-db.env.prod .\observability.env fitcoach-ec2:
+```
+
+**bash (Linux, macOS, WSL):**
 
 ```bash
-# Secretos: copiar los ficheros del servidor actual. Son distintos entre sí.
-sudo install -m 600 -o root -g root ./app.env.prod /etc/fitcoachia/prod/.env.prod
-sudo install -m 600 -o root -g root ./vector-db.env.prod /opt/fitcoachia/infra/vector-db/.env.prod
-sudo install -m 600 -o root -g root ./observability.env /opt/fitcoachia/infra/observability/.env
+aws ec2-instance-connect send-ssh-public-key --profile "$AWS_PROFILE_NAME" --region eu-west-1 --instance-id "$INSTANCE_ID" --instance-os-user ubuntu --ssh-public-key "file://$HOME/.ssh/fitcoach-personal.pub"
+scp ./app.env.prod ./vector-db.env.prod ./observability.env fitcoach-ec2:
+```
 
-# Si los repositorios de Docker Hub son privados, login como usuario de despliegue
+Los ficheros quedan en `/home/ubuntu`. Después, en la instancia (`ssh fitcoach-ec2`, o Session
+Manager como en la [sección 6.2](#62-entrar-en-la-instancia-cada-integrante)), instalarlos y borrar
+las copias:
+
+**bash (en la instancia):**
+
+```bash
+sudo install -m 600 -o root -g root /home/ubuntu/app.env.prod /etc/fitcoachia/prod/.env.prod
+sudo install -m 600 -o root -g root /home/ubuntu/vector-db.env.prod /opt/fitcoachia/infra/vector-db/.env.prod
+sudo install -m 600 -o root -g root /home/ubuntu/observability.env /opt/fitcoachia/infra/observability/.env
+sudo shred -u /home/ubuntu/app.env.prod /home/ubuntu/vector-db.env.prod /home/ubuntu/observability.env
+```
+
+**Opción B: pegar el contenido, sin SSH.** Entrar con Session Manager
+([sección 6.2](#62-entrar-en-la-instancia-cada-integrante)) y crear cada fichero directamente en su
+destino, pegando el contenido en el editor:
+
+**bash (en la instancia):**
+
+```bash
+sudo install -m 600 -o root -g root /dev/null /etc/fitcoachia/prod/.env.prod
+sudo nano /etc/fitcoachia/prod/.env.prod
+# Igual con /opt/fitcoachia/infra/vector-db/.env.prod y /opt/fitcoachia/infra/observability/.env
+```
+
+No usar S3 como paso intermedio: los secretos quedarían guardados en el bucket (y en sus versiones),
+y el rol de la instancia solo puede leer `postgres/`.
+
+### 5.2 Login de Docker Hub y valores a revisar
+
+Si los repositorios de Docker Hub son privados, hacer login como usuario de despliegue:
+
+**bash (en la instancia):**
+
+```bash
 sudo -iu <DEPLOY_USER> docker login
 ```
 
-Valores a revisar en esos ficheros, que dependen de esta máquina:
+Valores a revisar en los ficheros de entorno, que dependen de esta máquina:
 
 - `.env.prod` de la app: `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317`, igual que
   hoy ([observabilidad.md](observabilidad.md)).

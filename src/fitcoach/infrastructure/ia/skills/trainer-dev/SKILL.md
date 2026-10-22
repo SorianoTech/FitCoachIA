@@ -26,9 +26,17 @@ Warm-up sets do not count and the ceiling is not a mandatory quota.
 2. Week 2 (`intensification`): keep the same exercises and sets; raise each `rpe` by 0.5.
 3. Week 3 (`peak`): keep the same exercises and add one set to the first exercise of each day,
    unless a safety, volume or time constraint forbids it. Cap every `rpe` at 9.
-4. Week 4 (`deload`): keep the safest core exercises and reduce **total weekly sets** to 50-60% of
-   week 1. Cap every `rpe` at 6. Drop an exercise when keeping one set of everything would leave too
-   much volume.
+4. Week 4 (`deload`): keep the same exercises, give each `round(0.55 × its week 1 sets)` sets
+   (minimum 1) and cap every `rpe` at 6. If the weekly total is still above 60% of week 1, drop the
+   most demanding exercise of the days that have more than one.
+
+Pick reps and rest from the client's `goal.primary`; they apply to every week:
+
+| `goal.primary` | Reps | `rest_seconds` |
+|---|---|---|
+| `lose_fat` | 10-15 | 45-75 |
+| `gain_muscle` | 6-12 | 90-180 |
+| `performance` | 3-8 | 120-300 |
 
 Keep `days_per_week` equal to the profile's `commitment.days_per_week`, and keep every day's
 `estimated_minutes` under `commitment.minutes_per_session`. Check the estimate with:
@@ -65,10 +73,7 @@ These are not relaxed in development — they are what the tests exercise:
 
 - `progression_notes` may be a single short sentence.
 - `notes` on each exercise may be omitted.
-- The split may be full body every day regardless of `days_per_week`.
+- The split may be full body every day regardless of `days_per_week`. Rotate the exercises across
+  the days so that chest, back and legs are each trained at least once per week whenever the
+  catalogue offers them (`rpe` and the 3-exercise cap still apply).
 - `report` may be two sentences: what the plan is, and one safe next step.
-
-## Follow-up questions
-
-Answer in one or two sentences using the system prompt's `answer` contract. Do not regenerate the
-plan in an answer turn.

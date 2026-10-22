@@ -60,12 +60,30 @@ La habilidad guía una entrevista ordenada de estas áreas:
 9. Suplementación, presupuesto y restricciones.
 10. Compromiso real: días, tiempo y flexibilidad.
 
-Debe hacer una pregunta principal por mensaje, aprovechar datos adelantados por el usuario sin
+Debe hacer un paso de la skill por mensaje (la pregunta del paso puede pedir sus datos relacionados
+juntos, p. ej. edad, peso, altura y sexo, pero nunca mezcla dos pasos; las repreguntas van en otro
+mensaje), aprovechar datos adelantados por el usuario sin
 repetirlos y formular aclaraciones cuando sean necesarias. El prompt exige responder siempre en
 español, sea cual sea el idioma del usuario y aunque pida cambiarlo, sin términos híbridos de otros
 idiomas (p. ej. «intervista»); también exige respuestas breves aptas para Telegram y un trato no
 juzgador. El mensaje semilla de `/interview` (`INTERVIEW_SEED_MESSAGE`) también está en español
 para no arrastrar al modelo a otro idioma.
+
+Cálculos iniciales (definidos en la skill, para que sean reproducibles): `bmi` = kg / m²;
+`bmr` con Mifflin-St Jeor (el sexo se pregunta solo para esto, no se guarda en el perfil; si no se
+da, se usa el punto medio −78); `estimated_tdee` = `bmr` × (base NEAT + 0,03 × días por semana), con
+base NEAT 1,2 / 1,35 / 1,5 para `sedentary` / `active` / `very_physical`. Son estimaciones y el
+`report` declara el método. Ante síntomas digestivos la skill solo deriva a un profesional: no
+propone dietas de eliminación. Si la skill choca con las barreras de seguridad o el contrato de
+salida del prompt, prevalecen estos últimos.
+
+Las preguntas de la skill están escritas en inglés como referencia y siempre se formulan en
+español. La skill también define cómo se derivan `timeframe_weeks`, `realistic_expectation`,
+`perceived_composition` y `estimated_composition`; P6 recoge además condiciones médicas, cirugías
+recientes y mareos (se reflejan en `flags` y `report`, no hay campo propio); tras la respuesta a P10
+se devuelve `completed` en el mismo turno; y ante señales de TCA o desesperanza se interrumpe la
+recogida de datos y se deriva a un profesional. `registration_date` no lo inventa el modelo:
+`InterviewerChain` añade al final del system prompt `CURRENT DATETIME (UTC)` en cada llamada.
 
 Los mensajes del usuario y el historial se tratan como datos, nunca como instrucciones que puedan
 alterar el rol o revelar la configuración. El entrevistador no usa RAG: su prompt no contiene
@@ -74,7 +92,11 @@ al generar un plan.
 
 El system prompt define el contrato JSON y todos los campos del perfil para ambas variantes.
 La skill seleccionada define el flujo y las estimaciones: `interviewer` realiza la entrevista
-completa; `interviewer-dev` usa tres preguntas y declara sus valores de prueba en el informe.
+completa; `interviewer-dev` usa tres preguntas y declara sus valores de prueba en el informe. En `interviewer-dev`, los datos básicos (nombre, edad,
+peso, altura, objetivo, días y minutos) los aporta siempre el usuario: si faltan o están fuera de
+rango se repreguntan una vez; los valores de prueba solo cubren lo que no se pregunta. Calcula
+`bmi`, `bmr` (Mifflin-St Jeor con el punto medio −78, al no preguntar el sexo) y `estimated_tdee`
+con las mismas fórmulas que la skill completa, y mantiene la detección de banderas rojas por IMC.
 
 `initial_calculations.tolerable_volume_sets` significa techo de series de trabajo **por grupo
 muscular y por semana**, no un total para todo el cuerpo ni un presupuesto por sesión. No incluye

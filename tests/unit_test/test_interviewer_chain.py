@@ -74,6 +74,16 @@ async def test_responds_with_composed_prompt_history_and_user_message(model: Mag
 
 
 @pytest.mark.asyncio
+async def test_system_prompt_ends_with_the_current_utc_datetime(model: MagicMock) -> None:
+    await InterviewerChain(model).respond("Hola", [])
+
+    system_prompt = model.ainvoke.await_args.args[0][0].content
+    stamp = system_prompt.rsplit("CURRENT DATETIME (UTC): ", 1)[1]
+    assert datetime.fromisoformat(stamp).tzinfo is not None
+    assert (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds() < 60
+
+
+@pytest.mark.asyncio
 async def test_raises_when_model_response_is_not_text(model: MagicMock) -> None:
     model.ainvoke.return_value = AIMessage(content=[{"type": "text", "text": "Hola"}])
     chain = InterviewerChain(model)

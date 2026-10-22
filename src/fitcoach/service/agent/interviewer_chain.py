@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -51,12 +52,16 @@ class InterviewerChain(BaseLLMChain):
         self, user_message: str, history: Sequence[ConversationMessage]
     ) -> InterviewerReply:
         messages = [
-            SystemMessage(content=self._agent.system_prompt),
+            SystemMessage(content=_with_current_datetime(self._agent.system_prompt)),
             *self._to_langchain_messages(history),
             HumanMessage(content=user_message),
         ]
         turn, token_usages = await self._invoke_validated(messages, InterviewerTurn)
         return InterviewerReply(turn=turn, token_usages=token_usages)
+
+
+def _with_current_datetime(system_prompt: str) -> str:
+    return f"{system_prompt}\n\nCURRENT DATETIME (UTC): {datetime.now(UTC).isoformat(timespec='seconds')}"
 
 
 def _build_model(settings: IASettings) -> ChatOpenAI:

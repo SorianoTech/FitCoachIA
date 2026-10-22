@@ -309,7 +309,10 @@ y [trainer-agent.md](trainer-agent.md) para el comportamiento del agente.
 En desarrollo, `make dev-up` fija `ia_trainer_skill=trainer-dev`: desarrolla bien la semana 1 y
 deriva las otras tres, con un máximo de 3 ejercicios por día. Mantiene intactas las comprobaciones
 que importan (ids del catálogo, 4 semanas, días comprometidos), así que sirve para probar el flujo
-completo sin gastar 4096 tokens por iteración.
+completo sin gastar 4096 tokens por iteración. También fija repeticiones y descanso por objetivo, rota
+los ejercicios para cubrir pecho, espalda y piernas, y define la semana 4 con una receta concreta
+(`round(0,55 × series de la semana 1)` por ejercicio), de modo que el evaluador no penalice por
+diseño.
 
 Repetir `/train` **no** sobrescribe el plan: crea la versión N+1 en `training_plans`. Mientras haya
 un plan activo, los mensajes sin comando los responde el entrenador sobre ese plan.

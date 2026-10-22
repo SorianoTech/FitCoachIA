@@ -342,7 +342,7 @@ el mensaje según el comando y los estados de entrevista y entrenamiento:
 | Entrada | Método de `TrainerChain` | Prompt y contexto |
 | --- | --- | --- |
 | `/train`, con perfil disponible | `generate_plan()` | `trainer/system_prompt.txt` + skill seleccionada + catálogo recuperado; el perfil se añade como mensaje. |
-| Mensaje sin comando, con entrevista completada y entrenamiento activo | `answer()` | `trainer/answer_prompt.txt`; se añaden el historial, el plan guardado, el perfil disponible y la pregunta. Sin skill ni catálogo. |
+| Mensaje sin comando, con entrevista completada y entrenamiento activo | `answer()` | `trainer/answer_prompt.txt` (la plantilla JSON final deja `intent` y `swap_selection` según la tabla de enrutado); se añaden el historial, el plan guardado, el perfil disponible y la pregunta. Sin skill ni catálogo. |
 | Revisión completa | `generate_next_plan()` | Prompt de generación + `renewal_prompt.txt`, contexto adaptativo y catálogo actualizado. |
 | Interpretación de revisión | `extract_review()` | `review_prompt.txt` y esquema limitado de cambios de entrenamiento. |
 | Petición de sustitución | `propose_swap()` | `swap_prompt.txt`, perfil y candidatos RAG filtrados. |
@@ -367,7 +367,7 @@ El método de generación se define en dos recursos que se ensamblan al crear el
 | Recurso | Responsabilidad |
 | --- | --- |
 | `src/fitcoach/infrastructure/prompts/trainer/system_prompt.txt` | Rol, tono, límites de seguridad, contrato JSON y reglas del catálogo. |
-| `src/fitcoach/infrastructure/ia/skills/trainer/SKILL.md` | Periodización, volumen, splits y sustituciones por lesión. No define el contrato JSON. |
+| `src/fitcoach/infrastructure/ia/skills/trainer/SKILL.md` | Periodización, volumen, splits y sustituciones por lesión. No define el contrato JSON. Fija también el tamaño de sesión (los ejercicios que quepan en `minutes_per_session`, normalmente 4-7), el día ligero en splits de 6-7 días (~20 % menos series) y redacta en español los ejemplos de `excluded_by_injury`. Los límites numéricos (RPE, deload) viven solo aquí: el autochequeo del system prompt remite a ellos. |
 
 La periodización es de cuatro semanas:
 
@@ -504,6 +504,17 @@ usuario igual que un proveedor de modelo caído: un mensaje seguro, sin cuerpos 
 `llm_output_limit` es especialmente relevante aquí: un mesociclo completo necesita muchos más tokens
 que una pregunta de entrevista. Por eso el entrenador usa `ia_trainer_max_tokens` (4096 por defecto)
 en vez de `ia_max_tokens`.
+
+Alineación del prompt con el evaluador: el prompt de generación declara los límites que luego se
+comprueban (`reply` ≤ 600 y `report` ≤ 3500 caracteres, deload al 50-60 % de la semana 1, RPE máximo
+8/9/6 en las semanas 1/3/4) y una autocomprobación silenciosa previa a la respuesta. La skill fija
+40 s de trabajo por serie en la fórmula de `estimated_minutes`, el mismo valor que usa el evaluador.
+El `answer_prompt` se organiza en secciones (fuentes de verdad, *enrutado de intención*, seguridad,
+salida): una tabla fija cuándo usar `answer`, `exercise_swap` y `renewal`, documenta la forma de
+`swap_selection` y trae tres ejemplos (pregunta normal, petición de cambio con semana y motivo, y
+pregunta hipotética que sigue siendo `answer`); `reply` ≤ 1200 caracteres. La skill del entrenador
+ya no incluye la sección de seguimiento, que no se cargaba en la consulta. El ejemplo de `plan` usa marcadores (`<id copiado de rag_context>`), no ids reales, para que el
+modelo no los copie, y `focus` va en español.
 
 ## Observabilidad
 

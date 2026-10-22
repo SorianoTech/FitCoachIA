@@ -76,7 +76,7 @@ class TestRealPromptAssets:
         assert "selected trainer skill" in agent.system_prompt
         assert "skills/trainer/SKILL.md" not in agent.system_prompt
         assert "When `flags.red` is non-empty" in agent.system_prompt
-        assert "total weekly sets** to 50-60%" in agent.system_prompt
+        assert "round(0.55 × its week 1 sets)" in agent.system_prompt
         assert "Never use RPE 9 or higher" in agent.system_prompt
 
     def test_loads_the_real_exercise_curator_prompt(self) -> None:

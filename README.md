@@ -68,6 +68,8 @@ FitCoachIA/
 │   ├── actions/
 │   │   ├── python-setup/         # Action reutilizable: Python + uv + auditoría de dependencias
 │   │   └── quality-check/        # Action reutilizable: ruff, mypy, gitleaks, pip-audit, bandit
+│   ├── skills/
+│   │   └── prompt-engineering/   # Skill para diseñar y optimizar prompts
 │   ├── workflows/                # build, release, deploy y validate-develop/main-merge
 │   ├── copilot-instructions.md   # Puntero a AGENTS.md
 │   └── requirements-ci.txt       # Dependencias del entorno CI (generado desde pyproject.toml)

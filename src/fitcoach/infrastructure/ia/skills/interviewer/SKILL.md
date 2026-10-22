@@ -2,24 +2,11 @@
 name: interviewer
 description: Structured interview module to collect initial user data in a fitness application. Runs 10 ordered questions to determine biometric profile, realistic goals, activity context, nutrition, health and real commitment. Detects inconsistencies, red flags and the need for professional referral.
 version: 1.0
-keywords: fitness assessment, onboarding, user profiling, biometric data, fitness goals, training plan, adherence prediction
 ---
 
-## When to use this skill
-
-Use this skill when:
-- A new user accesses FitCoachIA for the first time
-- Initial onboarding must be run to personalize the plan
-- Baseline data must be collected for energy calculations (BMR, TDEE)
-- The feasibility and realism of the user's goal must be validated
-- The real activity context (NEAT) must be diagnosed
-
-**Do not use this skill if:**
-- The user has already completed a previous interview
-- The user only wants a one-off question answered without context
-- There is not enough contextual information to proceed
-
 ## Interview flow
+
+The questions below are written in English for reference: always ask them in Spanish.
 
 ### 0. Identity Capture
 **Opening question (unnumbered):**
@@ -31,20 +18,22 @@ Use this skill when:
 
 ### 1. Basic Biometric Data
 **Question:**
-> What is your age, weight, height, and how would you describe your current body composition? (a lot/little muscle, a lot/little fat)
+> What is your age, weight, height and sex (used only for the calorie calculation), and how would you describe your current body composition? (a lot/little muscle, a lot/little fat)
 
 **Expected fields:**
 - Age (validate 14-100)
 - Weight in kg (validate 30-300 kg)
 - Height in cm (validate 130-230 cm)
-- Subjective composition description
+- Sex (male/female; optional, used only for BMR and never stored in the profile)
+- Subjective composition description (stored as `perceived_composition`, in the user's words)
 
 **Information obtained:**
-- Base for calculating BMR (Harris-Benedict, Mifflin-St Jeor)
+- Base for calculating BMR (Mifflin-St Jeor, see Initial calculations)
 - Base for calculating TDEE
 - **Critical psychological indicator:** Compares perception vs. reality. If they say "a lot of fat" but BMI is normal, or "a lot of muscle" but they are very sedentary = body image distortion → requires a psychological acceptance approach.
 
 **Validation:**
+- `estimated_composition`: your own one-sentence estimate from BMI and the description; never share it as a judgment.
 - If BMI < 13.5 or > 45: Indicates possible eating disorder or medical condition → **RED FLAG**
 - If the description is extremely incongruent with the data: Requires psychological deep-dive
 
@@ -57,7 +46,7 @@ Use this skill when:
 **Expected fields:**
 - Primary goal (single choice or ranking)
 - Expected timeframe for "first change"
-- Secondary goal (optional)
+- Secondary goal (optional; `null` if none)
 
 **Information obtained:**
 - Defines aggressiveness of the caloric deficit/surplus
@@ -66,7 +55,8 @@ Use this skill when:
 - If they say "5 years" for a small change → Lack of motivation or paralyzing perfectionism
 
 **Validation:**
-- Realistic expectation: 0.5-1kg/week deficit, 0.25-0.5kg/week gain
+- `timeframe_weeks`: the expected time converted to whole weeks (at least 1); ask once if vague
+- `realistic_expectation` = `true` when it fits 0.5-1kg/week of fat loss or 0.25-0.5kg/week of gain, otherwise `false`
 - If the timeframe is unrealistic: Incorporate physiology education into the plan
 
 **Recommended follow-up:**
@@ -128,20 +118,20 @@ Use this skill when:
 - Specific trigger foods
 
 **Information obtained:**
-- Indirect assessment of gut microbiota and insulin sensitivity
-- If there's a "crash" = slow carb metabolism or insulin sensitivity → control glycemic load
+- Records reported symptoms and trigger foods; do not infer a metabolic condition or diagnose from them
 - Independent of the aesthetic goal, vital for wellbeing
-- Possible undiagnosed gluten/lactose intolerance → **YELLOW FLAG**
+- Frequent symptoms linked to specific foods → **YELLOW FLAG** (suspected intolerance, not a diagnosis)
 
 **Validation:**
 - If there are severe symptoms (pain, diarrhea, vomiting): Suggests gastroenterology consultation
-- Frequent symptoms without diagnosis: Propose a 2-week gluten elimination test
+- Frequent symptoms without diagnosis: recommend discussing them with a doctor or dietitian; never
+  suggest elimination diets or tests yourself
 
 ---
 
 ### 6. Injury and Discomfort History
 **Question:**
-> Do you have any pain or discomfort that appears when training? Is there an old injury you're afraid of reactivating, or that requires special care?
+> Do you have any pain or discomfort that appears when training? Is there an old injury you're afraid of reactivating, or that requires special care? Also, do you have any diagnosed health condition (blood pressure, heart, diabetes), have you had surgery in the last 3 months, or felt dizzy or faint while training?
 
 **Expected fields:**
 - Pain location (joint, muscle, etc.)
@@ -149,6 +139,7 @@ Use this skill when:
 - Injury history (when, type)
 - Current restrictions
 - Prior treatment (physiotherapy, surgery)
+- Medical conditions, recent surgery, dizziness or fainting (no profile field: record them as flags and in `report`)
 
 **Information obtained:**
 - **CRITICAL for exercise adaptation:** Avoids aggravating pathologies
@@ -203,8 +194,7 @@ Use this skill when:
 - Factors (stress, blue light, noise, temperature)
 
 **Information obtained:**
-- **Hormones:** Without deep sleep, cortisol rises, testosterone/GH drop
-- If they sleep < 6 hours: Optimal recovery is impossible → reduce intensity
+- If they sleep < 6 hours: recovery is limited → reduce intensity
 - If they sleep 9-10 but still feel tired: Possible sleep apnea, depression → **RED FLAG**
 
 **Validation:**
@@ -318,8 +308,8 @@ Use this skill when:
    - If the user gives Q3 info during Q1, note it and continue the flow
 
 3. **Selective deep-diving:**
-   - Ask follow-up questions if there is ambiguity
-   - Do NOT ask everything simultaneously (feels like an interrogation)
+   - Ask follow-up questions if there is ambiguity, in a separate message from the step's question
+   - Ask one step per message; never combine two steps (feels like an interrogation)
    - Example after Q1: "Does that mean you feel you have low muscle tone or a lot of abdominal fat?"
 
 4. **Adapted language:**
@@ -333,9 +323,19 @@ Use this skill when:
    - Never comment on appearance
 
 6. **Final decision:**
-   - After completing the 10 Qs: Brief summary of key findings
-   - Identify red flags and communicate them clearly
-   - Propose next step (plan design, referral, prior education)
+   - Right after the answer to question 10 (and any needed clarification), compute the initial
+     calculations and return `completed` in that same turn. Its `reply` and `report` carry the brief
+     summary of key findings, the red flags communicated clearly and the next step (plan design,
+     referral, prior education)
+   - If the user declines a question, let them and record only what the schema allows as empty
+     (`null` or an empty list). Core data (age, weight, height, goal, days and minutes per session)
+     must be asked again once; the interview is not complete without them
+
+7. **Signs of distress:**
+   - If the user shows signs of an eating disorder, hopelessness or self-harm: stop collecting data,
+     respond with empathy, recommend a qualified professional, add it to `flags.red` and continue
+     the interview only if the user wants to
+   - If there is risk of immediate harm, suggest contacting the local emergency number
 
 ---
 
@@ -343,6 +343,18 @@ Use this skill when:
 
 Follow APPLICATION OUTPUT in the system prompt for the JSON envelope and profile fields.
 This skill defines the interview and estimation method, not a separate output schema.
+
+### Initial calculations
+
+Compute them once, when the interview is complete, from the collected data. Round to integers and
+disclose the method and assumptions in `report`.
+
+- `bmi` = weight_kg / (height_cm / 100)², rounded to 1 decimal.
+- `bmr` (Mifflin-St Jeor) = 10 × weight_kg + 6.25 × height_cm − 5 × age + s, where s = +5 for male,
+  −161 for female and −78 (the midpoint) when the user did not give their sex.
+- `estimated_tdee` = `bmr` × factor, where factor = NEAT base + 0.03 × `commitment.days_per_week`.
+  NEAT base: `sedentary` 1.2, `active` 1.35, `very_physical` 1.5.
+- Never present these values as measurements: they are estimates.
 
 ### Training volume estimate
 
@@ -361,29 +373,9 @@ number of days or muscle groups. The Trainer sums the sets of exercises sharing 
 
 Before ending the interview, verify:
 
-- [ ] All 10 questions were answered (even briefly)
+- [ ] All 10 questions were asked and the core data was answered (others may be declined)
 - [ ] The biometric data forms a coherent profile
 - [ ] The goal is specific and measurable (not vague like "be fit")
 - [ ] Available time vs. goal are compatible
 - [ ] Red flags were identified and communicated
 - [ ] The user feels heard, not interrogated
-
----
-
-## Keywords and Triggers
-
-`fitness onboarding`, `user profiling`, `biometric intake`, `goal assessment`, `training readiness`, `new user questionnaire`, `fitness interview`, `TDEE calculation`, `adherence prediction`, `injury screening`
-
----
-
-## Notes for Continuous Improvement
-
-1. **A/B testing question 2:** Some users respond better to "How do you see yourself in 6 months?" than to a timeline
-2. **Cultural adaptation:** Colloquial language varies (e.g., "snacking" vs. "grazing" vs. "eating between meals")
-3. **Data validation:** Integrate with DEXA, InBody or other if the user has access
-4. **Post-interview follow-up:** Summary email 24h later so they can correct data
-5. **Scalability:** If the user has complex conditions, maintain a referral checklist
-
----
-
-**Version:** 1.0 | **Last updated:** 2025-04-13 | **Maintainer:** FitCoachIA Team

@@ -6,7 +6,11 @@ services:
   fitcoach-ia-prod:
     container_name: fitcoach-ia
     restart: unless-stopped
-    image: fitcoachia/fitcoach-app:${VERSION:-latest}
+    image: fitcoachia/fitcoach-app:${VERSION:-1.0.0}
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+
     ports:
       - "${APP_PORT}:8000"
     healthcheck:
@@ -35,7 +39,10 @@ services:
   embedder-prod:
     container_name: fitcoach-embedder
     restart: unless-stopped
-    image: fitcoachia/embedder:${VERSION:-latest}
+    image: fitcoachia/embedder:${VERSION:-1.0.0}
+    build:
+      context: infra/embedder
+      dockerfile: Dockerfile-embedder
     env_file:
       # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
       - path: .env.prod

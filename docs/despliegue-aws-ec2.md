@@ -678,7 +678,6 @@ vectorial y aplicación.
 ```bash
 # Traer el repositorio de la instancia a la última versión de la rama
 sudo git -C /opt/fitcoachia pull
-sudo install -m 644 -o <DEPLOY_USER> -g <DEPLOY_USER> /opt/fitcoachia/docker-compose.yml /opt/fitcoachia/Makefile /home/<DEPLOY_USER>/
 sudo install -m 755 /opt/fitcoachia/infra/aws/ec2/backup-postgres.sh /usr/local/bin/fitcoach-backup
 
 # Observabilidad
@@ -690,7 +689,7 @@ sudo docker compose --env-file .env.prod -f docker-compose.vector-db.yml up -d -
 sudo docker logs -f pgvector   # esperar a "database system is ready to accept connections"; Ctrl+C
 
 # Aplicación (Alembic crea las tablas al arrancar)
-cd /home/<DEPLOY_USER> && sudo make prod-up VERSION=<versión>
+cd /opt/fitcoachia && sudo make prod-up VERSION=<versión>
 sudo docker ps
 ```
 
@@ -698,6 +697,11 @@ sudo docker ps
 `POSTGRES_PORT` y `PGADMIN_PORT`. Esos puertos quedan publicados en la instancia, pero el security
 group solo deja pasar 80, 443 y 22: para usar pgAdmin, abrir un túnel como el de NPM con
 `portNumber=<PGADMIN_PORT>`.
+
+La aplicación se arranca desde el repositorio (`/opt/fitcoachia`). Los despliegues posteriores de
+`deploy.yml` lanzan `make prod-up` desde `/home/<DEPLOY_USER>`, donde solo copian
+`docker-compose.yml` y el `Makefile`; como el Compose fija `name: fitcoach-prod`, los dos sitios
+gestionan los mismos contenedores y volúmenes.
 
 Al arrancar, la API registra el webhook del bot de producción con
 `https://fitcoach.sergiosoriano.es` y el botón de menú con la `miniapp_url`. La comprobación del paso

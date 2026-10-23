@@ -8,14 +8,13 @@ services:
       dockerfile: Dockerfile-pgVector
     container_name: pgvector
     env_file:
-      - .env
+      - .env.prod
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - pgvector_volume:/var/lib/postgresql
     networks:
-      - fit-coach-net
-      # - proxy-network
+      - internal
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U fitcoach -d fitcoach" ]
@@ -25,15 +24,15 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin4
+    container_name: pgadmin
     env_file:
-      - .env
+      - .env.prod
     ports:
       - "${PGADMIN_PORT}:${STANDARD_HTTP_PORT}"
     volumes:
       - pgadmin_data:/root/.pgadmin
     networks:
-      - fit-coach-net
+      - internal
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
@@ -49,7 +48,6 @@ volumes:
   pgvector_volume:
 
 networks:
-  proxy-network:
+  internal:
+    name: fitcoach-prod-internal
     external: true
-  fit-coach-net:
-    driver: bridge

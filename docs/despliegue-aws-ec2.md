@@ -27,7 +27,7 @@ Para el contexto general ver [entornos-y-despliegue.md](entornos-y-despliegue.md
 | Secretos | `/etc/fitcoachia/prod/.env.prod` (root) e `infra/*/.env` | Igual | No |
 | Despliegue | `deploy.yml`: SSH + `sudo make prod-up` | Igual; solo cambian los secretos `SERVER_*` de GitHub | No |
 | Imágenes | Docker Hub | Docker Hub | No |
-| Dominio | DNS actual | Mismos dominios; registros `A` a la Elastic IP | No |
+| Dominio | `dev.fitcoach.sergiosoriano.es`, `grafana.fitcoach.sergiosoriano.es` | Nuevo `fitcoach.sergiosoriano.es` para producción y `grafana.fitcoach` a la Elastic IP ([sección 5.3](#53-dominio-de-producción)) | No |
 | Backups | — | Snapshots EBS diarios (DLM) + `pg_dump` nocturno a S3 | Script nuevo |
 | Huérfanos al desplegar | `prod-up` no los quitaba | `dev-up` y `prod-up` llevan `--remove-orphans` | Arreglo en el `Makefile` |
 
@@ -42,9 +42,9 @@ Coste orientativo en `eu-west-1`, bajo demanda: **≈ 77 USD/mes** solo producci
 
 ```
                         Internet
-   Telegram ──webhook──┐        ┌── Usuario (Mini App)      Operador ──► grafana.<dominio>
+   Telegram ──webhook──┐        ┌── Usuario (Mini App)      Operador ──► grafana.fitcoach.sergiosoriano.es
                        ▼        ▼                                              │
-         DNS: api.<dominio>, grafana.<dominio>  A  →  Elastic IP ◄─────────────┘
+   DNS: fitcoach.sergiosoriano.es, grafana.fitcoach…  A  →  Elastic IP ◄───────┘
                        │
 ┌──────────── EC2 t3.large · Ubuntu 24.04 · SG: 80, 443, 22 ─────────────────────────┐
 │  proxy-network                                                                      │
@@ -347,10 +347,49 @@ Valores a revisar en los ficheros de entorno, que dependen de esta máquina:
 
 - `.env.prod` de la app: `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317`, igual que
   hoy ([observabilidad.md](observabilidad.md)).
+- `.env.prod` de la app: `bot_telegram_webhook_base_url=https://fitcoach.sergiosoriano.es` y
+  `miniapp_url=https://fitcoach.sergiosoriano.es/miniapp/`, con el dominio de la
+  [sección 5.3](#53-dominio-de-producción).
 - `infra/observability/.env`: `DEPLOYMENT_ENVIRONMENT=prod` y `FITCOACH_POSTGRES_PROD_*` con las
   credenciales del Postgres de producción. `FITCOACH_POSTGRES_DEV_PASSWORD` es obligatoria para el
   Compose; si dev no corre en esta instancia, cualquier valor sirve y el datasource «PostgreSQL Dev»
   quedará en error.
+
+### 5.3 Dominio de producción
+
+Producción usa `fitcoach.sergiosoriano.es`, sin etiqueta de entorno; desarrollo sigue en
+`dev.fitcoach.sergiosoriano.es`. No se registra ningún dominio nuevo: es un nombre más de la zona
+`sergiosoriano.es`, y lo crea quien gestiona esa zona en su proveedor de DNS actual.
+
+Registros que hay que pedirle (la Elastic IP es la salida `PublicIp` de la pila,
+[sección 4.5](#45-después-de-crearla)):
+
+| Nombre | Tipo | Valor | TTL | Cuándo |
+|---|---|---|---|---|
+| `fitcoach` | `A` | Elastic IP | 300 | En cuanto exista la pila |
+| `grafana.fitcoach` | `A` | Elastic IP | 60 | El día de la migración (paso 5 de la [sección 7](#7-migrar-desde-el-servidor-actual)) |
+| `dev.fitcoach` | — | Sin cambios | — | — |
+
+Y que compruebe:
+
+- Que `fitcoach` no tenga ya un `CNAME` ni un `AAAA`. Un `AAAA` haría fallar a Let's Encrypt, porque la
+  instancia no tiene IPv6.
+- Que, si la zona tiene registros `CAA`, permitan `letsencrypt.org`.
+
+Al ser un nombre nuevo, nadie lo usa todavía: se puede crear y sacar su certificado antes de migrar,
+sin tocar producción. Comprobar que ya resuelve:
+
+**PowerShell (Windows):**
+
+```powershell
+Resolve-DnsName fitcoach.sergiosoriano.es -Type A
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+dig +short fitcoach.sergiosoriano.es A
+```
 
 ## 6. Acceso del equipo
 
@@ -512,7 +551,8 @@ conexión viaja por Session Manager. Ubuntu 24.04 ya trae EC2 Instance Connect i
 El orden importa: **nunca puede haber dos producciones vivas con el mismo bot**, porque las dos
 registrarían el webhook y sus schedulers enviarían avisos y encuestas desde bases distintas.
 
-1. **Días antes**: bajar a 60 s el TTL de los registros DNS de la API y de Grafana.
+1. **Días antes**: crear `fitcoach.sergiosoriano.es` ([sección 5.3](#53-dominio-de-producción)) y
+   bajar a 60 s el TTL de `grafana.fitcoach.sergiosoriano.es`.
 2. **Proxy Hosts** en Nginx Proxy Manager (ya arrancado por la plantilla). Admin por túnel:
 
    **PowerShell y bash (iguales):**
@@ -524,14 +564,16 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
    Con el túnel abierto, el panel queda en `http://localhost:8081`. En PowerShell, las comillas de
    `--parameters` son obligatorias: sin ellas la coma parte el argumento en dos.
 
-   - API, igual que hoy ([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)): destino
-     `fitcoach-ia-prod`, puerto `8000`, `http`, Force SSL.
+   - API con el dominio `fitcoach.sergiosoriano.es`, igual que hoy
+     ([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)): destino `fitcoach-ia-prod`,
+     puerto `8000`, `http`, Force SSL.
    - Grafana, igual que hoy ([observabilidad.md](observabilidad.md)): destino `fitcoach-grafana`,
      puerto `3000`, Force SSL y, si se quiere, una *Access List*.
 
-   Para tener los certificados **antes** del cambio de DNS, pedirlos con reto DNS-01 desde NPM (si
-   el proveedor de DNS está soportado); si no, pedirlos justo después del paso 5, con unos minutos de
-   errores TLS que Telegram reintenta.
+   El certificado de `fitcoach.sergiosoriano.es` se pide ya, por HTTP, porque el nombre apunta a la
+   instancia desde el paso 1. El de Grafana solo se puede pedir **antes** del cambio de DNS con reto
+   DNS-01 desde NPM (si el proveedor de DNS está soportado); si no, justo después del paso 5, con unos
+   minutos de error TLS en Grafana.
 3. **Parar producción en el servidor actual** (Telegram guarda los updates pendientes hasta 24 h):
 
    ```bash
@@ -572,8 +614,10 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
    cd /home/<DEPLOY_USER> && sudo make prod-up VERSION=<versión en servicio>
    ```
 
-   Cambiar los registros `A` a la Elastic IP. Al arrancar, la API vuelve a registrar el webhook con
-   `bot_telegram_webhook_base_url`, que no cambia.
+   Cambiar el registro `A` de `grafana.fitcoach` a la Elastic IP. Al arrancar, la API registra el
+   webhook del bot de producción con la nueva `bot_telegram_webhook_base_url`
+   (`https://fitcoach.sergiosoriano.es`) y el botón de menú con la nueva `miniapp_url`. Si el bot de
+   producción tiene la Mini App configurada también en BotFather (Main Mini App), cambiar allí la URL.
 6. **Actualizar los secretos de GitHub** (lo hace un administrador del repositorio): `SERVER_PKEY`
    con la clave privada de la [sección 4.2](#42-clave-ssh-de-despliegue), `SERVER_HOST` (Elastic IP
    o nombre DNS) y `SERVER_USER` (`DeployUser`, por defecto `fitcoach`). `DOCKER_IMAGE_NAME` y
@@ -582,8 +626,10 @@ registrarían el webhook y sus schedulers enviarían avisos y encuestas desde ba
 7. **Comprobar**: `docker ps` (todo `healthy`), `getWebhookInfo` del bot sin errores, un mensaje de
    prueba, la Mini App, que en Grafana aparecen logs y trazas de `prod`, y el primer backup en S3 al
    día siguiente (`/var/log/fitcoach-backup.log`).
-8. **Rollback** mientras no se borre nada en el servidor antiguo: devolver el DNS, `make prod-up`
-   allí. Los datos escritos en la EC2 entretanto se perderían, así que conviene decidir pronto.
+8. **Rollback** mientras no se borre nada en el servidor antiguo: `sudo make prod-down` en la EC2,
+   devolver el DNS de Grafana y `make prod-up` en el servidor antiguo, que vuelve a registrar el
+   webhook con su URL. Los datos escritos en la EC2 entretanto se perderían, así que conviene decidir
+   pronto.
 
 ## 8. Backups
 
@@ -634,7 +680,8 @@ Para mantener los cambios al mínimo, esta variante deja a propósito como está
 - **Dos Postgres en contenedor** y el nombre `fitcoach` en ambas: siguen en contenedores separados.
 - **Volcado `pg_dumpall` de PG 18** en la imagen de pgVector: se migra el volumen, así que no se
   vuelve a cargar.
-- **Docker Hub** como registro y **el DNS** donde esté hoy: Route 53 y ECR no aportan nada aquí.
+- **Docker Hub** como registro y **el DNS** de `sergiosoriano.es` donde esté hoy: Route 53 y ECR no
+  aportan nada aquí.
 - **Observabilidad**: el mismo Compose y la misma configuración; ningún servicio de AWS la sustituye.
 - **`proxy-network` y las redes internas**: idénticas.
 

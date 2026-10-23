@@ -32,8 +32,7 @@ Para el contexto general ver [entornos-y-despliegue.md](entornos-y-despliegue.md
 | Huérfanos al desplegar | `prod-up` no los quitaba | `dev-up` y `prod-up` llevan `--remove-orphans` | Arreglo en el `Makefile` |
 
 Se elige **x86_64** (`t3`) y no Graviton (`t4g`) porque las imágenes actuales solo se publican para
-`amd64` y porque permite copiar los volúmenes de Postgres tal cual. Pasar a ARM exige builds
-multiarquitectura y queda como mejora posterior.
+`amd64`. Pasar a ARM exige builds multiarquitectura y queda como mejora posterior.
 
 Coste orientativo en `eu-west-1`, bajo demanda: **≈ 77 USD/mes** solo producción con observabilidad
 (≈ 54 $ con un Savings Plan de 1 año). Detalle en la [sección 9](#9-coste).
@@ -55,7 +54,7 @@ Coste orientativo en `eu-west-1`, bajo demanda: **≈ 77 USD/mes** solo producci
 │  fitcoach-prod-internal                                                             │
 │   ├─ fitcoach-ia ──► fitcoach-embedder :8100                                        │
 │   ├─ fitcoach-ia ──► fitcoach-postgres (PG 16) ◄── Grafana (dashboards de negocio)  │
-│   ├─ fitcoach-ia ──► pgvector-prod (PG 18 + pgvector)                               │
+│   ├─ fitcoach-ia ──► pgvector (PG 18 + pgvector)                                    │
 │   └─ fitcoach-ia ──OTLP──► fitcoach-otel-collector :4317                            │
 │                                                                                     │
 │  observability                                                                      │
@@ -171,7 +170,7 @@ PUBKEY=$(cat ~/.ssh/fitcoach-deploy.pub)
 ```
 
 - La clave privada (`fitcoach-deploy`, sin `.pub`) la guarda un administrador del repositorio en
-  `SERVER_PKEY` **en el momento de migrar** ([sección 7](#7-migrar-desde-el-servidor-actual), paso 6),
+  `SERVER_PKEY` **al poner producción en marcha** ([sección 7.5](#75-secretos-de-github)),
   junto con `SERVER_HOST` y `SERVER_USER`. Hasta entonces `deploy.yml` sigue desplegando en el
   servidor actual con la clave de siempre. Se entrega por un canal seguro, nunca por chat o correo
   sin cifrar.
@@ -367,7 +366,7 @@ Registros que hay que pedirle (la Elastic IP es la salida `PublicIp` de la pila,
 | Nombre | Tipo | Valor | TTL | Cuándo |
 |---|---|---|---|---|
 | `fitcoach` | `A` | Elastic IP | 300 | En cuanto exista la pila |
-| `grafana.fitcoach` | `A` | Elastic IP | 60 | El día de la migración (paso 5 de la [sección 7](#7-migrar-desde-el-servidor-actual)) |
+| `grafana.fitcoach` | `A` | Elastic IP | 60 | Al poner producción en marcha ([sección 7.4](#74-grafana-y-botfather)) |
 | `dev.fitcoach` | — | Sin cambios | — | — |
 
 Y que compruebe:
@@ -376,7 +375,7 @@ Y que compruebe:
   instancia no tiene IPv6.
 - Que, si la zona tiene registros `CAA`, permitan `letsencrypt.org`.
 
-Al ser un nombre nuevo, nadie lo usa todavía: se puede crear y sacar su certificado antes de migrar,
+Al ser un nombre nuevo, nadie lo usa todavía: se puede crear y sacar su certificado antes de arrancar,
 sin tocar producción. Comprobar que ya resuelve:
 
 **PowerShell (Windows):**
@@ -546,90 +545,194 @@ conexión viaja por Session Manager. Ubuntu 24.04 ya trae EC2 Instance Connect i
    60 segundos. VS Code Remote-SSH usa el alias `fitcoach-ec2`; si se reconecta, hay que volver a
    enviar la clave.
 
-## 7. Migrar desde el servidor actual
+## 7. Poner producción en marcha
 
-El orden importa: **nunca puede haber dos producciones vivas con el mismo bot**, porque las dos
-registrarían el webhook y sus schedulers enviarían avisos y encuestas desde bases distintas.
+Producción no llegó a funcionar en el servidor actual, así que **no se migran datos**: las dos bases
+arrancan vacías y se rellenan solas.
 
-1. **Días antes**: crear `fitcoach.sergiosoriano.es` ([sección 5.3](#53-dominio-de-producción)) y
-   bajar a 60 s el TTL de `grafana.fitcoach.sergiosoriano.es`.
-2. **Proxy Hosts** en Nginx Proxy Manager (ya arrancado por la plantilla). Admin por túnel:
+- La base de la aplicación (`fitcoach-postgres`) la crea Alembic al arrancar la API.
+- La base vectorial (`pgvector`) se carga con el catálogo de ejercicios la primera vez que arranca,
+  desde los scripts de `infra/vector-db/ddl/` incluidos en su imagen.
 
-   **PowerShell y bash (iguales):**
+Lo único que se lleva de un sitio a otro es configuración: los ficheros de entorno
+([sección 5](#5-completar-la-instancia)), el DNS ([sección 5.3](#53-dominio-de-producción)) y las
+reglas del proxy (7.2), que se crean a mano porque Nginx Proxy Manager no permite exportarlas.
 
-   ```shell
-   aws ssm start-session --profile fitcoach --region eu-west-1 --target <instance-id> --document-name AWS-StartPortForwardingSession --parameters "portNumber=81,localPortNumber=8081"
-   ```
+### 7.1 Antes de empezar
 
-   Con el túnel abierto, el panel queda en `http://localhost:8081`. En PowerShell, las comillas de
-   `--parameters` son obligatorias: sin ellas la coma parte el argumento en dos.
+Comprobar que:
 
-   - API con el dominio `fitcoach.sergiosoriano.es`, igual que hoy
-     ([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)): destino `fitcoach-ia-prod`,
-     puerto `8000`, `http`, Force SSL.
-   - Grafana, igual que hoy ([observabilidad.md](observabilidad.md)): destino `fitcoach-grafana`,
-     puerto `3000`, Force SSL y, si se quiere, una *Access List*.
+- La pila está creada y la [sección 5](#5-completar-la-instancia) hecha: los tres ficheros de entorno
+  están en su sitio.
+- `fitcoach.sergiosoriano.es` ya apunta a la Elastic IP ([sección 5.3](#53-dominio-de-producción)).
+- El `.env.prod` de la app tiene el token y el secreto del **bot de producción**, el dominio nuevo en
+  `bot_telegram_webhook_base_url` y `miniapp_url`, y `vector_database_url` y
+  `vector_database_writer_url` apuntando al host `pgvector` (el contenedor de
+  `infra/vector-db/docker-compose.vector-db.yml`).
+- El `.env.prod` de `infra/vector-db` incluye `POSTGRES_PORT`, `PGADMIN_PORT` y el resto de
+  variables de [`.env.vector-db.example`](../infra/vector-db/.env.vector-db.example).
+- **No hay ninguna API de producción viva en el servidor actual.** Dos APIs con el mismo bot se
+  quitarían el webhook la una a la otra y sus schedulers enviarían avisos duplicados. En el servidor
+  actual:
 
-   El certificado de `fitcoach.sergiosoriano.es` se pide ya, por HTTP, porque el nombre apunta a la
-   instancia desde el paso 1. El de Grafana solo se puede pedir **antes** del cambio de DNS con reto
-   DNS-01 desde NPM (si el proveedor de DNS está soportado); si no, justo después del paso 5, con unos
-   minutos de error TLS en Grafana.
-3. **Parar producción en el servidor actual** (Telegram guarda los updates pendientes hasta 24 h):
+  **bash (servidor actual):**
 
-   ```bash
-   sudo make prod-down
-   docker compose -f infra/vector-db/docker-compose.vector-db.prod.yml down   # desde infra/vector-db
-   ```
+  ```bash
+  docker ps --filter name=fitcoach-ia --format '{{.Names}}'
+  # Si aparece "fitcoach-ia" (la de producción; la de desarrollo es otra), pararla:
+  sudo make prod-down
+  ```
 
-4. **Copiar los volúmenes de Postgres.** Misma imagen, misma versión mayor y misma arquitectura
-   (x86_64), así que se copian los ficheros tal cual, sin `pg_dump`/`pg_restore` y sin tocar el DDL
-   de pgVector:
+### 7.2 Reglas del proxy en Nginx Proxy Manager
 
-   ```bash
-   # En el servidor actual: localizar los volúmenes (llevan el prefijo del proyecto Compose)
-   docker volume ls | grep -E 'fitcoach-prod-postgres|pgvector-prod_volume'
-   for v in fitcoach-prod_fitcoach-prod-postgres fitcoach-vector-db-prod_pgvector-prod_volume; do
-     docker run --rm -v "$v":/data -v "$PWD":/backup alpine tar czf "/backup/$v.tgz" -C /data .
-   done
-   # Copiar los .tgz a la EC2 (scp o vía S3) y en la EC2:
-   for v in fitcoach-prod_fitcoach-prod-postgres fitcoach-vector-db-prod_pgvector-prod_volume; do
-     docker volume create "$v"
-     docker run --rm -v "$v":/data -v "$PWD":/backup alpine tar xzf "/backup/$v.tgz" -C /data
-   done
-   ```
+Nginx Proxy Manager (NPM) es la única puerta de entrada desde Internet. Cada regla, un *Proxy Host*,
+dice «las peticiones que llegan a este dominio van a este contenedor y a este puerto», y además
+gestiona su certificado HTTPS de Let's Encrypt. En producción hacen falta **dos reglas**: la de la
+API y la de Grafana. Las reglas de desarrollo siguen en el servidor actual y no se tocan.
 
-   Hay que crear los volúmenes con **el mismo nombre** que tenían para que Compose los reutilice en
-   lugar de crear unos vacíos (que, en el caso de pgVector, se rellenarían con la carga inicial y
-   perderían los ejercicios publicados después). Compose avisará de que el volumen "ya existe pero no
-   lo creó Compose": es esperado y lo usa igualmente.
+NPM y los contenedores a los que reenvía comparten la red `proxy-network`, así que el destino se
+escribe con el nombre del servicio o contenedor, no con una IP.
 
-   Los volúmenes de observabilidad (`fitcoach-observability-*`) son opcionales: los dashboards y
-   datasources se aprovisionan desde el repositorio, así que solo se pierde el histórico de métricas,
-   logs y trazas y lo que se haya creado a mano en Grafana. Si se quiere conservar, se copian igual.
-5. **Arrancar en la EC2 y mover el DNS**:
+**1. Abrir el panel.** El panel de administración solo escucha dentro de la instancia (puerto 81),
+así que se abre un túnel por Session Manager y se deja abierto mientras se usa:
 
-   ```bash
-   cd /opt/fitcoachia/infra/observability && sudo docker compose up -d
-   cd /opt/fitcoachia/infra/vector-db && sudo docker compose -f docker-compose.vector-db.prod.yml up -d --build
-   cd /home/<DEPLOY_USER> && sudo make prod-up VERSION=<versión en servicio>
-   ```
+**PowerShell y bash (iguales):**
 
-   Cambiar el registro `A` de `grafana.fitcoach` a la Elastic IP. Al arrancar, la API registra el
-   webhook del bot de producción con la nueva `bot_telegram_webhook_base_url`
-   (`https://fitcoach.sergiosoriano.es`) y el botón de menú con la nueva `miniapp_url`. Si el bot de
-   producción tiene la Mini App configurada también en BotFather (Main Mini App), cambiar allí la URL.
-6. **Actualizar los secretos de GitHub** (lo hace un administrador del repositorio): `SERVER_PKEY`
-   con la clave privada de la [sección 4.2](#42-clave-ssh-de-despliegue), `SERVER_HOST` (Elastic IP
-   o nombre DNS) y `SERVER_USER` (`DeployUser`, por defecto `fitcoach`). `DOCKER_IMAGE_NAME` y
-   `ENV_FILE_PATH` siguen igual. A partir de aquí
-   los despliegues van por `deploy.yml` como hoy.
-7. **Comprobar**: `docker ps` (todo `healthy`), `getWebhookInfo` del bot sin errores, un mensaje de
-   prueba, la Mini App, que en Grafana aparecen logs y trazas de `prod`, y el primer backup en S3 al
-   día siguiente (`/var/log/fitcoach-backup.log`).
-8. **Rollback** mientras no se borre nada en el servidor antiguo: `sudo make prod-down` en la EC2,
-   devolver el DNS de Grafana y `make prod-up` en el servidor antiguo, que vuelve a registrar el
-   webhook con su URL. Los datos escritos en la EC2 entretanto se perderían, así que conviene decidir
-   pronto.
+```shell
+aws ssm start-session --profile fitcoach --region eu-west-1 --target <instance-id> --document-name AWS-StartPortForwardingSession --parameters "portNumber=81,localPortNumber=8081"
+```
+
+Con el túnel abierto, el panel está en `http://localhost:8081`. En PowerShell, las comillas de
+`--parameters` son obligatorias: sin ellas la coma parte el argumento en dos.
+
+**2. Primer acceso.** La plantilla no configura ningún usuario, así que NPM arranca con su
+administrador por defecto:
+
+- Email: `admin@example.com`
+- Contraseña: `changeme`
+
+Nada más entrar, NPM obliga a cambiar el nombre, el email y la contraseña. Usar un email del equipo
+(es también el que se propone para los avisos de Let's Encrypt) y guardar la contraseña en el gestor
+de contraseñas del equipo. Mientras no se cambie no hay riesgo, porque el panel no es accesible desde
+Internet, pero conviene hacerlo en este primer acceso.
+
+**3. Regla de la API y del bot.** *Hosts* → *Proxy Hosts* → *Add Proxy Host*.
+
+| Pestaña | Campo | Valor |
+|---|---|---|
+| Details | Domain Names | `fitcoach.sergiosoriano.es` |
+| Details | Scheme | `http` |
+| Details | Forward Hostname / IP | `fitcoach-ia-prod` (servicio de `docker-compose.yml`) |
+| Details | Forward Port | `8000` |
+| Details | Cache Assets, Websockets Support, Access List | Sin marcar / *Publicly Accessible* |
+| SSL | SSL Certificate | *Request a new SSL Certificate* |
+| SSL | Force SSL y HTTP/2 Support | Marcados |
+| SSL | Email Address for Let's Encrypt | El email del equipo |
+| SSL | I Agree to the Let's Encrypt Terms of Service | Marcado |
+
+Guardar. NPM pide el certificado en ese momento: solo funciona si `fitcoach.sergiosoriano.es` ya
+apunta a la Elastic IP. Esta regla atiende el webhook de Telegram (`/webhook/response`) y la Mini App
+(`/miniapp/` y `/api/miniapp/`); no necesita *Custom Locations* ni configuración avanzada, y no debe
+llevar *Access List*, porque Telegram no envía credenciales
+([telegram-miniapp.md](telegram-miniapp.md#nginx-proxy-manager)).
+
+**4. Regla de Grafana.** Igual, con estos valores:
+
+| Pestaña | Campo | Valor |
+|---|---|---|
+| Details | Domain Names | `grafana.fitcoach.sergiosoriano.es` |
+| Details | Scheme | `http` |
+| Details | Forward Hostname / IP | `fitcoach-grafana` |
+| Details | Forward Port | `3000` |
+| SSL | Como en la regla anterior | |
+
+El certificado solo se puede pedir cuando `grafana.fitcoach.sergiosoriano.es` apunte a la Elastic IP
+(7.4). Si todavía no apunta, guardar la regla con *SSL Certificate* en *None* y volver a ella después
+(*Edit* → *SSL*). Grafana ya tiene su propio login (usuario `admin`, contraseña `GF_ADMIN_PASSWORD`
+de `infra/observability/.env`); una *Access List* de NPM es opcional.
+
+**5. Comprobar la regla de la API.** Antes de arrancar la API, NPM responde `502 Bad Gateway`: es lo
+esperado y confirma que el dominio, el certificado y la regla funcionan.
+
+**PowerShell (Windows):**
+
+```powershell
+curl.exe -I https://fitcoach.sergiosoriano.es/health
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+curl -I https://fitcoach.sergiosoriano.es/health
+```
+
+En PowerShell 5.1, `curl` a secas es un alias de `Invoke-WebRequest`; `curl.exe` es el curl real.
+
+### 7.3 Arrancar los servicios
+
+En la instancia, en este orden: observabilidad (para recoger logs desde el primer momento), base
+vectorial y aplicación.
+
+**bash (en la instancia):**
+
+```bash
+# Traer el repositorio de la instancia a la última versión de la rama
+sudo git -C /opt/fitcoachia pull
+sudo install -m 644 -o <DEPLOY_USER> -g <DEPLOY_USER> /opt/fitcoachia/docker-compose.yml /opt/fitcoachia/Makefile /home/<DEPLOY_USER>/
+sudo install -m 755 /opt/fitcoachia/infra/aws/ec2/backup-postgres.sh /usr/local/bin/fitcoach-backup
+
+# Observabilidad
+cd /opt/fitcoachia/infra/observability && sudo docker compose up -d
+
+# Base vectorial: la primera vez carga el catálogo y tarda varios minutos
+cd /opt/fitcoachia/infra/vector-db
+sudo docker compose --env-file .env.prod -f docker-compose.vector-db.yml up -d --build
+sudo docker logs -f pgvector   # esperar a "database system is ready to accept connections"; Ctrl+C
+
+# Aplicación (Alembic crea las tablas al arrancar)
+cd /home/<DEPLOY_USER> && sudo make prod-up VERSION=<versión>
+sudo docker ps
+```
+
+`--env-file .env.prod` hace falta porque el Compose de pgVector toma de ese fichero los puertos
+`POSTGRES_PORT` y `PGADMIN_PORT`. Esos puertos quedan publicados en la instancia, pero el security
+group solo deja pasar 80, 443 y 22: para usar pgAdmin, abrir un túnel como el de NPM con
+`portNumber=<PGADMIN_PORT>`.
+
+Al arrancar, la API registra el webhook del bot de producción con
+`https://fitcoach.sergiosoriano.es` y el botón de menú con la `miniapp_url`. La comprobación del paso
+5 de 7.2 debe devolver ahora `200`.
+
+### 7.4 Grafana y BotFather
+
+- Pedir a quien gestiona `sergiosoriano.es` que cambie el registro `A` de
+  `grafana.fitcoach.sergiosoriano.es` a la Elastic IP ([sección 5.3](#53-dominio-de-producción)) y,
+  cuando resuelva, pedir el certificado en la regla de Grafana (7.2, paso 4). El Grafana del servidor
+  actual deja de tener nombre público; se puede seguir usando por túnel o con otro nombre.
+- Si el bot de producción tiene la Mini App configurada también en BotFather (*Main Mini App*),
+  cambiar allí la URL a `https://fitcoach.sergiosoriano.es/miniapp/`.
+
+### 7.5 Secretos de GitHub
+
+Los cambia un administrador del repositorio, y a partir de ahí los despliegues van por `deploy.yml`
+como hoy:
+
+- `SERVER_PKEY`: la clave privada de la [sección 4.2](#42-clave-ssh-de-despliegue).
+- `SERVER_HOST`: la Elastic IP o `fitcoach.sergiosoriano.es`.
+- `SERVER_USER`: `DeployUser` de la pila (por defecto `fitcoach`).
+- `DOCKER_IMAGE_NAME` y `ENV_FILE_PATH` no cambian.
+
+### 7.6 Comprobar
+
+- `sudo docker ps`: todos los contenedores `healthy`.
+- `https://api.telegram.org/bot<TOKEN>/getWebhookInfo` (con el token del bot de producción): `url`
+  es `https://fitcoach.sergiosoriano.es/webhook/response` y no hay `last_error_message`.
+- `/start` al bot de producción responde, y la Mini App abre desde el botón de menú.
+- En Grafana aparecen logs y trazas con entorno `prod`.
+- Al día siguiente, el primer backup está en S3 (`/var/log/fitcoach-backup.log`).
+
+Si algo falla y hay que dar marcha atrás, basta con `sudo make prod-down` en la instancia: no había
+producción anterior que restaurar.
 
 ## 8. Backups
 
@@ -678,14 +781,14 @@ Para mantener los cambios al mínimo, esta variante deja a propósito como está
 - **Migraciones en el `ENTRYPOINT`** (`src/Dockerfile`): con una sola réplica de la API no hay
   carreras.
 - **Dos Postgres en contenedor** y el nombre `fitcoach` en ambas: siguen en contenedores separados.
-- **Volcado `pg_dumpall` de PG 18** en la imagen de pgVector: se migra el volumen, así que no se
-  vuelve a cargar.
+- **Volcado `pg_dumpall` de PG 18** en la imagen de pgVector: carga el catálogo una sola vez, al
+  crear el volumen.
 - **Docker Hub** como registro y **el DNS** de `sergiosoriano.es` donde esté hoy: Route 53 y ECR no
   aportan nada aquí.
 - **Observabilidad**: el mismo Compose y la misma configuración; ningún servicio de AWS la sustituye.
 - **`proxy-network` y las redes internas**: idénticas.
 
-## 11. Puntos a confirmar antes de migrar
+## 11. Puntos a confirmar antes de poner producción en marcha
 
 1. **Imagen del embedder.** `docker-compose.yml` usa `fitcoachia/embedder:${VERSION}`, pero ningún
    workflow construye ni publica esa imagen. En una máquina nueva, `make prod-up` falla al no poder

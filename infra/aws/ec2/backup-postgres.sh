@@ -6,7 +6,7 @@
 set -eu
 
 : "${BACKUP_BUCKET:?BACKUP_BUCKET es obligatorio}"
-CONTAINERS="${BACKUP_CONTAINERS:-fitcoach-postgres pgvector-prod}"
+CONTAINERS="${BACKUP_CONTAINERS:-fitcoach-postgres pgvector}"
 STAMP="$(date -u +%Y-%m-%dT%H%MZ)"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT

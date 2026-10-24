@@ -1,11 +1,15 @@
 """Fixtures shared by the trainer tests: a valid profile and a valid plan payload."""
 
+import os
 from datetime import UTC, datetime
 
 import pytest
 
 from fitcoach.domain.exercise import Exercise
 from fitcoach.domain.interviewer_profile import InterviewerProfile
+
+# python-telegram-bot: RetryAfter.retry_after como timedelta (evita su DeprecationWarning).
+os.environ.setdefault("PTB_TIMEDELTA", "1")
 
 _INTENSITIES = ("accumulation", "intensification", "peak", "deload")
 

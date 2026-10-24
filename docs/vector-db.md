@@ -205,7 +205,7 @@ sobreviven a los despliegues de la aplicación.
 `infra/vector-db/docker-compose.vector-db.yml` conecta pgVector y pgAdmin a la red externa
 `fitcoach-internal` (la misma que usa la app), por lo que la aplicación alcanza pgVector con el
 hostname `pgvector` y la base vectorial nunca necesita pertenecer a `proxy-network`. Su fichero de
-entorno es `infra/vector-db/.env.dev` (plantilla `.env.vector-db.example`).
+entorno es `infra/vector-db/.env` (plantilla `.env.vector-db.example`).
 
 ## Consultas útiles
 

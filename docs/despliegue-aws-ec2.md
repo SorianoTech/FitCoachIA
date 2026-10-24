@@ -495,7 +495,7 @@ aws ssm start-session --profile fitcoach --region eu-west-1 --target <instance-i
 | Panel | `portNumber` | Ejemplo de `localPortNumber` |
 |---|---|---|
 | Nginx Proxy Manager | `81` | `8081` |
-| pgAdmin de pgVector | `PGADMIN_PORT` de `infra/vector-db/.env.dev` | `8010` |
+| pgAdmin de pgVector | `PGADMIN_PORT` de `infra/vector-db/.env` | `8010` |
 
 En PowerShell, las comillas de `--parameters` son obligatorias: sin ellas la coma parte el argumento
 en dos.
@@ -598,12 +598,12 @@ del repositorio, y se instalan con permisos `600` de `root`:
 | Fichero local (ejemplo) | Destino en la instancia | Plantilla |
 |---|---|---|
 | `app.env` | `/etc/fitcoachia/dev/.env.dev` | [`.env.example`](../.env.example) |
-| `vector-db.env` | `/opt/fitcoachia/infra/vector-db/.env.dev` | [`.env.vector-db.example`](../infra/vector-db/.env.vector-db.example) |
+| `vector-db.env` | `/opt/fitcoachia/infra/vector-db/.env` | [`.env.vector-db.example`](../infra/vector-db/.env.vector-db.example) |
 | `observability.env` | `/opt/fitcoachia/infra/observability/.env` | [`.env.example`](../infra/observability/.env.example) |
 
 **Valores que dependen de esta instancia**, a revisar antes de copiarlos:
 
-- `.env.dev` de la app:
+- `/etc/fitcoachia/dev/.env.dev` de la app:
   - Token y secreto del bot del entorno único
     ([entornos-y-despliegue.md](entornos-y-despliegue.md#6-bot-de-telegram)).
   - `bot_telegram_webhook_base_url=https://fitcoach.sergiosoriano.es`.
@@ -612,7 +612,7 @@ del repositorio, y se instalan con permisos `600` de `root`:
     `vector_database_writer_url`, `embedder_url`, `embedder_host`).
   - `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317`
     ([observabilidad.md](observabilidad.md)).
-- `.env.dev` de pgVector: `POSTGRES_PORT`, `PGADMIN_PORT` y el resto de variables de la plantilla;
+- `.env` de pgVector: `POSTGRES_PORT`, `PGADMIN_PORT` y el resto de variables de la plantilla;
   `VECTOR_DB_RO_PASSWORD` y `VECTOR_DB_WRITER_PASSWORD` deben coincidir con las URL de la app.
 - `.env` de observabilidad: `GF_ADMIN_PASSWORD` (contraseña del usuario `admin` de Grafana),
   `DEPLOYMENT_ENVIRONMENT` y `FITCOACH_POSTGRES_*` con las credenciales del Postgres. Si el
@@ -642,7 +642,7 @@ Después, en la instancia, instalarlos en su sitio y borrar las copias:
 
 ```bash
 sudo install -m 600 -o root -g root /home/ubuntu/app.env /etc/fitcoachia/dev/.env.dev
-sudo install -m 600 -o root -g root /home/ubuntu/vector-db.env /opt/fitcoachia/infra/vector-db/.env.dev
+sudo install -m 600 -o root -g root /home/ubuntu/vector-db.env /opt/fitcoachia/infra/vector-db/.env
 sudo install -m 600 -o root -g root /home/ubuntu/observability.env /opt/fitcoachia/infra/observability/.env
 sudo shred -u /home/ubuntu/app.env /home/ubuntu/vector-db.env /home/ubuntu/observability.env
 ```
@@ -655,7 +655,7 @@ su destino y pegar el contenido en el editor:
 ```bash
 sudo install -m 600 -o root -g root /dev/null /etc/fitcoachia/dev/.env.dev
 sudo nano /etc/fitcoachia/dev/.env.dev
-# Igual con /opt/fitcoachia/infra/vector-db/.env.dev y /opt/fitcoachia/infra/observability/.env
+# Igual con /opt/fitcoachia/infra/vector-db/.env y /opt/fitcoachia/infra/observability/.env
 ```
 
 No usar S3 como paso intermedio: los secretos quedarían guardados en el bucket (y en sus versiones),
@@ -782,7 +782,7 @@ Qué pasa en cada paso:
 
 - **Base vectorial**: con el volumen vacío, la imagen ejecuta los scripts de
   `infra/vector-db/ddl/` (catálogo de ejercicios y roles `fitcoach_ro` y `fitcoach_writer`). Solo
-  ocurre la primera vez. El Compose toma de `.env.dev` (`env_file:`) los
+  ocurre la primera vez. El Compose toma de `.env` (`env_file:`) los
   puertos `POSTGRES_PORT` y `PGADMIN_PORT`; quedan publicados en la instancia, pero el security group
   no los deja pasar (pgAdmin se usa por túnel, [sección 6.3](#63-túneles-a-paneles-internos)).
 - **Aplicación**: se arranca desde el repositorio porque `docker-compose.yml` sabe construir las

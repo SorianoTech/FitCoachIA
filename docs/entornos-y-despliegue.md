@@ -123,7 +123,7 @@ En el servidor se lanza con `sudo make up` (el fichero de entorno es de root). `
 | Imagen | **se construye en el servidor** (`build:`); no hay imagen publicada en un registro |
 | Redes | `fitcoach-internal` (interna) y `proxy-network` (solo la API, hacia Nginx Proxy Manager) |
 
-La BD vectorial (`make vector-up`, `infra/vector-db/docker-compose.vector-db.yml`, con su `.env.dev` en
+La BD vectorial (`make vector-up`, `infra/vector-db/docker-compose.vector-db.yml`, con su `.env` en
 esa carpeta) y el stack de observabilidad (`infra/observability/compose.yml`) se unen a la misma red
 `fitcoach-internal`; su ciclo de vida es independiente del de la app.
 

@@ -10,7 +10,7 @@ Son los comandos del día a día. Hay un único entorno (`docker-compose.yml`).
 
 | Comando | Qué hace |
 |---|---|
-| `make up` | Crea las redes si faltan, construye las imágenes y levanta app, embedder, Postgres y pgAdmin; con `--remove-orphans`, elimina servicios que ya no están en el Compose |
+| `make up` | Crea las redes si faltan, construye las imágenes y levanta app, embedder y Postgres; con `--remove-orphans`, elimina servicios que ya no están en el Compose |
 | `make app` | Reconstruye y reinicia solo la API (`--no-deps`; el resto debe estar ya levantado) |
 | `make down` | Detiene el stack y retira huérfanos |
 | `make app-logs` | Sigue los logs del stack |
@@ -23,7 +23,7 @@ restringidos.
 
 ### Detener sin perder datos
 
-`down` **no borra volúmenes** (`fitcoach-postgres`, `fitcoach-pgadmin`): la base de datos sobrevive. Para
+`down` **no borra volúmenes** (`fitcoach-postgres`): la base de datos sobrevive. Para
 borrarla también hay que llamar a Compose a mano con `-v`, que es deliberadamente incómodo.
 
 ---

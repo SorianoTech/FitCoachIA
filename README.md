@@ -76,7 +76,7 @@ FitCoachIA/
 ├── .dockerignore                 # Contexto de build de la imagen (lista de permitidos)
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit, cfn-lint)
 ├── alembic.ini                   # Configuración de alembic
-├── docker-compose.yml            # Único entorno: app, embedder, Postgres y pgAdmin (la imagen se construye en el servidor)
+├── docker-compose.yml            # Único entorno: app, embedder y Postgres (la imagen se construye en el servidor)
 ├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
 ├── AGENTS.md                     # Mapa del proyecto e instrucciones para asistentes de IA
 ├── CLAUDE.md                     # Importa AGENTS.md

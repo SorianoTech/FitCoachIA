@@ -10,8 +10,8 @@
 ## Entornos y variables
 
 Hay un único entorno: `docker-compose.yml` (proyecto `fitcoach`), con los servicios `fitcoach-ia`,
-`embedder`, `postgres` y `pgadmin` (contenedores `fitcoach-ia`, `fitcoach-embedder`,
-`fitcoach-postgres` y `fitcoach-pgadmin`; volúmenes `fitcoach-postgres` y `fitcoach-pgadmin`). La
+`embedder` y `postgres` (contenedores `fitcoach-ia`, `fitcoach-embedder` y
+`fitcoach-postgres`; volumen `fitcoach-postgres`). La
 imagen se **construye** en la máquina donde se ejecuta `make up`; no hay imagen publicada en un
 registro. Los servicios comparten la red externa `fitcoach-internal`, y `proxy-network` contiene
 únicamente la API publicada mediante Nginx Proxy Manager. El **`container_name`** es fijo porque de él
@@ -43,7 +43,7 @@ cp .env.example .env
 > (`@postgres:5432`), `vector_database_url` y `vector_database_writer_url` (`@pgvector:5432`),
 > `embedder_url` (`http://embedder:8100`) y `embedder_host=embedder`. Con los nombres antiguos
 > (`postgres-dev`, `postgres-prod`…) la app no conecta. Además, los **volúmenes se renombraron** a
-> `fitcoach-postgres` y `fitcoach-pgadmin`: los datos de los volúmenes antiguos no se migran solos;
+> `fitcoach-postgres`: los datos de los volúmenes antiguos no se migran solos;
 > cópialos o renómbralos a mano (p. ej. `pg_dump` y restauración) antes de `make up`, o se perderán.
 
 Completa al menos estas variables:
@@ -148,7 +148,7 @@ Para detener PostgreSQL, ejecuta `docker stop fitcoach-postgres`.
 
 ## Ejecutar con Docker Compose
 
-Esta opción ejecuta PostgreSQL, el embedder, pgAdmin y la API en contenedores. El contenedor de la API
+Esta opción ejecuta PostgreSQL, el embedder y la API en contenedores. El contenedor de la API
 aplica automáticamente `alembic upgrade head` antes de iniciar FastAPI.
 
 ```bash
@@ -175,13 +175,12 @@ make app-logs
 
 ### Consultar la base de datos con pgAdmin
 
-El compose incluye pgAdmin (`fitcoach-pgadmin`), una interfaz web para consultar los mensajes, sesiones
-y perfiles del entrevistador. No publica ningún puerto en el host: crea un Proxy Host en Nginx Proxy
-Manager que apunte a `fitcoach-pgadmin`, puerto `STANDARD_HTTP_PORT` del fichero de entorno y
-protocolo `http`.
+Hay un único pgAdmin: el de `make vector-up` (contenedor `pgadmin`, puerto `PGADMIN_PORT` de
+`infra/vector-db/.env`), conectado a `fitcoach-internal`, por lo que también alcanza a Postgres. Sirve
+para consultar los mensajes, sesiones y perfiles del entrevistador.
 
-Protege ese Proxy Host antes de publicarlo mediante una *Access List* de Nginx Proxy Manager y, si
-es posible, una restricción por IP. Registra el servidor con host `postgres` y los valores
+Si lo expones con un Proxy Host de Nginx Proxy Manager, protégelo con una *Access List* y, si es
+posible, una restricción por IP. Registra el servidor con host `postgres` y los valores
 `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` del fichero de entorno. Las tablas relevantes son:
 
 - `conversation_messages`: preguntas y respuestas por chat.

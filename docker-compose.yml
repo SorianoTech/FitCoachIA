@@ -77,28 +77,6 @@ services:
     networks:
       - internal
 
-  pgadmin:
-    container_name: fitcoach-pgadmin
-    image: dpage/pgadmin4
-    restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
-        required: false
-    volumes:
-      - fitcoach-pgadmin:/root/.pgadmin
-    networks:
-      - internal
-    healthcheck:
-      test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
-      interval: 60s
-      timeout: 10s
-      retries: 5
-    depends_on:
-      postgres:
-        condition: service_healthy
-
 networks:
   internal:
     name: fitcoach-internal
@@ -108,4 +86,3 @@ networks:
 
 volumes:
   fitcoach-postgres:
-  fitcoach-pgadmin:

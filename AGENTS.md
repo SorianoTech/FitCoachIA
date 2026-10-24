@@ -207,7 +207,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 
 | File | Purpose | Notes |
 |---|---|---|
-| `docker-compose.yml` | The single environment (`build:`; project `fitcoach`: `fitcoach-ia`, `embedder`, `postgres`, `pgadmin`; network `fitcoach-internal` + `proxy-network`) | Env file: `ENV_FILE` (default `/etc/fitcoachia/dev/.env.dev`) falling back to root `.env`, passed as `FITCOACH_ENV_FILE` |
+| `docker-compose.yml` | The single environment (`build:`; project `fitcoach`: `fitcoach-ia`, `embedder`, `postgres`; network `fitcoach-internal` + `proxy-network`) | Env file: `ENV_FILE` (default `/etc/fitcoachia/dev/.env.dev`) falling back to root `.env`, passed as `FITCOACH_ENV_FILE` |
 | `tests/docker-compose-test.yml` | Integration tests (app + Postgres + pgVector + stub server) | Must always work with `make tests` |
 | `infra/vector-db/docker-compose.vector-db.yml` | pgVector catalogue (independent lifecycle, joins `fitcoach-internal`) | Not part of app compose |
 | `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |

@@ -59,7 +59,7 @@ Una variable que solo esté en `env_file:` no sirve para interpolar, y al revés
 > `vector_database_url` y `vector_database_writer_url` → `@pgvector:5432`, `embedder_url` →
 > `http://embedder:8100` y `embedder_host=embedder`. Con los nombres antiguos (`postgres-dev`,
 > `postgres-prod`…) la app no conectará.
-> Además, los volúmenes se llaman ahora `fitcoach-postgres` y `fitcoach-pgadmin`: los datos de los
+> Además, los volúmenes se llaman ahora `fitcoach-postgres`: los datos de los
 > volúmenes antiguos **no se migran solos**. Hay que copiarlos o renombrarlos a mano antes de `make up`
 > (p. ej. `pg_dump` del Postgres antiguo y restaurar en el nuevo) o **se perderán los datos**.
 
@@ -104,7 +104,7 @@ se eliminan los contenedores `training-reminders*` y `evaluation*` antiguos. La 
 ### Despliegue
 
 ```bash
-make up          # construye y levanta app, embedder, Postgres y pgAdmin
+make up          # construye y levanta app, embedder y Postgres
 make app         # reconstruye y reinicia solo la API (--no-deps)
 make down        # para el stack
 make app-logs    # logs en directo
@@ -117,9 +117,9 @@ En el servidor se lanza con `sudo make up` (el fichero de entorno es de root). `
 | | |
 |---|---|
 | Compose | `docker-compose.yml` (proyecto `fitcoach`) |
-| Servicios | `fitcoach-ia`, `embedder`, `postgres`, `pgadmin` |
-| Contenedores | `fitcoach-ia`, `fitcoach-embedder`, `fitcoach-postgres`, `fitcoach-pgadmin` |
-| Volúmenes | `fitcoach-postgres`, `fitcoach-pgadmin` |
+| Servicios | `fitcoach-ia`, `embedder`, `postgres` |
+| Contenedores | `fitcoach-ia`, `fitcoach-embedder`, `fitcoach-postgres` |
+| Volúmenes | `fitcoach-postgres` |
 | Imagen | **se construye en el servidor** (`build:`); no hay imagen publicada en un registro |
 | Redes | `fitcoach-internal` (interna) y `proxy-network` (solo la API, hacia Nginx Proxy Manager) |
 
@@ -270,7 +270,7 @@ logs del contenedor (`make app-logs`), no solo por la respuesta en Telegram.
 |---|---|
 | `no existe /etc/fitcoachia/dev/.env.dev ni .env` al hacer `make up` | falta el fichero, o falta `sudo` (el fichero es de root) |
 | La app no conecta a Postgres/embedder tras actualizar | el `.env` conserva los hostnames antiguos; usar `postgres`, `pgvector`, `embedder` |
-| Faltan los datos tras actualizar | los volúmenes se renombraron a `fitcoach-postgres`/`fitcoach-pgadmin`; migrarlos a mano |
+| Faltan los datos tras actualizar | los volúmenes se renombraron a `fitcoach-postgres`; migrarlos a mano |
 | `password authentication failed` con Postgres sano | `POSTGRES_PASSWORD` solo se aplica al **inicializar** el volumen; cambiarlo después no altera la contraseña guardada |
 | El bot no recibe nada, la app en verde | webhook registrado en otro sitio: `getWebhookInfo` |
 | Conflicto de nombre de contenedor al desplegar | quedó un huérfano; `make down` y `make up` usan `--remove-orphans` |

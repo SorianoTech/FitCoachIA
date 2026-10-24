@@ -34,6 +34,8 @@ PROXY_NETWORK ?= proxy-network
 # La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
 # cargan una sola vez y sobreviven a los despliegues de la app.
 COMPOSE_VECTOR=$(DOCKER) compose -f infra/vector-db/docker-compose.vector-db.yml
+# rag-doc (FAQ sobre docs/ e infra/) tambien tiene su propio proyecto y ciclo de vida.
+COMPOSE_RAG=$(DOCKER) compose -f infra/rag-doc/docker-compose.rag-doc.yml
 
 define ensure_networks
 for network in "$(INTERNAL_NETWORK)" "$(PROXY_NETWORK)"; do \
@@ -55,7 +57,7 @@ echo ">> fichero de entorno: $$RESOLVED_ENV_FILE"; \
 export FITCOACH_ENV_FILE="$$RESOLVED_ENV_FILE"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests networks up app down app-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
+.PHONY: container build run stop clean all help clean-image clean-images logs tests networks up app down app-logs vector-up vector-down vector-logs rag-up rag-down rag-logs trainer-debug trainer-compare trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -80,6 +82,9 @@ help:
 	@echo "  make vector-up                      - Levanta pgVector y pgAdmin con el catalogo de ejercicios"
 	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
 	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
+	@echo "  make rag-up                         - Levanta rag-doc (FAQ sobre docs/ e infra/) y su Qdrant"
+	@echo "  make rag-down                       - Detiene rag-doc (conserva el volumen de Qdrant)"
+	@echo "  make rag-logs                       - Muestra los logs de rag-doc"
 	@echo "  make trainer-debug ARGS=\"...\"       - Ejecuta el entrenador offline y guarda artefactos en runs/trainer (ver docs/trainer-agent.md)"
 	@echo "  make trainer-compare ARGS=\"...\"     - Compara skills/modelos sobre el golden set"
 	@echo "  make trainer-refresh-catalogues     - Regenera los catalogos congelados de evals/trainer/cases con la recuperacion real"
@@ -129,6 +134,17 @@ vector-down:
 
 vector-logs:
 	@$(COMPOSE_VECTOR) logs -f
+
+rag-up:
+	@$(ensure_networks)
+	@$(COMPOSE_RAG) up -d --build
+
+# Sin -v a proposito: el indice de Qdrant se conserva entre despliegues.
+rag-down:
+	@$(COMPOSE_RAG) down --remove-orphans
+
+rag-logs:
+	@$(COMPOSE_RAG) logs -f
 
 # Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
 trainer-debug:

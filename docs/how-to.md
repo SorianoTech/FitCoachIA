@@ -135,10 +135,10 @@ las consultas para medir tu consumo están en **[rate-limiter.md](rate-limiter.m
    uv run fastapi dev src/fitcoach/main.py --port 8000
    ```
 
-La API queda disponible en <http://localhost:8000>. Comprueba el servicio con:
+La API **no publica puertos en el host**: solo es accesible por `proxy-network` (Nginx Proxy Manager) y `fitcoach-internal`. Comprueba el servicio con:
 
 ```bash
-curl http://localhost:8000/health
+docker exec fitcoach-ia python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/health').read())"
 ```
 
 Para detener PostgreSQL, ejecuta `docker stop fitcoach-postgres`.

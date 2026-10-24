@@ -47,7 +47,7 @@ Makefile: resuelve la ruta
 
 **Son dos mecanismos distintos y ambos hacen falta**, que es la confusión más común:
 
-- `--env-file` alimenta la **interpolación** del YAML: `${POSTGRES_PASSWORD}`, `${APP_PORT}`. Se
+- `--env-file` alimenta la **interpolación** del YAML: `${POSTGRES_PASSWORD}`. Se
   resuelve al leer el fichero, antes de crear nada.
 - `env_file:` inyecta variables **dentro del contenedor**, para que la app las lea.
 

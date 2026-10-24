@@ -171,7 +171,7 @@ La primera vez, el contenedor aplica en orden alfabético todo lo que hay en
 | `002_2026-09-21_readonly-role.sql` | Rol `fitcoach_ro`, de solo lectura, que usa la aplicación. |
 | `003_2026-10-04_exercise-writer.sql` | Tabla idempotente de publicaciones, ajuste de secuencia y rol restringido `fitcoach_writer`. |
 
-pgAdmin queda disponible en el puerto que indique `PGADMIN_PORT` (8010 por defecto).
+pgAdmin y pgVector publican sus puertos **solo en `127.0.0.1`** del host (`PGADMIN_PORT`, 8010 por defecto, y `POSTGRES_PORT`); desde fuera se accede por túnel SSH. Dentro de `fitcoach-internal` son accesibles como `pgadmin` y `pgvector`.
 
 ## Roles de acceso
 

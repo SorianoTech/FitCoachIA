@@ -147,7 +147,7 @@ docker run -d -p 8000:8000 --e <ENVVAR_NAME>=<ENVVAR_VALUE> fitcoach-ia:latest
 
 `````
 
-Una vez en marcha, la API estará disponible en `http://localhost:8000`.
+Una vez en marcha, la API escucha en el puerto 8000 del contenedor `fitcoach-ia`, **sin publicarlo en el host**: se accede a través de Nginx Proxy Manager (`proxy-network`).
 
 ### 3. Referencia rápida de opciones de `docker build`
 

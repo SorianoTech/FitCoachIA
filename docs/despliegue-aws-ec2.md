@@ -783,8 +783,8 @@ Qué pasa en cada paso:
 - **Base vectorial**: con el volumen vacío, la imagen ejecuta los scripts de
   `infra/vector-db/ddl/` (catálogo de ejercicios y roles `fitcoach_ro` y `fitcoach_writer`). Solo
   ocurre la primera vez. El Compose toma de `.env` (`env_file:`) los
-  puertos `POSTGRES_PORT` y `PGADMIN_PORT`; quedan publicados en la instancia, pero el security group
-  no los deja pasar (pgAdmin se usa por túnel, [sección 6.3](#63-túneles-a-paneles-internos)).
+  puertos `POSTGRES_PORT` y `PGADMIN_PORT`; se publican solo en `127.0.0.1` de la instancia (además del security group), así que
+  pgAdmin se usa por túnel, [sección 6.3](#63-túneles-a-paneles-internos)).
 - **Aplicación**: se arranca desde el repositorio porque `docker-compose.yml` sabe construir las
   imágenes (`build:`) si no están disponibles. La API ejecuta las migraciones de Alembic, que crean
   las tablas en `fitcoach-postgres`, registra el webhook del bot con

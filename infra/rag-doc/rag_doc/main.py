@@ -3,8 +3,10 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from qdrant_client import QdrantClient
 
 from rag_doc.api import router
@@ -15,6 +17,7 @@ from rag_doc.service import AnswerService
 from rag_doc.store import VectorStore
 
 logger = logging.getLogger(__name__)
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -45,3 +48,7 @@ app.include_router(router)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Mounted last so /health and /api/* take precedence
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

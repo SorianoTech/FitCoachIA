@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitCoachIA · Documentación</title>
+  <meta name="description" content="Pregunta a la documentación de FitCoachIA">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0055ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FitCoach Docs">
+  <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+  <link rel="icon" type="image/png" href="/icons/icon-192x192.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>FitCoachIA · Documentación</h1>
+      <button id="install-btn" type="button" hidden>Instalar app</button>
+    </header>
+    <main id="messages" aria-live="polite">
+      <p class="hint">Pregunta lo que quieras sobre la documentación de FitCoachIA.</p>
+    </main>
+    <p id="offline-banner" role="status" hidden>Sin conexión: no se pueden hacer preguntas.</p>
+    <form id="chat-form" autocomplete="off">
+      <label for="question" class="sr-only">Pregunta</label>
+      <input id="question" type="text" maxlength="500" placeholder="Escribe tu pregunta..." required>
+      <button id="send-btn" type="submit">Enviar</button>
+    </form>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,12 +1,11 @@
 """Application settings loaded from the environment.
 
 Real OS environment variables take precedence over any ``.env`` file, so in
-``pre``/``pro``/Docker the values are injected as container env vars and picked
-up automatically -- nothing is shipped to production. The ``.env`` files are a
-local-development convenience only.
+Docker the values are injected as container env vars and picked up
+automatically. The ``.env`` file is a local convenience only.
 
 Precedence (high -> low): OS env vars > ``FITCOACH_ENV_FILE`` when set >
-``.env.<APP_ENV>`` > ``.env`` > defaults.
+``.env`` > defaults.
 """
 
 import os
@@ -26,8 +25,8 @@ _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 TaskTemperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | Literal["default"]
 ReasoningEffort = Literal["minimal", "low", "medium", "high", "default"]
 
-_APP_ENV = os.getenv("APP_ENV", "dev")
-_ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or (".env", f".env.{_APP_ENV}")
+_APP_ENV = os.getenv("APP_ENV", "production")
+_ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or ".env"
 
 
 class Settings(BaseSettings):

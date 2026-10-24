@@ -67,6 +67,23 @@ def test_build_chat_model_uses_the_openai_compatible_settings() -> None:
     assert model.model_name == "open-model"
     assert model.max_tokens == 123
     assert model.openai_api_base == "https://llm.test/v1"
+    assert model.temperature == 0.2
+    assert model.reasoning_effort is None
+
+
+def test_build_chat_model_for_reasoning_models_omits_temperature() -> None:
+    settings = RagSettings(
+        _env_file=None,
+        llm_api_key=SecretStr("k"),
+        llm_model="gpt-5-nano-2025-08-07",
+        llm_reasoning_effort="minimal",
+    )
+
+    model = build_chat_model(settings)
+
+    assert model.reasoning_effort == "minimal"
+    assert model.temperature is None
+    assert "temperature" not in model._default_params
 
 
 def test_build_messages_numbers_the_context_and_keeps_history_order() -> None:

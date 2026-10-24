@@ -119,6 +119,7 @@ Todas con prefijo `RAG_`; plantilla en `infra/rag-doc/.env.rag-doc.example`.
 | `RAG_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | API compatible con OpenAI |
 | `RAG_LLM_MODEL` | `meta-llama/llama-3.3-70b-instruct` | Modelo abierto |
 | `RAG_LLM_TIMEOUT_SECONDS` / `RAG_LLM_MAX_TOKENS` / `RAG_LLM_MAX_RETRIES` | `30` / `600` / `2` | Llamada al LLM |
+| `RAG_LLM_REASONING_EFFORT` | `default` | `minimal`/`low`/`medium`/`high` para modelos de razonamiento (p. ej. `gpt-5-nano-2025-08-07` con `RAG_LLM_BASE_URL=https://api.openai.com/v1`): se omite la temperatura. `default` = modelos normales |
 | `RAG_EMBEDDING_MODEL` / `RAG_EMBEDDING_DIMENSIONS` | `intfloat/multilingual-e5-base` / `768` | Deben coincidir con la imagen |
 | `RAG_QDRANT_COLLECTION` | `rag_doc` | Colección |
 | `RAG_TOP_K` / `RAG_MIN_SCORE` | `5` / `0.0` | Recuperación |

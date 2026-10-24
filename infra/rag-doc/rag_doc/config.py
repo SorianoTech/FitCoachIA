@@ -22,6 +22,7 @@ class RagSettings(BaseSettings):
     llm_timeout_seconds: float = 30.0
     llm_max_tokens: int = 600
     llm_max_retries: int = 2
+    llm_reasoning_effort: str = "default"
     top_k: int = 5
     min_score: float = 0.0
     rate_limit_per_minute: int = 10

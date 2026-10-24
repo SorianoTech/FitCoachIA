@@ -1,6 +1,7 @@
 """LLM access through LangChain: any OpenAI-compatible chat-completions API."""
 
 import logging
+from typing import Any
 
 import httpx
 import openai
@@ -20,14 +21,20 @@ class LLMError(Exception):
 
 def build_chat_model(settings: RagSettings) -> ChatOpenAI:
     api_key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else ""
+    options: dict[str, Any] = {}
+    if settings.llm_reasoning_effort == "default":
+        options["temperature"] = 0.2
+    else:
+        # Reasoning models (gpt-5*) reject a custom temperature and spend max_tokens on reasoning
+        options["reasoning_effort"] = settings.llm_reasoning_effort
     return ChatOpenAI(
         base_url=settings.llm_base_url,
         api_key=api_key,
         model=settings.llm_model,
-        temperature=0.2,
         max_tokens=settings.llm_max_tokens,
         timeout=settings.llm_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        **options,
     )
 
 

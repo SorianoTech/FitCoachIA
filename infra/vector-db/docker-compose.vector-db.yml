@@ -33,6 +33,7 @@ services:
       - pgadmin_data:/root/.pgadmin
     networks:
       - internal
+      - proxy-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
@@ -50,4 +51,6 @@ volumes:
 networks:
   internal:
     name: fitcoach-internal
+    external: true
+  proxy-network:
     external: true

@@ -173,6 +173,10 @@ La primera vez, el contenedor aplica en orden alfabético todo lo que hay en
 
 pgAdmin y pgVector publican sus puertos **solo en `127.0.0.1`** del host (`PGADMIN_PORT`, 8010 por defecto, y `POSTGRES_PORT`); desde fuera se accede por túnel SSH. Dentro de `fitcoach-internal` son accesibles como `pgadmin` y `pgvector`.
 
+Para publicar pgAdmin con Nginx Proxy Manager, `pgadmin` también está en `proxy-network`: crea un Proxy Host con
+Forward Hostname `pgadmin`, Forward Port `80` (`STANDARD_HTTP_PORT`, el puerto interno, no `PGADMIN_PORT`) y esquema
+`http`, y protégelo con una *Access List* porque da acceso a las bases de datos.
+
 ## Roles de acceso
 
 La recuperación se conecta con `fitcoach_ro`, no con el rol `fitcoach` del volcado (que es

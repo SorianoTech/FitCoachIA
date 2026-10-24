@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,14 @@ class RagSettings(BaseSettings):
     corpus_root: str = "/corpus"
     sources_file: str = "/app/sources.yml"
     chunk_max_chars: int = 1200
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_api_key: SecretStr | None = None
+    llm_model: str = "meta-llama/llama-3.3-70b-instruct"
+    llm_timeout_seconds: float = 30.0
+    llm_max_tokens: int = 600
+    llm_max_retries: int = 2
+    top_k: int = 5
+    min_score: float = 0.0
     log_level: str = "INFO"
 
 

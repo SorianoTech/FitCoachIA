@@ -45,6 +45,7 @@ en minutos en CI).
 | `gitleaks` | Evita que un secreto llegue a existir en el historial de Git. |
 | `ruff` + `ruff-format` | Estilo y errores estáticos detectables sin ejecutar el código; feedback inmediato. |
 | `bandit` | Primera pasada de SAST sobre `src/`: patrones inseguros conocidos (`eval`, `subprocess`, etc.). |
+| `cfn-lint` | Valida la plantilla de CloudFormation (`infra/aws/ec2/*.cfn.yaml`) antes de crear o actualizar la pila; `check-yaml` la excluye porque no entiende las etiquetas `!Ref`/`!Sub`. |
 
 ### 2.2 Continuous Integration — `build.yml`
 

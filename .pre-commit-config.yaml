@@ -33,6 +33,7 @@ repos:
       - id: end-of-file-fixer           # asegura un único salto de línea al final del fichero
         exclude: ^infra/vector-db/ddl/.*[.]sql$
       - id: check-yaml                  # valida sintaxis YAML
+        exclude: ^infra/aws/ec2/.*[.]cfn[.]yaml$   # etiquetas !Ref/!Sub de CloudFormation: se valida con cfn-lint
       - id: check-merge-conflict        # bloquea commits con marcadores de conflicto
       - id: check-added-large-files     # evita subir binarios pesados al repo
         args: ['--maxkb=500']
@@ -61,3 +62,10 @@ repos:
       - id: bandit                      # busca patrones inseguros (eval, subprocess, etc.)
         args: ["-r", "src/"]
         files: ^src/
+
+  # 5. Plantillas de CloudFormation: recursos, propiedades, tipos y referencias.
+  - repo: https://github.com/aws-cloudformation/cfn-lint
+    rev: v1.57.2
+    hooks:
+      - id: cfn-lint
+        files: ^infra/aws/ec2/.*[.]cfn[.]yaml$

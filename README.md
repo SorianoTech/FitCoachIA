@@ -55,6 +55,7 @@ FitCoachIA/
 │   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
 ├── alembic/                      # Migraciones de la base de datos conversacional
 ├── infra/
+│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation, backup a S3 y Nginx Proxy Manager
 │   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
 │   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
 │   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
@@ -73,7 +74,7 @@ FitCoachIA/
 │   └── requirements-ci.txt       # Dependencias del entorno CI (generado desde pyproject.toml)
 ├── .env.example                  # Plantilla de variables de entorno
 ├── .dockerignore                 # Contexto de build de la imagen (lista de permitidos)
-├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit)
+├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit, cfn-lint)
 ├── alembic.ini                   # Configuración de alembic
 ├── docker-compose.dev.yml        # Entorno de desarrollo
 ├── docker-compose.local.yml      # Entorno local para probar cambios
@@ -208,6 +209,7 @@ El proyecto usa [pre-commit](https://pre-commit.com/) para ejecutar validaciones
 | `gitleaks` | Escanea el diff en busca de credenciales o tokens expuestos |
 | `ruff` + `ruff-format` | Linter y formateador Python (equivalente a Flake8 + Black) |
 | `bandit` | Análisis estático de seguridad (SAST) sobre el código de aplicación |
+| `cfn-lint` | Valida la plantilla de CloudFormation de `infra/aws/ec2/` (recursos, propiedades y referencias) |
 
 ### Configuración en local (una sola vez por clon)
 

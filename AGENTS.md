@@ -213,6 +213,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 | `infra/vector-db/docker-compose.vector-db*.yml` | pgVector catalogue (independent lifecycle) | Not part of app compose |
 | `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
+| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3, Nginx Proxy Manager compose | Runs the composes above unchanged; see `docs/despliegue-aws-ec2.md` |
 
 Workflow for a compose-affecting change: edit **dev** -> try it with **local** -> if it works, replicate in **prod**
 (keep prod-specific things: `image:`, `restart`, healthchecks, networks, env files) -> keep the **test** compose runnable.
@@ -242,7 +243,7 @@ stays out of the build context.
 
 Always try to run, when available, what the repo enforces (report anything you could not run):
 
-1. `pre-commit run --all-files` (hooks in `.pre-commit-config.yaml`: hygiene, gitleaks, ruff, ruff-format, bandit).
+1. `pre-commit run --all-files` (hooks in `.pre-commit-config.yaml`: hygiene, gitleaks, ruff, ruff-format, bandit, cfn-lint).
 2. `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src/` (strict), `uv run pip-audit`.
 3. `make tests` (needs Docker).
 
@@ -277,6 +278,6 @@ Update every item that the change touches, in the same change:
 
 Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`,
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
-`docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
+`docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/despliegue-aws-ec2.md` (single-EC2 AWS deployment), `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
 `docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`.
 `docs/plan/` holds design notes and `docs/todo/` the backlog.

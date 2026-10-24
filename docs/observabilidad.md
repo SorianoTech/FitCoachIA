@@ -294,6 +294,9 @@ Grafana quedará accesible:
 
 Usuario admin: `admin` / la contraseña definida en `GF_ADMIN_PASSWORD`.
 
+En el despliegue sobre una EC2 de AWS se levanta este mismo stack en la instancia; ver
+[despliegue-aws-ec2.md](despliegue-aws-ec2.md).
+
 ## 6. Cómo parar el stack
 
 ```bash

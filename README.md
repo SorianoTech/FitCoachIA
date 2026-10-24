@@ -38,6 +38,7 @@ FitCoachIA/
 ├── src/
 │   ├── fitcoach/
 │   │   ├── api/                  # Controladores y endpoints REST (webhook de Telegram)
+│   │   ├── devtools/             # Depuración offline del entrenador (ver docs/devtools.md)
 │   │   ├── domain/               # Entidades, enums, errores y textos de usuario
 │   │   ├── infrastructure/
 │   │   │   ├── bot/              # Cliente de Telegram
@@ -106,7 +107,7 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make down` / `make app-logs` | Detiene el stack / sigue los logs |
 | `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
 
-El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md).
+El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md). Los targets `trainer-*` se explican en [docs/devtools.md](docs/devtools.md).
 
 
 ## Instalación y Despliegue

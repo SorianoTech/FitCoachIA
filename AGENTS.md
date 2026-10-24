@@ -274,7 +274,7 @@ Update every item that the change touches, in the same change:
 | Makefile, workflows, actions | `docs/Makefile.md`, `docs/ci-cd.md` |
 | Architecture, layers, agents, this map | this `AGENTS.md` |
 
-Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`,
+Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`, `docs/devtools.md` (offline trainer debugging: `trainer-debug`, `trainer-compare`),
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
 `docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md` (single environment, env file, Telegram bot/webhook), `docs/despliegue-aws-ec2.md` (single-EC2 AWS deployment), `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
 `docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`.

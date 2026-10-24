@@ -7,3 +7,5 @@ langchain-openai==1.6.0
 langchain-core==1.6.2
 qdrant-client==1.12.1
 sentence-transformers>=3.0
+faster-whisper==1.2.1
+piper-tts==1.8.0

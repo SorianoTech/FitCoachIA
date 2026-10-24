@@ -16,6 +16,8 @@ from rag_doc.limits import RateLimiter
 from rag_doc.llm import LLMClient, build_chat_model
 from rag_doc.service import AnswerService
 from rag_doc.store import VectorStore
+from rag_doc.texts import MAX_AUDIO_SECONDS
+from rag_doc.voice import PiperSynthesizer, WhisperTranscriber
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -34,6 +36,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     embedder = Embedder(settings.embedding_model, settings.embedding_dimensions)
     embedder.embed_query("warm-up")
     llm = LLMClient(build_chat_model(settings))
+    app.state.stt = WhisperTranscriber(
+        settings.stt_model, settings.stt_model_dir, MAX_AUDIO_SECONDS
+    )
+    app.state.tts = PiperSynthesizer(settings.tts_voice_path)
     store = VectorStore(QdrantClient(url=settings.qdrant_url), settings.qdrant_collection)
     app.state.answer_service = AnswerService(
         embedder, store, llm, settings.top_k, settings.min_score

@@ -19,6 +19,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Si cambias RAG_EMBEDDING_MODEL, reconstruye la imagen y reindexa (make rag-index)
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${RAG_EMBEDDING_MODEL}')"
 
+# Voz embebida en la imagen: Whisper (STT) y voz espanola de Piper (TTS)
+ENV RAG_STT_MODEL=small
+ENV RAG_STT_MODEL_DIR=/opt/whisper
+ENV RAG_TTS_VOICE_PATH=/opt/piper/es_ES-davefx-medium.onnx
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('${RAG_STT_MODEL}', device='cpu', compute_type='int8', download_root='${RAG_STT_MODEL_DIR}')"
+ADD https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx /opt/piper/
+ADD https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json /opt/piper/
+RUN chmod -R a+rX /opt/piper /opt/whisper
+# Modelos ya descargados: en runtime no se consulta HuggingFace
+ENV HF_HUB_OFFLINE=1
+
 RUN useradd --create-home --uid 10001 raguser
 COPY rag_doc ./rag_doc
 USER raguser

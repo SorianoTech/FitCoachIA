@@ -25,6 +25,9 @@ class RagSettings(BaseSettings):
     top_k: int = 5
     min_score: float = 0.0
     rate_limit_per_minute: int = 10
+    stt_model: str = "small"
+    stt_model_dir: str = "/opt/whisper"
+    tts_voice_path: str = "/opt/piper/es_ES-davefx-medium.onnx"
     daily_call_cap: int = 500
     trust_proxy_headers: bool = True
     log_level: str = "INFO"

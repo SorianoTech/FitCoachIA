@@ -24,3 +24,6 @@ h1 { font-size: 1.1rem; margin: 0; }
   color: #fff; font-size: 1rem; cursor: pointer; }
 #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+#mic-btn { padding: 10px 12px; border: 1px solid #bbc; border-radius: 8px; background: #fff; font-size: 1rem; cursor: pointer; }
+#mic-btn.recording { background: #e53935; color: #fff; }
+.speak-btn { display: block; margin-top: 6px; border: 0; background: none; color: var(--brand); cursor: pointer; padding: 0; }

@@ -7,6 +7,7 @@ const sendBtn = document.getElementById('send-btn');
 const messages = document.getElementById('messages');
 const offlineBanner = document.getElementById('offline-banner');
 const installBtn = document.getElementById('install-btn');
+const micBtn = document.getElementById('mic-btn');
 
 function addMessage(kind, text, sources) {
   messages.querySelector('.hint')?.remove();
@@ -28,8 +29,42 @@ function addMessage(kind, text, sources) {
   return el;
 }
 
+let currentAudio = null;
+async function speak(text, button) {
+  currentAudio?.pause();
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!response.ok) throw Object.assign(new Error('http'), { status: response.status });
+    const url = URL.createObjectURL(await response.blob());
+    currentAudio = new Audio(url);
+    currentAudio.addEventListener('ended', () => URL.revokeObjectURL(url));
+    await currentAudio.play();
+  } catch (err) {
+    addMessage('error', errorText(err.status));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function addAnswer(text, sources) {
+  const el = addMessage('assistant', text, sources);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'speak-btn';
+  button.textContent = '🔊 Escuchar';
+  button.addEventListener('click', () => speak(text, button));
+  el.appendChild(button);
+}
+
 function errorText(status) {
-  if (status === 429) return 'Demasiadas preguntas seguidas. Espera un momento.';
+  if (status === 413) return 'El audio es demasiado largo (máximo 30 segundos).';
+  if (status === 415 || status === 422) return 'No se ha podido entender la entrada. Inténtalo de nuevo.';
+  if (status === 429) return 'Demasiadas consultas seguidas o límite diario alcanzado. Espera un momento.';
   if (status === 502) return 'El modelo no está disponible ahora mismo. Inténtalo de nuevo en un rato.';
   if (status === 422) return 'La pregunta no es válida (vacía o demasiado larga).';
   return 'Ha ocurrido un error. Inténtalo de nuevo.';
@@ -46,7 +81,7 @@ async function ask(question) {
     if (!response.ok) throw Object.assign(new Error('http'), { status: response.status });
     const data = await response.json();
     pending.remove();
-    addMessage('assistant', data.answer, data.sources);
+    addAnswer(data.answer, data.sources);
     history.push({ role: 'user', content: question }, { role: 'assistant', content: data.answer });
   } catch (err) {
     pending.remove();
@@ -58,13 +93,70 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const question = input.value.trim();
   if (!question || !navigator.onLine) return;
+  await submitQuestion(question);
+});
+
+async function submitQuestion(question) {
   input.value = '';
   addMessage('user', question);
   sendBtn.disabled = true;
   await ask(question);
-  sendBtn.disabled = false;
+  sendBtn.disabled = !navigator.onLine;
   input.focus();
-});
+}
+
+// ─── Voice input: record with MediaRecorder, transcribe on the server, then ask ───
+const MAX_RECORD_MS = 30000;
+let recorder = null;
+let recordTimer = null;
+
+async function toggleRecording() {
+  if (recorder) {
+    recorder.stop();
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    addMessage('error', 'No se ha podido acceder al micrófono.');
+    return;
+  }
+  const chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.addEventListener('dataavailable', (e) => chunks.push(e.data));
+  recorder.addEventListener('stop', async () => {
+    clearTimeout(recordTimer);
+    stream.getTracks().forEach((t) => t.stop());
+    const type = recorder.mimeType || 'audio/webm';
+    recorder = null;
+    micBtn.classList.remove('recording');
+    await transcribeAndAsk(new Blob(chunks, { type }));
+  });
+  recorder.start();
+  micBtn.classList.add('recording');
+  recordTimer = setTimeout(() => recorder?.stop(), MAX_RECORD_MS);
+}
+
+async function transcribeAndAsk(blob) {
+  const type = blob.type.split(';')[0];
+  micBtn.disabled = true;
+  try {
+    const response = await fetch('/api/stt', { method: 'POST', headers: { 'Content-Type': type }, body: blob });
+    if (!response.ok) throw Object.assign(new Error('http'), { status: response.status });
+    const { text } = await response.json();
+    await submitQuestion(text);
+  } catch (err) {
+    addMessage('error', errorText(err.status));
+  } finally {
+    micBtn.disabled = false;
+  }
+}
+
+if (navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+  micBtn.hidden = false;
+  micBtn.addEventListener('click', toggleRecording);
+}
 
 function updateOnline() {
   offlineBanner.hidden = navigator.onLine;

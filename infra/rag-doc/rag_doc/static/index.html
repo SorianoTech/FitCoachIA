@@ -26,7 +26,8 @@
     <p id="offline-banner" role="status" hidden>Sin conexión: no se pueden hacer preguntas.</p>
     <form id="chat-form" autocomplete="off">
       <label for="question" class="sr-only">Pregunta</label>
-      <input id="question" type="text" maxlength="500" placeholder="Escribe tu pregunta..." required>
+      <input id="question" type="text" maxlength="500" placeholder="Escribe o dicta tu pregunta..." required>
+      <button id="mic-btn" type="button" aria-label="Dictar pregunta" hidden>🎤</button>
       <button id="send-btn" type="submit">Enviar</button>
     </form>
   </div>

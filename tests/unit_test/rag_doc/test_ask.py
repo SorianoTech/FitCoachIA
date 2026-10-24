@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import BaseMessage
 from rag_doc.api import get_answer_service, router
+from rag_doc.limits import RateLimiter
 from rag_doc.llm import LLMError
 from rag_doc.service import AnswerService
 from rag_doc.texts import NO_CONTEXT_ANSWER
@@ -71,6 +72,7 @@ def _client(service: AnswerService) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_answer_service] = lambda: service
+    app.state.rate_limiter = RateLimiter(per_minute=1000, daily_cap=1000)
     return TestClient(app)
 
 

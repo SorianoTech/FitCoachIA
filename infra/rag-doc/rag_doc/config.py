@@ -24,6 +24,9 @@ class RagSettings(BaseSettings):
     llm_max_retries: int = 2
     top_k: int = 5
     min_score: float = 0.0
+    rate_limit_per_minute: int = 10
+    daily_call_cap: int = 500
+    trust_proxy_headers: bool = True
     log_level: str = "INFO"
 
 

@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from rag_doc.limits import enforce_limits
 from rag_doc.llm import LLMError
 from rag_doc.service import AnswerService
 from rag_doc.texts import (
@@ -45,7 +46,7 @@ def get_answer_service(request: Request) -> AnswerService:
     return service
 
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[Depends(enforce_limits)])
 async def ask(
     body: AskRequest, service: AnswerService = Depends(get_answer_service)
 ) -> AskResponse:

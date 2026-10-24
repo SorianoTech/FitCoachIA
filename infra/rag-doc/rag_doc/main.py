@@ -12,6 +12,7 @@ from qdrant_client import QdrantClient
 from rag_doc.api import router
 from rag_doc.config import get_settings
 from rag_doc.embeddings import Embedder
+from rag_doc.limits import RateLimiter
 from rag_doc.llm import LLMClient, build_chat_model
 from rag_doc.service import AnswerService
 from rag_doc.store import VectorStore
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.answer_service = AnswerService(
         embedder, store, llm, settings.top_k, settings.min_score
     )
+    app.state.rate_limiter = RateLimiter(settings.rate_limit_per_minute, settings.daily_call_cap)
     logger.info("rag-doc ready (qdrant=%s, model=%s)", settings.qdrant_url, settings.llm_model)
     yield
 

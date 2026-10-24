@@ -10,6 +10,9 @@ NO_CONTEXT_ANSWER = (
 )
 LLM_UNAVAILABLE_ANSWER = "El modelo no está disponible ahora mismo. Inténtalo de nuevo en un rato."
 
+RATE_LIMIT_ANSWER = "Demasiadas preguntas seguidas. Espera un momento."
+DAILY_CAP_ANSWER = "Se ha alcanzado el límite diario de consultas. Vuelve a intentarlo mañana."
+
 SYSTEM_PROMPT = """Eres el asistente de documentación de FitCoachIA. Respondes en español, \
 de forma breve y precisa, usando EXCLUSIVAMENTE el contexto numerado que se te da.
 

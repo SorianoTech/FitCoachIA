@@ -32,7 +32,9 @@ defecto) con un modelo abierto. Las llamadas al LLM usan `langchain_openai.ChatO
 
 ## Ingesta
 
-La lista blanca está en `infra/rag-doc/sources.yml`. Solo el servicio `indexer` (perfil `index`) monta
+La lista blanca está en `infra/rag-doc/sources.yml` y contiene los 31 `.md` de `docs/` salvo `docs/plan/` y
+`docs/todo/` (notas de diseño y backlog). Un documento nuevo en `docs/` no se indexa hasta añadirlo a mano
+(solo `.md`; los demás formatos, como `.drawio`, se rechazan). Solo el servicio `indexer` (perfil `index`) monta
 `docs/` e `infra/` en solo lectura; el servicio web público no monta nada del repositorio.
 
 ```bash
@@ -58,6 +60,19 @@ Los prompts están en `rag_doc/texts.py`. El del sistema exige respuestas breves
 fragmentos existentes (`[1][3]` si hay varias), indicar lo que falta si la respuesta es parcial, pedir
 aclaración si la pregunta es ambigua, y trata contexto y pregunta como datos (anti-inyección). El de
 reescritura nunca responde la pregunta y la deja igual si ya es autónoma o cambia de tema.
+
+## Ver los chunks que recupera una pregunta
+
+```bash
+docker exec -i rag-doc python - "¿cómo funciona el scheduler?" < infra/rag-doc/eval/show_chunks.py
+docker exec -i rag-doc python - "pregunta" --top-k 10 --full < infra/rag-doc/eval/show_chunks.py
+```
+
+`infra/rag-doc/eval/show_chunks.py` embebe la pregunta y consulta el Qdrant real con la configuración del
+servicio; no llama al LLM. Imprime, por chunk, el puesto, la puntuación, `fichero — sección` y el texto
+(`--full` lo muestra entero, `--top-k` cambia `RAG_TOP_K`) e indica si supera `RAG_MIN_SCORE`. Usa la
+pregunta tal cual: no aplica la reescritura de preguntas de seguimiento. Requiere el servicio levantado
+(`make rag-up`) y el corpus indexado (`make rag-index`).
 
 ## Evaluación de retrieval
 
@@ -97,7 +112,11 @@ Criterios para ajustar la precisión:
 - Si `minOn` < `maxOff`, ninguna puntuación separa preguntas del tema de las de fuera de tema:
   `RAG_MIN_SCORE` no sirve de filtro y decide el prompt del sistema.
 - Con pocos casos una diferencia de un solo acierto es ruido (con 24 preguntas, 0,042); amplía
-  `gold_set.jsonl` antes de fiarte de décimas.
+  `gold_set.jsonl` antes de fiarte de décimas. Hoy tiene 69 casos (61 del tema, repartidos por 11
+  documentos de la lista blanca con preguntas reformuladas, y 8 fuera de tema). Cada caso del tema lleva
+  `source` y `heading` (basta con que aparezcan en el fragmento) y `facts` orientativos; los fuera de
+  tema llevan `"offtopic": true`. El eval solo embebe `question` y no usa `history`. Los resultados
+  guardados antes de la ampliación no son comparables con los nuevos.
 - Compara siempre `local` y `openai` con la misma tabla antes de cambiar de proveedor.
 
 Ejemplo (`text-embedding-3-small`, 27 casos: 24 del tema y 3 fuera de tema):

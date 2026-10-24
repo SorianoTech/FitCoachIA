@@ -1,14 +1,34 @@
 # Lista blanca de ficheros indexables. Solo lo listado aqui puede llegar al RAG (la web es publica).
 # Rutas relativas a la raiz del repo; solo .md. Tras cambiarla: make rag-index
 files:
+  - docs/AUTHORS.md
+  - docs/Dockerfile-guide.md
+  - docs/Makefile.md
+  - docs/OTLP.md
+  - docs/admin-panel.md
+  - docs/ci-cd.md
+  - docs/dashboard-logs-guide.md
+  - docs/despliegue-aws-ec2-diagrama.md
+  - docs/despliegue-aws-ec2.md
+  - docs/devtools.md
+  - docs/encuestas-satisfaccion.md
+  - docs/entornos-y-despliegue.md
+  - docs/exercise-catalogue-contributions.md
   - docs/how-to.md
   - docs/interviewer-agent.md
-  - docs/trainer-agent.md
-  - docs/scheduler.md
-  - docs/encuestas-satisfaccion.md
-  - docs/vector-db.md
+  - docs/memoria-agentes.md
   - docs/modelo-datos.md
-  - docs/rag-recuperacion-ejercicios.md
   - docs/observabilidad.md
-  - docs/ci-cd.md
-  - docs/Makefile.md
+  - docs/plan-evaluator.md
+  - docs/queries-reference.md
+  - docs/rag-doc.md
+  - docs/rag-recuperacion-ejercicios.md
+  - docs/rate-limiter.md
+  - docs/scheduler.md
+  - docs/telegram-miniapp.md
+  - docs/test_llm_openroute.md
+  - docs/testing.md
+  - docs/testll.md
+  - docs/toml.md
+  - docs/trainer-agent.md
+  - docs/vector-db.md

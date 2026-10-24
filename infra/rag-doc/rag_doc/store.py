@@ -19,13 +19,18 @@ class VectorStore:
         self._collection = collection
 
     def ensure_collection(self, dimensions: int) -> None:
+        """Create the collection; recreate it when the embedding model changed its size."""
         from qdrant_client.models import Distance, VectorParams
 
-        if not self._client.collection_exists(self._collection):
-            self._client.create_collection(
-                self._collection,
-                vectors_config=VectorParams(size=dimensions, distance=Distance.COSINE),
-            )
+        if self._client.collection_exists(self._collection):
+            current = self._client.get_collection(self._collection).config.params.vectors.size
+            if current == dimensions:
+                return
+            self._client.delete_collection(self._collection)
+        self._client.create_collection(
+            self._collection,
+            vectors_config=VectorParams(size=dimensions, distance=Distance.COSINE),
+        )
 
     def replace_all(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
         """Make the collection contain exactly ``chunks``; any other point is deleted."""

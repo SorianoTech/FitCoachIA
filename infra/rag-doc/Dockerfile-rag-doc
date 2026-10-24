@@ -6,7 +6,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # El modelo vive dentro de la imagen: el arranque no depende de HuggingFace ni de la red.
 ENV HF_HOME=/opt/hf
-ENV RAG_EMBEDDING_MODEL=intfloat/multilingual-e5-small
+ENV RAG_EMBEDDING_MODEL=intfloat/multilingual-e5-base
 
 WORKDIR /app
 

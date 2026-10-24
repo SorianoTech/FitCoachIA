@@ -3,9 +3,13 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 from telegram.error import BadRequest, InvalidToken, NetworkError, TelegramError
 
@@ -28,10 +32,17 @@ from fitcoach.infrastructure.config.settings import (
     get_training_settings,
     get_vector_database_settings,
 )
-from fitcoach.infrastructure.database.session import close_database, get_session_factory
+from fitcoach.infrastructure.database.session import (
+    close_database,
+    get_session,
+    get_session_factory,
+)
 from fitcoach.infrastructure.jobs.scheduler import JobScheduler
 from fitcoach.infrastructure.observability.telemetry import configure_telemetry, shutdown_telemetry
-from fitcoach.infrastructure.vectordb.session import close_vector_database
+from fitcoach.infrastructure.vectordb.session import (
+    close_vector_database,
+    get_vector_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +142,24 @@ async def root() -> dict[str, str]:
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    return {"status": "healthy"}
+    return {"status": "alive"}
+
+
+@app.get("/ready")
+async def readiness_check(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    vector_session: Annotated[AsyncSession, Depends(get_vector_session)],
+) -> dict[str, str]:
+    try:
+        await session.execute(text("SELECT 1"))
+        await vector_session.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        logger.warning("Readiness check failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Required database dependencies are unavailable",
+        ) from exc
+    return {"status": "ready"}
 
 
 async def _register_webhook(app: FastAPI, settings: Settings) -> None:

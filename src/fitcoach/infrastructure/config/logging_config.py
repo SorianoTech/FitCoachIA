@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fitcoach.infrastructure.observability.telemetry import SERVICE_NAME, SERVICE_VERSION
 
-_APP_ENV = os.getenv("APP_ENV", "production")
+_APP_ENV = os.getenv("APP_ENV", "dev")
 _DEFAULT_LEVEL = "INFO"
 
 
@@ -68,7 +68,7 @@ class JsonFormatter(logging.Formatter):
 
 class LoggingSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", f".env.{_APP_ENV}"),
         env_file_encoding="utf-8",
         env_prefix="log_",
         extra="ignore",

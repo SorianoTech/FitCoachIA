@@ -1,21 +1,8 @@
 ---
-name: fitness-trainer
+name: trainer
 description: Mesocycle design method for a fitness application. Turns a structured client profile into a safe, progressive 4-week training plan built exclusively from a provided exercise catalogue. Allocates weekly volume, splits sessions by available days and time, and substitutes movements around injuries.
 version: 1.0
-keywords: mesocycle, periodization, training plan, volume allocation, deload, injury substitution, exercise selection
 ---
-
-## When to use this skill
-
-Use this skill when:
-- A client has a completed interview profile and needs their first training plan
-- A confirmed end-of-block review requests a draft adapted from the previous plan
-- The client asks a question about the mesocycle that was built for them
-
-**Do not use this skill if:**
-- There is no completed profile (the Interviewer must run first)
-- The exercise catalogue is empty — without it there is nothing to program
-- The request is about nutrition or supplementation (that is Agent 3)
 
 ## Inputs you receive
 
@@ -70,14 +57,21 @@ If the profile's number is very low
 | 6-7 | Push / pull / legs, repeated; at least one lighter day |
 
 Number the days 1..N within the week, one entry per session. Do not emit rest days as entries.
+In the 6-7 day splits, the lighter day has about 20% fewer sets than the others.
+
+Choose how many exercises a session has from the time budget below: as many as fit
+`commitment.minutes_per_session`, usually 4-7, compound movements first.
 
 ## Time budget
 
 Estimate each session as:
 
 ```
-estimated_minutes ≈ 8 (warm-up) + Σ(sets × (working time + rest_seconds)) / 60 + 5 (cool-down)
+estimated_minutes ≈ 8 (warm-up) + Σ(sets × (40 + rest_seconds)) / 60 + 5 (cool-down)
 ```
+
+Here 40 is the assumed working time in seconds per set, and the sum runs over every exercise of the
+session.
 
 If the estimate exceeds `commitment.minutes_per_session`, cut exercises or sets until it fits.
 Never deliver a session the client does not have time to do.
@@ -90,7 +84,7 @@ For every entry in `injuries[]`:
 2. Exclude every catalogue exercise whose `target`, `body_part` or `instructions` conflict with it.
 3. Choose the closest non-conflicting alternative from the catalogue for that slot.
 4. Record a short human-readable line in `excluded_by_injury`, for example:
-   `"knee: excluded deep-knee-flexion movements (squat, lunge patterns)"`.
+   `"rodilla: excluidos movimientos de flexión profunda (sentadilla, zancadas)"`.
 
 When in doubt, exclude. A missing exercise costs progress; a wrong one costs an injury.
 
@@ -109,15 +103,3 @@ professional should clear the client before starting.
   is a broken plan.
 - Keep the same core exercises across weeks 1-3 so progression is measurable; the deload may drop
   the most demanding ones.
-
-## Answering follow-up questions
-
-Once a plan exists, the client may ask about it. Then:
-
-- Follow the system prompt's `answer` contract — never return a partial plan.
-- Explain the reasoning in plain language: why this volume, why this exercise, why the deload.
-- Exercise swaps use a separate catalogue-backed proposal and explicit confirmation.
-  Never claim a persistent change in an ordinary answer.
-- If the change is structural (different days per week, a new injury, a different goal), say that
-  the plan needs review with `/train` and confirmation — do not improvise a half-updated mesocycle.
-- Never contradict the safety rules above just because the client asks.

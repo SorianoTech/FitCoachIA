@@ -112,15 +112,100 @@ class TestPromptLoader:
         assert "separately for each" in result
         assert "{{rag_context}}" in result
 
+    def test_trainer_prompt_uses_placeholders_and_states_evaluated_limits(self) -> None:
+        loader = PromptLoader()
+        prompt = loader.load_assembled_system_prompt("trainer")
+        skill = (loader._skills_root / "trainer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "1234" not in prompt
+        assert '"focus": "Empuje"' in prompt
+        assert "`reply` at most 600 characters" in prompt
+        assert "`report` at most 3500 characters" in prompt
+        assert "SELF-CHECK" in prompt
+        assert "Σ(sets × (40 + rest_seconds))" in skill
+
+    def test_answer_prompt_routes_intents_and_documents_swap_selection(self) -> None:
+        prompt = PromptLoader().load_system_prompt("trainer", "answer_prompt.txt")
+
+        assert "# INTENT ROUTING" in prompt
+        assert (
+            '"week": 1-4 or null, "exercise_id": integer or null, "reason": string or null'
+            in prompt
+        )
+        assert "hypothetical" in prompt
+        assert "at most 1200 characters" in prompt
+        assert '"intent":"<answer|exercise_swap|renewal>"' in prompt
+        assert '"swap_selection":<object or null>' in prompt
+        assert '"intent":"answer","swap_selection":null' not in prompt
+
+    def test_skills_carry_no_dead_or_noise_sections(self) -> None:
+        skills_root = PromptLoader()._skills_root
+        trainer = (skills_root / "trainer" / "SKILL.md").read_text(encoding="utf-8")
+        interviewer = (skills_root / "interviewer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "Answering follow-up questions" not in trainer
+        for noise in ("Keywords and Triggers", "Continuous Improvement", "When to use this skill"):
+            assert noise not in interviewer
+            assert noise not in trainer
+
+    def test_interviewer_prompt_and_skill_close_the_open_contract_gaps(self) -> None:
+        loader = PromptLoader()
+        prompt = loader.load_system_prompt("interviewer")
+        skill = (loader._skills_root / "interviewer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "translated into Spanish" in prompt
+        assert "CURRENT DATETIME" in prompt
+        assert "in the same turn as the answer to the last step" in prompt
+        assert "always ask them in Spanish" in skill
+        assert "`timeframe_weeks`" in skill
+        assert "`realistic_expectation`" in skill
+        assert "dizzy or faint" in skill
+        assert "Signs of distress" in skill
+        assert "testosterone" not in skill
+
+    def test_trainer_skill_examples_are_spanish_and_session_size_is_defined(self) -> None:
+        skill = (PromptLoader()._skills_root / "trainer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "knee: excluded" not in skill
+        assert "rodilla: excluidos" in skill
+        assert "usually 4-7" in skill
+        assert "lighter day" in skill
+
+    def test_dev_skills_keep_core_data_user_provided_and_align_with_the_evaluator(self) -> None:
+        skills_root = PromptLoader()._skills_root
+        trainer = (skills_root / "trainer-dev" / "SKILL.md").read_text(encoding="utf-8")
+        interviewer = (skills_root / "interviewer-dev" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "Follow-up questions" not in trainer
+        assert "`goal.primary` | Reps" in trainer
+        assert "chest, back and legs" in trainer
+        assert "round(0.55 × its week 1 sets)" in trainer
+        assert "never from defaults" in interviewer
+        assert "not assessed (development test)" in interviewer
+        assert "Mifflin-St" in interviewer
+        assert "BMI below 13.5" in interviewer
+
+    def test_interviewer_calculations_are_fixed_and_no_elimination_diets(self) -> None:
+        loader = PromptLoader()
+        prompt = loader.load_assembled_system_prompt("interviewer")
+        skill = (loader._skills_root / "interviewer" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "Mifflin-St Jeor" in skill
+        assert "NEAT base" in skill
+        assert "gluten elimination" not in skill
+        assert "never\n  suggest elimination diets" in skill
+        assert "ONE skill step per message" in prompt
+        assert "those two sections win" in prompt
+
     def test_trainer_contract_lives_in_the_prompt_not_the_skill(self) -> None:
         loader = PromptLoader()
         prompt = loader.load_assembled_system_prompt("trainer")
         skill = (loader._skills_root / "trainer" / "SKILL.md").read_text(encoding="utf-8")
 
         assert "PLAN STRUCTURE:" in prompt
-        assert '"exercise_id": 1234' in prompt
+        assert '"exercise_id": "<id copiado de rag_context>"' in prompt
         assert "Plan Structure" not in skill
-        assert '"exercise_id": 1234' not in skill
+        assert "<id copiado de rag_context>" not in skill
 
     def test_load_assembled_system_prompt_injects_skill_and_keeps_rag_placeholder(
         self, loader: PromptLoader

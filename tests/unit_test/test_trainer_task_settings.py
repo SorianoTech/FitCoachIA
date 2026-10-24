@@ -47,6 +47,32 @@ def test_temperature_override_only_affects_selected_task(task: str, value: objec
             assert payload["temperature"] == (value if candidate == task else 0.5)
 
 
+@pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])
+@pytest.mark.parametrize("value", ["minimal", "low", "medium", "high"])
+def test_reasoning_effort_override_only_affects_selected_task(task: str, value: str) -> None:
+    settings = _settings(**{f"trainer_{task}_reasoning_effort": value})
+    for candidate in ("generation", "consultation", "extraction"):
+        payload = build_trainer_model(settings, candidate)._get_request_payload([("human", "x")])
+        if candidate == task:
+            assert payload["reasoning_effort"] == value
+        else:
+            assert "reasoning_effort" not in payload
+
+
+@pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])
+def test_reasoning_effort_omitted_by_default_and_with_default_value(task: str) -> None:
+    for settings in (_settings(), _settings(**{f"trainer_{task}_reasoning_effort": "default"})):
+        payload = build_trainer_model(settings, task)._get_request_payload([("human", "x")])
+        assert "reasoning_effort" not in payload
+
+
+@pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])
+@pytest.mark.parametrize("value", ["none", "", "extreme"])
+def test_invalid_reasoning_effort_fails(task: str, value: str) -> None:
+    with pytest.raises(ValidationError):
+        _settings(**{f"trainer_{task}_reasoning_effort": value})
+
+
 @pytest.mark.parametrize("value", [-0.1, 2.1, "invalid", "", float("inf"), float("nan")])
 @pytest.mark.parametrize("task", ["generation", "consultation", "extraction"])
 def test_invalid_temperature_override_fails(task: str, value: object) -> None:

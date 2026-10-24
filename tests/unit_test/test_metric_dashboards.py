@@ -39,7 +39,7 @@ def test_dashboards_have_distinct_panels_and_environment_scoped_sources(filename
     environment = next(
         item for item in dashboard["templating"]["list"] if item["name"] == "environment"
     )
-    assert environment["query"] == "production"
+    assert environment["query"] == "dev,prod"
     assert not environment["multi"]
     for panel in panels:
         if panel["type"] == "text":
@@ -48,7 +48,7 @@ def test_dashboards_have_distinct_panels_and_environment_scoped_sources(filename
         datasource = panel["datasource"]
         for target in panel["targets"]:
             if datasource["type"] == "postgres":
-                assert datasource["uid"] == "fitcoach-postgres"
+                assert datasource["uid"] == "fitcoach-postgres-${environment}"
                 assert "SELECT" in target["rawSql"]
                 if "$__timeFilter(" not in target["rawSql"]:
                     assert "status='pending'" in target["rawSql"]

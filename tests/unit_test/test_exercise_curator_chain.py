@@ -71,3 +71,18 @@ def test_builds_model_with_curator_specific_settings() -> None:
     assert model.request_timeout == 12
     assert payload["temperature"] == 0.1
     assert payload["response_format"]["json_schema"]["name"] == "ExerciseCuratorTurn"
+
+
+@pytest.mark.parametrize(("value", "expected"), [("low", "low"), ("default", None), (None, None)])
+def test_curator_reasoning_effort_is_optional(value: str | None, expected: str | None) -> None:
+    settings = IASettings.model_validate({
+        "base_url": "http://localhost:9999",
+        "token": "test",
+        "model": "general",
+        "temperature": 0.8,
+        "exercise_curator_reasoning_effort": value,
+    })
+
+    payload = build_exercise_curator_model(settings)._get_request_payload([("human", "test")])
+
+    assert payload.get("reasoning_effort") == expected

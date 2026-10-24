@@ -75,12 +75,25 @@ async def parse_update(request: Request) -> Update:
     try:
         data = await request.json()
     except ValueError as exc:
-        logger.warning(f"Malformed webhook body received: {exc}")
+        logger.warning("Malformed webhook body received: %s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Malformed JSON body",
         ) from exc
-    return Update.de_json(data)
+    if not isinstance(data, dict):
+        logger.warning("Malformed Telegram update received: expected a JSON object")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telegram update must be a JSON object",
+        )
+    try:
+        return Update.de_json(data)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        logger.warning("Malformed Telegram update received: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed Telegram update",
+        ) from exc
 
 
 @dataclass(frozen=True, slots=True)

@@ -23,14 +23,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
-_APP_ENV = os.getenv("APP_ENV", "production")
+_APP_ENV = os.getenv("APP_ENV", "dev")
 SERVICE_NAME = "fitcoach-ia"
 SERVICE_VERSION = os.getenv("APP_VERSION", "unknown")
 
 
 class OTelSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", f".env.{_APP_ENV}"),
         env_file_encoding="utf-8",
         env_prefix="otel_",
         extra="ignore",

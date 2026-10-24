@@ -1,11 +1,12 @@
 """Application settings loaded from the environment.
 
 Real OS environment variables take precedence over any ``.env`` file, so in
-Docker the values are injected as container env vars and picked up
-automatically. The ``.env`` file is a local convenience only.
+``pre``/``pro``/Docker the values are injected as container env vars and picked
+up automatically -- nothing is shipped to production. The ``.env`` files are a
+local-development convenience only.
 
 Precedence (high -> low): OS env vars > ``FITCOACH_ENV_FILE`` when set >
-``.env`` > defaults.
+``.env.<APP_ENV>`` > ``.env`` > defaults.
 """
 
 import os
@@ -25,8 +26,8 @@ _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 TaskTemperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | Literal["default"]
 ReasoningEffort = Literal["minimal", "low", "medium", "high", "default"]
 
-_APP_ENV = os.getenv("APP_ENV", "production")
-_ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or ".env"
+_APP_ENV = os.getenv("APP_ENV", "dev")
+_ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or (".env", f".env.{_APP_ENV}")
 
 
 class Settings(BaseSettings):
@@ -128,6 +129,10 @@ class IASettings(BaseSettings):
     trainer_generation_temperature: TaskTemperature | None = None
     trainer_consultation_temperature: TaskTemperature | None = None
     trainer_extraction_temperature: TaskTemperature | None = None
+    # None or "default" omits reasoning_effort from the request.
+    trainer_generation_reasoning_effort: ReasoningEffort | None = None
+    trainer_consultation_reasoning_effort: ReasoningEffort | None = None
+    trainer_extraction_reasoning_effort: ReasoningEffort | None = None
     trainer_consultation_model: str | None = Field(default=None, min_length=1)
     trainer_consultation_max_tokens: int | None = Field(default=None, gt=0)
     trainer_consultation_timeout: float | None = Field(default=None, gt=0)
@@ -142,6 +147,7 @@ class IASettings(BaseSettings):
     exercise_curator_temperature: TaskTemperature = 0.1
     exercise_curator_max_tokens: int = Field(default=1200, gt=0)
     exercise_curator_timeout: float = Field(default=30, gt=0)
+    exercise_curator_reasoning_effort: ReasoningEffort | None = None
     exercise_duplicate_similarity_threshold: float = Field(default=0.92, ge=0, le=1)
 
 

@@ -47,13 +47,16 @@ def _service(hits: list[dict[str, Any]], llm: FakeLLM, min_score: float = 0.5) -
 
 
 @pytest.mark.asyncio
-async def test_ask_answers_with_deduplicated_sources_above_min_score() -> None:
+async def test_ask_returns_one_numbered_source_per_passage_above_min_score() -> None:
     llm = FakeLLM()
 
     result = await _service(HITS, llm).ask("que es", [])
 
     assert result.answer == "respuesta [1]"
-    assert [(s.source, s.heading) for s in result.sources] == [("docs/a.md", "A")]
+    assert [(s.number, s.source, s.heading) for s in result.sources] == [
+        (1, "docs/a.md", "A"),
+        (2, "docs/a.md", "A"),
+    ]
     assert "tres" not in str(llm.calls[0][0].content)
 
 
@@ -85,6 +88,7 @@ def test_post_ask_returns_answer_and_sources() -> None:
     body = response.json()
     assert body["answer"] == "respuesta [1]"
     assert body["sources"][0]["source"] == "docs/a.md"
+    assert [s["number"] for s in body["sources"]] == [1, 2]
 
 
 def test_post_ask_maps_provider_failures_to_502() -> None:

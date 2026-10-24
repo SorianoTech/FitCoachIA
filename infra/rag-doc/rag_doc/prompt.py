@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from rag_doc.texts import SYSTEM_PROMPT
+from rag_doc.texts import REWRITE_PROMPT, SYSTEM_PROMPT
 
 
 def format_context(passages: list[dict[str, Any]]) -> str:
@@ -28,3 +28,11 @@ def build_messages(
         for turn in history
     ]
     return [SystemMessage(system), *turns, HumanMessage(question)]
+
+
+def build_rewrite_messages(question: str, history: list[dict[str, str]]) -> list[BaseMessage]:
+    transcript = "\n".join(f"{turn['role']}: {turn['content']}" for turn in history)
+    return [
+        SystemMessage(REWRITE_PROMPT),
+        HumanMessage(f"Conversación:\n{transcript}\n\nÚltima pregunta: {question}"),
+    ]

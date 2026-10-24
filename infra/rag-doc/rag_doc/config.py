@@ -1,6 +1,7 @@
 """Settings for rag-doc, read from environment variables prefixed ``RAG_``."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +14,10 @@ class RagSettings(BaseSettings):
     qdrant_collection: str = "rag_doc"
     embedding_model: str = "intfloat/multilingual-e5-base"
     embedding_dimensions: int = 768
+    embedding_provider: Literal["local", "openai"] = "local"
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_api_key: SecretStr | None = None
+    embedding_timeout_seconds: float = 30.0
     corpus_root: str = "/corpus"
     sources_file: str = "/app/sources.yml"
     chunk_max_chars: int = 1200
@@ -24,6 +29,9 @@ class RagSettings(BaseSettings):
     llm_max_retries: int = 2
     llm_reasoning_effort: str = "default"
     top_k: int = 5
+    query_rewrite: bool = True
+    chunk_min_chars: int = 0
+    chunk_overlap: int = 0
     min_score: float = 0.0
     rate_limit_per_minute: int = 10
     stt_provider: str = "cloud"

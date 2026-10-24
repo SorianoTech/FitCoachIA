@@ -86,8 +86,15 @@ h1 small { font-weight: 400; opacity: 0.85; margin-left: 4px; }
 .sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chip {
   font-size: 0.75rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border);
-  border-radius: 999px; padding: 2px 10px;
+  border-radius: 999px; padding: 2px 10px; overflow-wrap: anywhere;
 }
+.chip-num { color: var(--brand); }
+.chip--active { border-color: var(--brand); background: var(--surface, var(--bg)); box-shadow: 0 0 0 2px var(--brand); }
+.cite {
+  font: inherit; font-size: 0.8em; font-weight: 600; color: var(--brand); background: none;
+  border: 0; padding: 0 1px; cursor: pointer;
+}
+.cite:hover { text-decoration: underline; }
 .speak-btn {
   margin-top: 10px; display: inline-flex; align-items: center; gap: 4px; font: inherit;
   font-size: 0.82rem; color: var(--brand); background: none; border: 1px solid var(--border);

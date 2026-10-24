@@ -1,5 +1,5 @@
 // Sube CACHE_VERSION en cada despliegue que cambie estaticos
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',

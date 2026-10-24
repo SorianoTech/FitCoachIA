@@ -1,0 +1,27 @@
+{"id": "q01", "question": "¿Cómo se evita que dos réplicas del scheduler ejecuten el mismo job?", "source": "docs/scheduler.md", "heading": "Varias réplicas", "facts": ["SKIP LOCKED", "lease"]}
+{"id": "q02", "question": "¿Qué ocurre cuando un job de Telegram falla con RetryAfter?", "source": "docs/scheduler.md", "heading": "Fallos de Telegram", "facts": ["reintenta"]}
+{"id": "q03", "question": "¿Qué pasos hay que seguir para añadir un nuevo tipo de job?", "source": "docs/scheduler.md", "heading": "Cómo añadir un tipo de job", "facts": ["JobType", "handler"]}
+{"id": "q04", "question": "¿Cuántas dimensiones tienen los embeddings del catálogo de ejercicios y con qué modelo se generan?", "source": "docs/vector-db.md", "heading": "El modelo de embeddings", "facts": ["384", "all-MiniLM-L6-v2"]}
+{"id": "q05", "question": "¿Qué endpoints expone el servicio embedder?", "source": "docs/vector-db.md", "heading": "Servicio `embedder`", "facts": ["/embed", "/health"]}
+{"id": "q06", "question": "¿Cada cuánto sondea Docker el health check del contenedor y qué versión de Docker hace falta?", "source": "docs/how-to.md", "heading": "Health check del contenedor", "facts": ["5 minutos", "25.0"]}
+{"id": "q07", "question": "¿Cómo funciona la cuota de consumo de tokens por chat?", "source": "docs/how-to.md", "heading": "Cuota de consumo por chat", "facts": ["tokens", "ventana"]}
+{"id": "q08", "question": "¿Qué cubre el pipeline de CI/CD en la fase de despliegue continuo?", "source": "docs/ci-cd.md", "heading": "Continuous Deployment", "facts": ["deploy"]}
+{"id": "q09", "question": "¿Qué hooks se ejecutan en pre-commit antes de subir cambios?", "source": "docs/ci-cd.md", "heading": "Pre-CI", "facts": ["ruff"]}
+{"id": "q10", "question": "¿Qué información de tokens y coste del LLM se guarda?", "source": "docs/observabilidad.md", "heading": "Tokens y coste del LLM", "facts": ["token_usage"]}
+{"id": "q11", "question": "¿Cómo se registran las trazas de OpenTelemetry y dónde se almacenan?", "source": "docs/observabilidad.md", "heading": "Trazas", "facts": ["Tempo"]}
+{"id": "q12", "question": "¿Cómo se construyen las consultas para recuperar ejercicios del catálogo?", "source": "docs/rag-recuperacion-ejercicios.md", "heading": "Formación de las consultas", "facts": ["consulta"]}
+{"id": "q13", "question": "¿Qué filtros obligatorios se aplican al consultar pgVector?", "source": "docs/rag-recuperacion-ejercicios.md", "heading": "Filtros obligatorios", "facts": ["filtro"]}
+{"id": "q14", "question": "¿Cómo se sustituye un ejercicio de un plan de entrenamiento?", "source": "docs/trainer-agent.md", "heading": "Sustituir un ejercicio", "facts": ["ejercicio"]}
+{"id": "q15", "question": "¿Qué es el anclaje al catálogo del entrenador?", "source": "docs/trainer-agent.md", "heading": "Anclaje al catálogo", "facts": ["catálogo"]}
+{"id": "q16", "question": "¿Cuál es el contrato entre el modelo y la aplicación en el entrevistador?", "source": "docs/interviewer-agent.md", "heading": "Contrato entre el modelo", "facts": ["JSON"]}
+{"id": "q17", "question": "¿Qué ocurre con los errores del proveedor del LLM en la entrevista?", "source": "docs/interviewer-agent.md", "heading": "Errores del proveedor", "facts": ["error"]}
+{"id": "q18", "question": "¿Qué patrón se usa para programar las encuestas semanales?", "source": "docs/encuestas-satisfaccion.md", "heading": "Programación", "facts": ["outbox"]}
+{"id": "q19", "question": "¿Qué estados puede tener una respuesta de encuesta?", "source": "docs/encuestas-satisfaccion.md", "heading": "Estados", "facts": ["awaiting", "answered", "unanswered"]}
+{"id": "q20", "question": "¿Qué tablas tiene el modelo de datos de la base conversacional?", "source": "docs/modelo-datos.md", "heading": "Tablas", "facts": ["tabla"]}
+{"id": "q21", "question": "¿Qué comando levanta el entorno con Docker Compose?", "source": "docs/Makefile.md", "heading": "Levantar el entorno", "facts": ["make up"]}
+{"id": "q22", "question": "¿Cómo se ejecuta la API en local con Python sin Docker?", "source": "docs/how-to.md", "heading": "Ejecutar la API con Python local", "facts": ["uvicorn"]}
+{"id": "q23", "question": "¿Y cómo se cancelan esos jobs?", "history": [{"role": "user", "content": "¿Cómo se registran los jobs de encuesta de un ciclo?"}, {"role": "assistant", "content": "Al dar fecha a un ciclo se insertan 4 jobs evaluation_poll y 1 training_reminder en la misma transacción."}], "source": "docs/scheduler.md", "heading": "Ciclo de vida de un job", "facts": ["close_cycle", "/interview"]}
+{"id": "q24", "question": "¿Y por qué no se puede cambiar a otro?", "history": [{"role": "user", "content": "¿Qué modelo de embeddings usa el catálogo de ejercicios?"}, {"role": "assistant", "content": "Usa all-MiniLM-L6-v2 con 384 dimensiones."}], "source": "docs/vector-db.md", "heading": "El modelo de embeddings", "facts": ["re-vectorizar", "otro espacio"]}
+{"id": "q25", "question": "¿Cuál es la receta de la paella valenciana?", "source": null, "heading": null, "facts": [], "offtopic": true}
+{"id": "q26", "question": "¿Quién ganó el último mundial de fútbol?", "source": null, "heading": null, "facts": [], "offtopic": true}
+{"id": "q27", "question": "¿Cómo configuro Kubernetes con Helm en este proyecto?", "source": null, "heading": null, "facts": [], "offtopic": true}

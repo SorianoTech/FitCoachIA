@@ -45,6 +45,7 @@ class AskRequest(BaseModel):
 
 
 class SourceOut(BaseModel):
+    number: int
     source: str
     heading: str
     score: float

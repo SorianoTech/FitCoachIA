@@ -64,6 +64,33 @@ services:
       qdrant:
         condition: service_healthy
 
+  evaluator:
+    # Eval offline de retrieval; limitado en CPU/RAM para no saturar el servidor.
+    build:
+      context: ./
+      dockerfile: Dockerfile-rag-doc
+    profiles: [ "eval" ]
+    command: [ "python", "/app/eval/retrieval_eval.py" ]
+    cpus: 2
+    mem_limit: 3g
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PYTHONPATH: /app
+      EVAL_OUTPUT_DIR: /app/results
+      EVAL_THREADS: "2"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    volumes:
+      - ../../docs:/corpus/docs:ro
+      - ../../infra:/corpus/infra:ro
+      - ./sources.yml:/app/sources.yml:ro
+      - ./eval:/app/eval:ro
+      - ./eval/results:/app/results
+    networks:
+      - rag-internal
+
 volumes:
   qdrant_storage:
 

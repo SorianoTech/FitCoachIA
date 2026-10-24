@@ -32,6 +32,8 @@ infra/vector-db/loader/resources/**
 # Artefactos de las ejecuciones offline de los agentes (make trainer-debug)
 runs/
 
+# Resultados de make rag-eval
+infra/rag-doc/eval/results/
 # Frontend compilado y dependencias locales
 frontend/node_modules/
 frontend/dist/

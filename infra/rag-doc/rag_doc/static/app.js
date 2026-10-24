@@ -9,6 +9,27 @@ const offlineBanner = document.getElementById('offline-banner');
 const installBtn = document.getElementById('install-btn');
 const micBtn = document.getElementById('mic-btn');
 
+// Turns each [n] with a matching source into a button that highlights its chip (DOM nodes only).
+function renderCitations(body, text, chips) {
+  for (const part of text.split(/(\[\d+\])/)) {
+    const chip = chips.get(Number(part.slice(1, -1)));
+    if (!/^\[\d+\]$/.test(part) || !chip) {
+      body.appendChild(document.createTextNode(part));
+      continue;
+    }
+    const cite = document.createElement('button');
+    cite.type = 'button';
+    cite.className = 'cite';
+    cite.textContent = part;
+    cite.addEventListener('click', () => {
+      chip.classList.add('chip--active');
+      chip.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      setTimeout(() => chip.classList.remove('chip--active'), 2500);
+    });
+    body.appendChild(cite);
+  }
+}
+
 function addMessage(kind, text, sources) {
   document.getElementById('welcome')?.remove();
   const row = document.createElement('div');
@@ -20,19 +41,26 @@ function addMessage(kind, text, sources) {
   bubble.className = 'bubble';
   const body = document.createElement('div');
   body.className = 'text';
-  body.textContent = text; // never innerHTML: the answer comes from an LLM
   bubble.appendChild(body);
   if (sources && sources.length) {
     const list = document.createElement('div');
     list.className = 'sources';
+    const chips = new Map();
     for (const s of sources) {
       const chip = document.createElement('span');
       chip.className = 'chip';
-      chip.textContent = s.source.split('/').pop();
+      const num = document.createElement('b');
+      num.className = 'chip-num';
+      num.textContent = `[${s.number}]`;
+      chip.append(num, ` ${s.source.split('/').pop()}${s.heading ? ` › ${s.heading}` : ''}`);
       chip.title = s.heading ? `${s.source} — ${s.heading}` : s.source;
+      chips.set(s.number, chip);
       list.appendChild(chip);
     }
+    renderCitations(body, text, chips);
     bubble.appendChild(list);
+  } else {
+    body.textContent = text; // never innerHTML: the answer comes from an LLM
   }
   row.append(avatar, bubble);
   messages.appendChild(row);

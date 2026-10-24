@@ -107,7 +107,7 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make app` | Reconstruye y reinicia solo la API (`--no-deps`) |
 | `make down` / `make app-logs` | Detiene el stack / sigue los logs |
 | `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
-| `make rag-up` / `rag-down` / `rag-logs` / `rag-index` | Web de preguntas a la documentación (`infra/rag-doc`) e indexación |
+| `make rag-up` / `rag-down` / `rag-logs` / `rag-index` / `rag-eval` | Web de preguntas a la documentación (`infra/rag-doc`), indexación y eval de retrieval |
 
 El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md). Los targets `trainer-*` se explican en [docs/devtools.md](docs/devtools.md).
 

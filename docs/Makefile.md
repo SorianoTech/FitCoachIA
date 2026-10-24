@@ -63,6 +63,7 @@ contenedor. Detalle en [entornos-y-despliegue.md](entornos-y-despliegue.md#2-el-
 |---|---|
 | `make rag-up` | Construye y levanta Qdrant y la web `rag-doc` (`infra/rag-doc`); publica `127.0.0.1:8200` |
 | `make rag-index` | Reindexa la lista blanca `infra/rag-doc/sources.yml` en Qdrant (idempotente) |
+| `make rag-eval ARGS="..."` | Eval offline de retrieval de rag-doc en un contenedor limitado a 2 CPUs y 3 GB (`ARGS="--variants min300"`); guarda el JSON en `infra/rag-doc/eval/results/` |
 | `make rag-logs` | Sigue los logs |
 | `make rag-down` | Detiene el stack; no borra el volumen del índice |
 

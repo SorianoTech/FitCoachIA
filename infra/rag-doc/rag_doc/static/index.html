@@ -6,7 +6,7 @@
   <title>FitCoachIA · Documentación</title>
   <meta name="description" content="Pregunta a la documentación de FitCoachIA">
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#0055ff">
+  <meta name="theme-color" content="#4f46e5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="FitCoach Docs">
@@ -17,18 +17,27 @@
 <body>
   <div id="app">
     <header>
-      <h1>FitCoachIA · Documentación</h1>
-      <button id="install-btn" type="button" hidden>Instalar app</button>
+      <h1><span aria-hidden="true">💪</span> FitCoachIA <small>Documentación</small></h1>
+      <button id="install-btn" type="button" hidden>Instalar</button>
     </header>
     <main id="messages" aria-live="polite">
-      <p class="hint">Pregunta lo que quieras sobre la documentación de FitCoachIA.</p>
+      <section id="welcome">
+        <div class="logo" aria-hidden="true">💪</div>
+        <h2>¿En qué te ayudo?</h2>
+        <p>Pregunta por texto o por voz sobre la documentación de FitCoachIA.</p>
+        <div class="suggestions">
+          <button type="button" class="suggestion">¿Cómo funciona el scheduler de trabajos?</button>
+          <button type="button" class="suggestion">¿Cómo se despliega la aplicación?</button>
+          <button type="button" class="suggestion">¿Qué hace el agente entrenador?</button>
+        </div>
+      </section>
     </main>
     <p id="offline-banner" role="status" hidden>Sin conexión: no se pueden hacer preguntas.</p>
     <form id="chat-form" autocomplete="off">
       <label for="question" class="sr-only">Pregunta</label>
       <input id="question" type="text" maxlength="500" placeholder="Escribe o dicta tu pregunta..." required>
-      <button id="mic-btn" type="button" aria-label="Dictar pregunta" hidden>🎤</button>
-      <button id="send-btn" type="submit">Enviar</button>
+      <button id="mic-btn" type="button" aria-label="Dictar pregunta" title="Dictar pregunta" hidden>🎤</button>
+      <button id="send-btn" type="submit" aria-label="Enviar">➤</button>
     </form>
   </div>
   <script src="/app.js"></script>

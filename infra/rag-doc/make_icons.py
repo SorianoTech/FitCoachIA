@@ -4,7 +4,7 @@ import struct
 import zlib
 from pathlib import Path
 
-BRAND = (0, 85, 255)
+BRAND = (79, 70, 229)
 WHITE = (255, 255, 255)
 OUT = Path(__file__).parent / "rag_doc" / "static" / "icons"
 

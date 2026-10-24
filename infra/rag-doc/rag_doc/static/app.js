@@ -10,55 +10,100 @@ const installBtn = document.getElementById('install-btn');
 const micBtn = document.getElementById('mic-btn');
 
 function addMessage(kind, text, sources) {
-  messages.querySelector('.hint')?.remove();
-  const el = document.createElement('div');
-  el.className = `msg ${kind}`;
-  el.textContent = text; // never innerHTML: the answer comes from an LLM
+  document.getElementById('welcome')?.remove();
+  const row = document.createElement('div');
+  row.className = `row ${kind}`;
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = kind === 'user' ? '🙂' : kind === 'error' ? '⚠️' : '🤖';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  const body = document.createElement('div');
+  body.className = 'text';
+  body.textContent = text; // never innerHTML: the answer comes from an LLM
+  bubble.appendChild(body);
   if (sources && sources.length) {
-    const list = document.createElement('ul');
+    const list = document.createElement('div');
     list.className = 'sources';
     for (const s of sources) {
-      const li = document.createElement('li');
-      li.textContent = s.heading ? `${s.source} — ${s.heading}` : s.source;
-      list.appendChild(li);
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = s.source.split('/').pop();
+      chip.title = s.heading ? `${s.source} — ${s.heading}` : s.source;
+      list.appendChild(chip);
     }
-    el.appendChild(list);
+    bubble.appendChild(list);
   }
-  messages.appendChild(el);
+  row.append(avatar, bubble);
+  messages.appendChild(row);
   messages.scrollTop = messages.scrollHeight;
-  return el;
+  return { row, bubble };
 }
 
-let currentAudio = null;
+function addThinking() {
+  const { row, bubble } = addMessage('assistant', '');
+  bubble.querySelector('.text').innerHTML = '<span class="dots"><i></i><i></i><i></i></span>'; // static markup
+  return row;
+}
+
+// Only one answer is read aloud at a time; clicking the active button stops it
+let activeSpeech = null;
+
+function stopSpeech() {
+  if (!activeSpeech) return;
+  const { audio, url, button, controller } = activeSpeech;
+  activeSpeech = null;
+  controller.abort();
+  audio?.pause();
+  if (url) URL.revokeObjectURL(url);
+  setSpeakState(button, 'idle');
+}
+
+function setSpeakState(button, state) {
+  button.dataset.state = state;
+  button.disabled = false;
+  button.textContent = { idle: '🔊 Escuchar', loading: '⏳ Preparando…', playing: '⏹ Parar' }[state];
+}
+
 async function speak(text, button) {
-  currentAudio?.pause();
-  button.disabled = true;
+  const wasActive = activeSpeech?.button === button;
+  stopSpeech();
+  if (wasActive) return;
+  const session = { button, audio: null, url: null, controller: new AbortController() };
+  activeSpeech = session;
+  setSpeakState(button, 'loading');
   try {
     const response = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
+      signal: session.controller.signal,
     });
     if (!response.ok) throw Object.assign(new Error('http'), { status: response.status });
-    const url = URL.createObjectURL(await response.blob());
-    currentAudio = new Audio(url);
-    currentAudio.addEventListener('ended', () => URL.revokeObjectURL(url));
-    await currentAudio.play();
+    session.url = URL.createObjectURL(await response.blob());
+    if (activeSpeech !== session) {
+      URL.revokeObjectURL(session.url);
+      return;
+    }
+    session.audio = new Audio(session.url);
+    session.audio.addEventListener('ended', () => activeSpeech === session && stopSpeech());
+    setSpeakState(button, 'playing');
+    await session.audio.play();
   } catch (err) {
+    if (err.name === 'AbortError') return;
+    if (activeSpeech === session) stopSpeech();
     addMessage('error', errorText(err.status));
-  } finally {
-    button.disabled = false;
   }
 }
 
 function addAnswer(text, sources) {
-  const el = addMessage('assistant', text, sources);
+  const { bubble } = addMessage('assistant', text, sources);
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'speak-btn';
-  button.textContent = '🔊 Escuchar';
+  setSpeakState(button, 'idle');
   button.addEventListener('click', () => speak(text, button));
-  el.appendChild(button);
+  bubble.appendChild(button);
 }
 
 function errorText(status) {
@@ -71,7 +116,7 @@ function errorText(status) {
 }
 
 async function ask(question) {
-  const pending = addMessage('assistant', 'Pensando...');
+  const pending = addThinking();
   try {
     const response = await fetch('/api/ask', {
       method: 'POST',
@@ -95,6 +140,10 @@ form.addEventListener('submit', async (event) => {
   if (!question || !navigator.onLine) return;
   await submitQuestion(question);
 });
+
+for (const chip of document.querySelectorAll('.suggestion')) {
+  chip.addEventListener('click', () => navigator.onLine && submitQuestion(chip.textContent));
+}
 
 async function submitQuestion(question) {
   input.value = '';

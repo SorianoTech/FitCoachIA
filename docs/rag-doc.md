@@ -80,14 +80,17 @@ Errores: `422` entrada no válida, `413` audio demasiado grande o largo, `415` t
 ## Voz
 
 El navegador graba con `MediaRecorder`, envía el audio a `/api/stt` y lanza la pregunta con el texto
-obtenido; cada respuesta tiene un botón "Escuchar" que pide el audio a `/api/tts`. Whisper (`small`,
+obtenido; cada respuesta tiene un botón "Escuchar" que pide el audio a `/api/tts`. El mismo botón se
+convierte en "Parar" mientras suena (o se prepara) y al pulsarlo corta el audio y cancela la
+petición; solo suena una respuesta a la vez. Whisper (`small`,
 int8, CPU) y la voz de Piper van **dentro de la imagen** y en ejecución `HF_HUB_OFFLINE=1`, así que
 el arranque no depende de la red. Cambiar `RAG_STT_MODEL` exige reconstruir la imagen. El micrófono
 solo funciona con HTTPS (o `localhost`).
 
 ## PWA
 
-Servida por FastAPI desde `rag_doc/static/`, sin paso de build. El service worker precachea el shell,
+Servida por FastAPI desde `rag_doc/static/`, sin paso de build. Diseño de chat con tema índigo,
+modo oscuro automático, pantalla de bienvenida con preguntas sugeridas y adaptada a móvil. El service worker precachea el shell,
 usa red primero para la navegación (con `offline.html` de respaldo) y **nunca cachea `/api/*`**.
 **Sube `CACHE_VERSION` en `sw.js` cada vez que cambies ficheros estáticos.** En iOS no hay
 `beforeinstallprompt`: se instala desde Compartir → "Añadir a pantalla de inicio".

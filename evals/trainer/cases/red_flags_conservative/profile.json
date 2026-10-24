@@ -1,0 +1,77 @@
+{
+  "user": {
+    "name_or_username": "Antonio",
+    "registration_date": "2026-09-01T10:00:00Z"
+  },
+  "biometrics": {
+    "age": 58,
+    "weight_kg": 92.0,
+    "height_cm": 172,
+    "bmi": 31.1,
+    "perceived_composition": "exceso de grasa",
+    "estimated_composition": "obesidad grado 1"
+  },
+  "goal": {
+    "primary": "lose_fat",
+    "secondary": null,
+    "timeframe_weeks": 24,
+    "realistic_expectation": true
+  },
+  "activity": {
+    "occupation": "oficina",
+    "neat_level": "sedentary",
+    "description": "trabajo sentado"
+  },
+  "nutrition": {
+    "meals_per_day": 3,
+    "critical_foods": [],
+    "general_pattern": "variada"
+  },
+  "digestive_energy": {
+    "bloating_frequency": "never",
+    "energy_crash": false,
+    "triggers": []
+  },
+  "injuries": [],
+  "training": {
+    "consistent_years": 0.0,
+    "environment": "gym",
+    "equipment": [
+      "barbell",
+      "dumbbell",
+      "cable",
+      "leverage machine",
+      "body weight"
+    ]
+  },
+  "sleep": {
+    "average_hours": 6.0,
+    "quality": "fair",
+    "problems": [
+      "ronquidos"
+    ]
+  },
+  "supplementation": {
+    "current": [],
+    "monthly_budget_usd": null,
+    "restrictions": []
+  },
+  "commitment": {
+    "days_per_week": 2,
+    "minutes_per_session": 40,
+    "flexibility": "flexible",
+    "dropout_history": null
+  },
+  "flags": {
+    "red": [
+      "hipertension no controlada",
+      "dolor toracico ocasional al subir escaleras"
+    ],
+    "yellow": []
+  },
+  "initial_calculations": {
+    "bmr": 1750.0,
+    "estimated_tdee": 2150.0,
+    "tolerable_volume_sets": 6
+  }
+}

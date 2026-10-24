@@ -1,17 +1,24 @@
+FROM node:22-alpine AS frontend
+WORKDIR /frontend
+COPY ./frontend/package.json ./frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ./frontend/ ./
+RUN npm run build
+
 # Stage 1: Ejecuta todos los requerimientos para ejecutar la aplicación
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 # Instalar herramientas para compilar extensiones nativas de Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   && rm -rf /var/lib/apt/lists/*
 
-COPY ./requirements.txt .
+COPY ./src/requirements.txt .
 RUN pip install --prefix=/install -q --no-cache-dir -r requirements.txt
 RUN python -m venv /opt/fitcoach
 
 # Stage 2: runtime (imagen final limpia, sin build-essential)
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ARG APP_LIB_DIR=/opt/fitcoach
 
@@ -22,7 +29,7 @@ ENV PYTHONUNBUFFERED=1
 # No comprueba si hay versión más nueva de pip (más rápido)
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 # Configuramos las rutas a las librerias para que Python encuentre todo
-ENV PYTHONPATH=/app:$APP_LIB_DIR/lib/python3.11/site-packages
+ENV PYTHONPATH=/app:$APP_LIB_DIR/lib/python3.12/site-packages
 # Configurar el path para ejecutar la aplicación
 ENV PATH="$APP_LIB_DIR/bin:$PATH"
 
@@ -30,10 +37,14 @@ EXPOSE 8000
 
 WORKDIR /app
 
-COPY --from=builder /install $APP_LIB_DIR
+RUN groupadd --system fitcoach \
+  && useradd --system --gid fitcoach --home-dir /app --no-create-home fitcoach
 
-COPY ./fitcoach ./fitcoach
+COPY --from=builder --chown=fitcoach:fitcoach /install $APP_LIB_DIR
+COPY --chown=fitcoach:fitcoach ./src/fitcoach ./fitcoach
+COPY --from=frontend --chown=fitcoach:fitcoach /frontend/dist ./fitcoach/static/miniapp
+COPY --chown=fitcoach:fitcoach ./alembic ./alembic
+COPY --chown=fitcoach:fitcoach ./alembic.ini .
 
-ENTRYPOINT ["fastapi", "run","fitcoach/main.py"]
-
-CMD ["--port", "8000"]
+USER fitcoach
+ENTRYPOINT ["sh", "-c", "alembic upgrade head && exec fastapi run fitcoach/main.py --port 8000"]

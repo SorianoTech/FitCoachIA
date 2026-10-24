@@ -1,0 +1,54 @@
+name: fitcoach-vector-db-dev
+
+services:
+
+  pgvector-dev:
+    build:
+      context: ./
+      dockerfile: Dockerfile-pgVector
+    container_name: pgvector-dev
+    env_file:
+      - .env.dev
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgvector-dev_volume:/var/lib/postgresql
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U fitcoach -d fitcoach" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin-dev:
+    image: dpage/pgadmin4
+    container_name: pgadmin4
+    env_file:
+      - .env.dev
+    volumes:
+      - pgadmin-dev_data:/root/.pgadmin
+    networks:
+      - internal
+      - proxy-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "-O", "-", "http://localhost:80/misc/ping" ]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      pgvector-dev:
+        condition: service_healthy
+
+volumes:
+  pgadmin-dev_data:
+  pgvector-dev_volume:
+
+networks:
+  internal:
+    name: fitcoach-dev-internal
+    external: true
+  proxy-network:
+    external: true

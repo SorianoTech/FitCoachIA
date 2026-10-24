@@ -1,0 +1,72 @@
+{
+  "user": {
+    "name_or_username": "Marcos",
+    "registration_date": "2026-09-01T10:00:00Z"
+  },
+  "biometrics": {
+    "age": 32,
+    "weight_kg": 75.0,
+    "height_cm": 175,
+    "bmi": 24.5,
+    "perceived_composition": "normal",
+    "estimated_composition": "normal"
+  },
+  "goal": {
+    "primary": "gain_muscle",
+    "secondary": null,
+    "timeframe_weeks": 12,
+    "realistic_expectation": true
+  },
+  "activity": {
+    "occupation": "oficina",
+    "neat_level": "active",
+    "description": "camina mucho a diario"
+  },
+  "nutrition": {
+    "meals_per_day": 3,
+    "critical_foods": [],
+    "general_pattern": "variada"
+  },
+  "digestive_energy": {
+    "bloating_frequency": "never",
+    "energy_crash": false,
+    "triggers": []
+  },
+  "injuries": [],
+  "training": {
+    "consistent_years": 3.0,
+    "environment": "gym",
+    "equipment": [
+      "barbell",
+      "dumbbell",
+      "cable",
+      "leverage machine",
+      "body weight"
+    ]
+  },
+  "sleep": {
+    "average_hours": 7.5,
+    "quality": "good",
+    "problems": []
+  },
+  "supplementation": {
+    "current": [],
+    "monthly_budget_usd": null,
+    "restrictions": []
+  },
+  "commitment": {
+    "days_per_week": 4,
+    "minutes_per_session": 75,
+    "flexibility": "flexible",
+    "dropout_history": null
+  },
+  "flags": {
+    "red": [],
+    "yellow": []
+  },
+  "initial_calculations": {
+    "bmr": 1700.0,
+    "estimated_tdee": 2300.0,
+    "tolerable_volume_sets": 16
+  }
+}

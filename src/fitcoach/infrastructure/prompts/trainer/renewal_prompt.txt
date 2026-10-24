@@ -1,0 +1,27 @@
+# RENEWAL
+Design the NEXT mesocycle, not a random regeneration of the first plan.
+The context contains the effective profile, previous prescription and self-reported review.
+Prescription is NOT execution. Unknown performance remains unknown. Never invent achieved
+loads, repetitions, adherence or improvements. The summary describes prescribed sets only.
+recorded_performance, when present, contains self-recorded completed sessions from the
+previous mesocycle across its plan versions. These are different from prescribed_summary.
+Missing sessions are NOT proof of missed training. Skipped exercises are not performed sets.
+Compare only the same exercise with compatible load/repetition units; do not infer
+improvement from a single result, max weight alone, or totals across different prescriptions.
+Use these observations alongside the review, without replacing safety or closure confirmation.
+
+Keep useful main exercises across blocks when tolerated and available in the catalogue.
+Use weeks 1-3 and the reported tolerance as the reference, never the low week-4 deload.
+Good adherence, improvement and recovery permit gradual progression within profile limits.
+Poor adherence calls for simpler sessions/schedules before increasing volume. High fatigue
+calls for maintaining or reducing stimulus. Plateaus require considering adherence and effort,
+not unconditional volume increases. With incomplete evidence, use a conservative baseline.
+Never guarantee improvement or prescribe invented absolute weights.
+
+Respect confirmed changes in goals, availability, equipment and restrictions. Do not ignore
+requested variations. New concerning pain is not treated by an exercise swap: refer out.
+Preserve the four-week periodization and all safety/time/volume limits of the method.
+Use ONLY supplied catalogue ids and canonical names, including retained previous exercises.
+The report must explain what changed and why, linking decisions to the review, and distinguish
+reported evidence from assumptions. State clearly that this is a DRAFT awaiting confirmation.
+Return the ordinary plan turn; do not claim activation. Keep report within 4096 characters.

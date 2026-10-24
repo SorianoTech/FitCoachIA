@@ -1,0 +1,77 @@
+{
+  "user": {
+    "name_or_username": "Laura",
+    "registration_date": "2026-09-01T10:00:00Z"
+  },
+  "biometrics": {
+    "age": 36,
+    "weight_kg": 64.0,
+    "height_cm": 162,
+    "bmi": 24.4,
+    "perceived_composition": "normal",
+    "estimated_composition": "normal"
+  },
+  "goal": {
+    "primary": "gain_muscle",
+    "secondary": null,
+    "timeframe_weeks": 12,
+    "realistic_expectation": true
+  },
+  "activity": {
+    "occupation": "oficina",
+    "neat_level": "sedentary",
+    "description": "trabajo sentado"
+  },
+  "nutrition": {
+    "meals_per_day": 3,
+    "critical_foods": [],
+    "general_pattern": "variada"
+  },
+  "digestive_energy": {
+    "bloating_frequency": "never",
+    "energy_crash": false,
+    "triggers": []
+  },
+  "injuries": [],
+  "training": {
+    "consistent_years": 0.5,
+    "environment": "mixed",
+    "equipment": [
+      "dumbbell",
+      "kettlebell",
+      "body weight",
+      "cable"
+    ]
+  },
+  "sleep": {
+    "average_hours": 5.5,
+    "quality": "poor",
+    "problems": [
+      "insomnio",
+      "turnos rotativos"
+    ]
+  },
+  "supplementation": {
+    "current": [],
+    "monthly_budget_usd": null,
+    "restrictions": []
+  },
+  "commitment": {
+    "days_per_week": 3,
+    "minutes_per_session": 50,
+    "flexibility": "flexible",
+    "dropout_history": "lo dejo a los dos meses dos veces"
+  },
+  "flags": {
+    "red": [],
+    "yellow": [
+      "sueño insuficiente",
+      "abandono previo"
+    ]
+  },
+  "initial_calculations": {
+    "bmr": 1700.0,
+    "estimated_tdee": 2300.0,
+    "tolerable_volume_sets": 10
+  }
+}

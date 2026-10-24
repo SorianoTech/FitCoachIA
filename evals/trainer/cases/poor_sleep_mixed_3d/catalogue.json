@@ -1,0 +1,334 @@
+[
+  {
+    "id": 1298,
+    "name": "kettlebell one arm floor press",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "shoulders"
+    ],
+    "instructions_en": "Lie flat on your back on the floor with your knees bent and feet flat on the ground. Hold the kettlebell in one hand with your palm facing towards your feet and your arm extended straight up towards the ceiling. Slowly lower the kettlebell towards your chest by bending your elbow, keeping your upper arm close to your body. Pause for a moment when the kettlebell is just above your chest, then push it back up to the starting position by extending your elbow. Repeat for the desired number of repetitions, then switch to the other arm."
+  },
+  {
+    "id": 540,
+    "name": "kettlebell one arm push press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a kettlebell in one hand at shoulder level. Bend your knees slightly and engage your core. Press the kettlebell overhead by extending your arm and fully extending your legs. Lower the kettlebell back to the starting position by bending your knees and bringing the kettlebell back to your shoulder. Repeat for the desired number of repetitions, then switch sides."
+  },
+  {
+    "id": 343,
+    "name": "dumbbell lying one arm press",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "dumbbell",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "shoulders"
+    ],
+    "instructions_en": "Lie flat on a bench with a dumbbell in one hand and your feet flat on the ground. Hold the dumbbell at shoulder level with your palm facing forward. Press the dumbbell upward until your arm is fully extended. Pause for a moment at the top, then slowly lower the dumbbell back to the starting position. Repeat for the desired number of repetitions, then switch to the other arm."
+  },
+  {
+    "id": 1689,
+    "name": "push and pull bodyweight",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "body weight",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "deltoids"
+    ],
+    "instructions_en": "Start in a push-up position with your hands slightly wider than shoulder-width apart and your body in a straight line. Lower your chest towards the ground by bending your elbows, keeping your body straight. Push through your palms to extend your arms and return to the starting position. From the push-up position, pull your chest towards the ground by bending your elbows, keeping your body straight. Push through your palms to extend your arms and return to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3286,
+    "name": "weighted muscle up",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "weighted",
+    "muscle_group": "biceps",
+    "target": "lats",
+    "secondary_muscles": [
+      "biceps",
+      "triceps",
+      "shoulders",
+      "chest"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with your palms facing away from you and your hands slightly wider than shoulder-width apart. Engage your core and pull your body up towards the bar, leading with your chest. As you reach the top of the movement, transition your grip so that your palms are facing towards you. Continue pulling yourself up until your chest reaches the bar, then pause for a moment. Slowly lower yourself back down to the starting position, maintaining control throughout the movement. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 1289,
+    "name": "dumbbell one arm incline chest press",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "dumbbell",
+    "muscle_group": "shoulders",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "instructions_en": "Adjust the incline bench to a 45-degree angle. Sit on the bench with your back against the pad and feet flat on the ground. Hold a dumbbell in one hand with an overhand grip, resting it on your shoulder. Push the dumbbell up and away from your body, extending your arm fully. Pause for a moment at the top, then slowly lower the dumbbell back down to the starting position. Repeat for the desired number of repetitions, then switch to the other arm."
+  },
+  {
+    "id": 532,
+    "name": "kettlebell figure 8",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "kettlebell",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "forearms"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a kettlebell in one hand. Bend your knees slightly and hinge forward at the hips, keeping your back straight. Pass the kettlebell between your legs, switching hands as it reaches the back of your legs. As the kettlebell comes forward, pass it to the other hand between your legs. Continue passing the kettlebell between your legs in a figure 8 motion. Maintain a steady pace and engage your core throughout the exercise. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 40,
+    "name": "barbell front raise and pullover",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "barbell",
+    "muscle_group": "deltoids",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "deltoids",
+      "triceps"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart and hold a barbell with an overhand grip, palms facing down. Keep your arms straight and raise the barbell in front of you until it reaches shoulder height. Pause for a moment at the top, then slowly lower the barbell back down to the starting position. Next, lower the barbell behind your head, keeping your arms straight. Pause for a moment at the bottom, then raise the barbell back up to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 300,
+    "name": "dumbbell deadlift",
+    "category": "upper legs",
+    "body_part": "upper legs",
+    "equipment": "dumbbell",
+    "muscle_group": "hamstrings",
+    "target": "glutes",
+    "secondary_muscles": [
+      "hamstrings",
+      "lower back"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, toes pointing forward. Hold a dumbbell in each hand, palms facing your body, arms extended downwards. Bend at your hips and knees, lowering the dumbbells towards the ground while keeping your back straight. Push through your heels and extend your hips and knees, lifting the dumbbells back up to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 841,
+    "name": "weighted pull-up",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "weighted",
+    "muscle_group": "biceps",
+    "target": "lats",
+    "secondary_muscles": [
+      "biceps",
+      "forearms"
+    ],
+    "instructions_en": "Grab the pull-up bar with an overhand grip, slightly wider than shoulder-width apart. Hang from the bar with your arms fully extended and your body straight. Engage your back muscles and pull your body up towards the bar, keeping your elbows close to your body. Continue pulling until your chin is above the bar. Pause for a moment at the top, then slowly lower your body back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 550,
+    "name": "kettlebell thruster",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "kettlebell",
+    "muscle_group": "quadriceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "quadriceps",
+      "glutes",
+      "core"
+    ],
+    "instructions_en": "Start by standing with your feet shoulder-width apart, holding a kettlebell in front of your chest with both hands, palms facing each other. Lower into a squat position by bending your knees and pushing your hips back, keeping your chest up and your back straight. As you reach the bottom of the squat, explosively drive through your heels to stand up, simultaneously pressing the kettlebell overhead. Lock out your arms at the top of the movement, fully extending your elbows. Lower the kettlebell back to the starting position by reversing the movement, bending your elbows and lowering the weight back to your chest. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 3297,
+    "name": "back lever",
+    "category": "back",
+    "body_part": "back",
+    "equipment": "body weight",
+    "muscle_group": "biceps",
+    "target": "upper back",
+    "secondary_muscles": [
+      "biceps",
+      "forearms",
+      "core"
+    ],
+    "instructions_en": "Start by hanging from a pull-up bar with an overhand grip, hands slightly wider than shoulder-width apart. Engage your core and pull your shoulder blades down and back. Bend your knees and tuck them towards your chest. Slowly lift your legs up, keeping them straight, until your body is parallel to the ground. Hold this position for a few seconds, then slowly lower your legs back down to the starting position. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 524,
+    "name": "kettlebell bent press",
+    "category": "waist",
+    "body_part": "waist",
+    "equipment": "kettlebell",
+    "muscle_group": "shoulders",
+    "target": "abs",
+    "secondary_muscles": [
+      "shoulders",
+      "triceps",
+      "obliques"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a kettlebell in your right hand. Bend your knees slightly and press the kettlebell overhead with your right arm, keeping your elbow locked. Rotate your torso to the left, shifting your weight onto your left foot. Bend your left knee and lower your torso towards the ground, keeping your right arm extended overhead. As you lower, keep your eyes on the kettlebell and your chest lifted. Once your left hand touches the ground, push through your left foot and straighten your left leg, driving your hips forward. As you drive your hips forward, use your core and right arm to press the kettlebell back up to the starting position. Repeat for the desired number of repetitions, then switch sides."
+  },
+  {
+    "id": 535,
+    "name": "kettlebell hang clean",
+    "category": "upper legs",
+    "body_part": "upper legs",
+    "equipment": "kettlebell",
+    "muscle_group": "glutes",
+    "target": "hamstrings",
+    "secondary_muscles": [
+      "glutes",
+      "quadriceps",
+      "calves"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a kettlebell in front of your thighs. Bend your knees slightly and hinge forward at the hips, keeping your back straight. Lower the kettlebell towards the ground, allowing it to swing between your legs. Quickly extend your hips and knees, using the momentum to swing the kettlebell up to shoulder height. As the kettlebell reaches shoulder height, rotate your wrists and catch the kettlebell in the rack position, with your elbow tucked in and the kettlebell resting on your forearm. Lower the kettlebell back down to the starting position between your legs, and repeat for the desired number of repetitions."
+  },
+  {
+    "id": 431,
+    "name": "dumbbell step-up",
+    "category": "upper legs",
+    "body_part": "upper legs",
+    "equipment": "dumbbell",
+    "muscle_group": "quadriceps",
+    "target": "glutes",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "calves"
+    ],
+    "instructions_en": "Stand in front of a bench or step with a dumbbell in each hand, palms facing your body. Place your right foot on the bench or step, ensuring your entire foot is in contact with the surface. Push through your right heel and lift your body up onto the bench or step, straightening your right leg. Bring your left foot up onto the bench or step, standing fully upright. Step back down with your left foot, followed by your right foot, returning to the starting position. Repeat for the desired number of repetitions, then switch legs."
+  },
+  {
+    "id": 546,
+    "name": "kettlebell seated press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Sit on a bench with your back straight and feet flat on the ground. Hold a kettlebell in each hand at shoulder height, palms facing forward. Press the kettlebells overhead, fully extending your arms. Lower the kettlebells back to shoulder height. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 528,
+    "name": "kettlebell double push press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Start by standing with your feet shoulder-width apart, holding a kettlebell in each hand at shoulder height. Bend your knees slightly and engage your core. Initiate the movement by explosively extending your hips, knees, and ankles, driving the kettlebells overhead. As the kettlebells reach the top, press them fully overhead, locking out your arms. Lower the kettlebells back to the starting position by bending your elbows and bringing them back down to shoulder height. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 537,
+    "name": "kettlebell one arm clean and jerk",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a kettlebell in one hand with an overhand grip. Bend your knees slightly and hinge at the hips, lowering the kettlebell between your legs. Explosively extend your hips, knees, and ankles, using the momentum to swing the kettlebell up to shoulder height. As the kettlebell reaches shoulder height, rotate your wrist and punch your hand straight up, locking out your arm overhead. Lower the kettlebell back down to the starting position and repeat for the desired number of repetitions."
+  },
+  {
+    "id": 1700,
+    "name": "dumbbell push press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "dumbbell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a dumbbell in each hand at shoulder level. Bend your knees slightly and dip your body down, then explosively extend your legs and press the dumbbells overhead. Lock out your arms at the top of the movement, then lower the dumbbells back to shoulder level. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 547,
+    "name": "kettlebell seesaw press",
+    "category": "shoulders",
+    "body_part": "shoulders",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "delts",
+    "secondary_muscles": [
+      "triceps",
+      "core"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart, holding a kettlebell in each hand at shoulder height. Press one kettlebell overhead while keeping the other kettlebell at shoulder height. Lower the pressed kettlebell back to shoulder height while simultaneously pressing the other kettlebell overhead. Continue alternating the pressing motion, creating a seesaw-like movement. Repeat for the desired number of repetitions."
+  },
+  {
+    "id": 531,
+    "name": "kettlebell extended range one arm press on floor",
+    "category": "chest",
+    "body_part": "chest",
+    "equipment": "kettlebell",
+    "muscle_group": "triceps",
+    "target": "pectorals",
+    "secondary_muscles": [
+      "triceps",
+      "shoulders"
+    ],
+    "instructions_en": "Start by lying on your back on the floor with your knees bent and feet flat on the ground. Hold a kettlebell in one hand, with your palm facing towards your feet. Extend your arm straight up towards the ceiling, keeping your elbow locked and your wrist straight. Slowly lower the kettlebell back down to the starting position, maintaining control throughout the movement. Repeat for the desired number of repetitions, then switch to the other arm."
+  },
+  {
+    "id": 3672,
+    "name": "back and forth step",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "body weight",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "glutes",
+      "calves"
+    ],
+    "instructions_en": "Stand with your feet shoulder-width apart. Step forward with your right foot, bending your knee and lowering your body into a lunge position. Push off with your right foot and step back to the starting position. Repeat the movement with your left foot, alternating legs with each step. Continue stepping back and forth, maintaining a steady pace. Repeat for the desired duration or number of repetitions."
+  },
+  {
+    "id": 2331,
+    "name": "cycle cross trainer",
+    "category": "cardio",
+    "body_part": "cardio",
+    "equipment": "leverage machine",
+    "muscle_group": "quadriceps",
+    "target": "cardiovascular system",
+    "secondary_muscles": [
+      "quadriceps",
+      "hamstrings",
+      "glutes"
+    ],
+    "instructions_en": "Adjust the seat height and position yourself on the cycle cross trainer. Place your feet on the pedals and grip the handlebars. Start pedaling in a smooth and controlled motion. Maintain a steady pace and increase the resistance if desired. Continue pedaling for the desired duration of your cardio workout."
+  }
+]

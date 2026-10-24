@@ -1,0 +1,403 @@
+"""Stub de las tres dependencias externas de la app, en un solo proceso.
+
+Telegram, el proveedor LLM y el embedder hablan HTTP y JSON, asi que un unico
+servidor con rutas distintas basta y evita levantar tres contenedores. Solo usa
+la libreria estandar: la imagen es `python:3.11-slim` sin build ni dependencias.
+
+Rutas:
+  POST /bot<token>/<method>                           -> Telegram y registro de webhook
+  POST /v1/chat/completions                          -> proveedor LLM
+  POST /embed                                        -> servicio de embeddings
+  GET  /health                                       -> sonda del compose
+  GET  /__sent                                       -> mensajes que la app envio
+  GET  /__polls                                      -> encuestas enviadas y cerradas
+  GET  /__llm_requests                               -> cuerpos recibidos por el LLM
+"""
+
+import copy
+import json
+import re
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PORT = 9999
+EMBEDDING_DIMENSIONS = 384
+
+# Ids que existen en tests/fixtures/exercises_min.sql. El plan del stub solo
+# puede usar estos: es justo la invariante que el test comprueba.
+FIXTURE_EXERCISE_IDS = (1, 2)
+
+# Mensajes enviados por la app, para que el test pueda inspeccionarlos.
+SENT_MESSAGES: list[dict[str, object]] = []
+SENT_POLLS: list[dict[str, object]] = []
+STOPPED_POLLS: list[dict[str, object]] = []
+REQUEST_COUNTS = {"embed": 0, "llm": 0}
+LLM_REQUESTS: list[dict[str, object]] = []
+REGISTERED_WEBHOOK_URL = ""
+
+_INTERVIEW_PROFILE = {
+    "user": {"name_or_username": "Ana", "registration_date": "2026-01-01T00:00:00Z"},
+    "biometrics": {
+        "age": 30,
+        "weight_kg": 70.0,
+        "height_cm": 170,
+        "bmi": 24.2,
+        "perceived_composition": "algo de grasa",
+        "estimated_composition": "normal",
+    },
+    "goal": {
+        "primary": "gain_muscle",
+        "secondary": None,
+        "timeframe_weeks": 12,
+        "realistic_expectation": True,
+    },
+    "activity": {
+        "occupation": "oficina",
+        "neat_level": "sedentary",
+        "description": "ocho horas sentada",
+    },
+    "nutrition": {"meals_per_day": 3, "critical_foods": [], "general_pattern": "variada"},
+    "digestive_energy": {"bloating_frequency": "never", "energy_crash": False, "triggers": []},
+    "injuries": [],
+    "training": {"consistent_years": 1.0, "environment": "gym", "equipment": ["barbell"]},
+    "sleep": {"average_hours": 7.0, "quality": "good", "problems": []},
+    "supplementation": {"current": [], "monthly_budget_usd": None, "restrictions": []},
+    # Un solo dia por semana mantiene el plan del stub pequeno y legible.
+    "commitment": {
+        "days_per_week": 1,
+        "minutes_per_session": 60,
+        "flexibility": "flexible",
+        "dropout_history": None,
+    },
+    "flags": {"red": [], "yellow": []},
+    "initial_calculations": {
+        "bmr": 1450.0,
+        "estimated_tdee": 2000.0,
+        "tolerable_volume_sets": 12,
+    },
+}
+
+_INTERVIEWER_TURN = {
+    "status": "completed",
+    "reply": "Entrevista terminada",
+    "report": "Tu perfil esta listo. Envia /train para tu plan.",
+    "profile": _INTERVIEW_PROFILE,
+}
+
+_INTENSITIES = ("accumulation", "intensification", "peak", "deload")
+
+_TRAINER_TURN = {
+    "status": "plan",
+    "reply": "Aqui tienes tu plan",
+    "report": "Plan de 4 semanas, 1 dia por semana.",
+    "plan": {
+        "goal": "gain_muscle",
+        "days_per_week": 1,
+        "environment": "gym",
+        "weeks": [
+            {
+                "week": week,
+                "intensity": _INTENSITIES[week - 1],
+                "days": [
+                    {
+                        "day": 1,
+                        "focus": "Full body",
+                        "estimated_minutes": 55,
+                        "exercises": [
+                            {
+                                "exercise_id": exercise_id,
+                                "name": {1: "barbell bench press", 2: "barbell row"}[exercise_id],
+                                "sets": 3,
+                                "reps": "8-10",
+                                "rest_seconds": 120,
+                                "rpe": 7.0,
+                                "notes": None,
+                            }
+                            for exercise_id in FIXTURE_EXERCISE_IDS
+                        ],
+                    }
+                ],
+            }
+            for week in range(1, 5)
+        ],
+        "excluded_by_injury": [],
+        "progression_notes": "Sube 2,5 kg al completar el rango alto.",
+    },
+}
+
+
+def _renewal_turn() -> dict[str, object]:
+    turn = copy.deepcopy(_TRAINER_TURN)
+    turn["report"] = "Borrador adaptado tras la revisión: mantenemos básicos y progresión gradual."
+    plan = turn["plan"]
+    names = {1: "barbell bench press", 2: "barbell row", 3: "back squat"}
+    for week in plan["weeks"]:
+        exercises = week["days"][0]["exercises"]
+        exercises.append(copy.deepcopy(exercises[0]))
+        for exercise, exercise_id in zip(exercises, (1, 2, 3), strict=True):
+            exercise["exercise_id"] = exercise_id
+            exercise["name"] = names[exercise_id]
+            exercise["sets"] = 2 if week["week"] == 4 else 3
+            exercise["rpe"] = {1: 7.0, 2: 8.0, 3: 9.0, 4: 6.0}[week["week"]]
+    plan["progression_notes"] = "Completa el rango sin superar el RPE indicado."
+    return turn
+
+
+def _completion(content: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": "stub-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": json.dumps(content)},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+    }
+
+
+class StubHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        return  # Silencia el log por peticion: ensucia la salida de los tests.
+
+    def _respond(self, payload: object, status: int = 200) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802 - firma de BaseHTTPRequestHandler
+        if self.path == "/health":
+            self._respond({"status": "healthy"})
+        elif self.path == "/__sent":
+            self._respond(SENT_MESSAGES)
+        elif self.path == "/__counts":
+            self._respond(REQUEST_COUNTS)
+        elif self.path == "/__llm_requests":
+            self._respond(LLM_REQUESTS)
+        elif self.path == "/__polls":
+            self._respond({"sent": SENT_POLLS, "stopped": STOPPED_POLLS})
+        elif self.path == "/__reset":
+            SENT_MESSAGES.clear()
+            SENT_POLLS.clear()
+            STOPPED_POLLS.clear()
+            LLM_REQUESTS.clear()
+            REQUEST_COUNTS["embed"] = 0
+            REQUEST_COUNTS["llm"] = 0
+            self._respond({"ok": True})
+        else:
+            self._respond({"error": "not found"}, status=404)
+
+    def do_POST(self) -> None:  # noqa: N802 - firma de BaseHTTPRequestHandler
+        length = int(self.headers.get("Content-Length", 0))
+        raw_body = self.rfile.read(length) if length else b""
+        body = self._parse_body(raw_body, self.headers.get("Content-Type", ""))
+
+        if self.path.startswith("/v1/chat/completions"):
+            REQUEST_COUNTS["llm"] += 1
+            LLM_REQUESTS.append(body)
+            self._respond(_completion(self._turn_for(body)))
+            return
+        if self.path.startswith("/embed"):
+            REQUEST_COUNTS["embed"] += 1
+            texts = body.get("texts") or []
+            self._respond({
+                "model": "stub",
+                "dimensions": EMBEDDING_DIMENSIONS,
+                # Vector constante: con un corpus de 10 filas y top_k alto, la
+                # recuperacion devuelve todas, de forma determinista.
+                "vectors": [[0.1] * EMBEDDING_DIMENSIONS for _ in texts],
+            })
+            return
+
+        telegram = re.match(r"^/bot[^/]+/(\w+)", self.path)
+        if telegram:
+            self._respond(self._telegram(telegram.group(1), body))
+            return
+
+        self._respond({"error": "not found"}, status=404)
+
+    @staticmethod
+    def _parse_body(raw_body: bytes, content_type: str) -> dict[str, object]:
+        """JSON o formulario: python-telegram-bot envia sendMessage urlencoded."""
+        if not raw_body:
+            return {}
+        if "json" in content_type:
+            try:
+                parsed = json.loads(raw_body)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        fields = urllib.parse.parse_qs(raw_body.decode("utf-8", errors="replace"))
+        return {key: values[0] for key, values in fields.items() if values}
+
+    @staticmethod
+    def _turn_for(body: dict[str, object]) -> dict[str, object]:
+        """Elige la respuesta segun que agente esta llamando."""
+        messages = body.get("messages") or []
+        system = ""
+        for message in messages:
+            if isinstance(message, dict) and message.get("role") == "system":
+                system = str(message.get("content", ""))
+                break
+        if "Extract confirmed training updates" in system:
+            return {
+                "profile_patch": {
+                    "goal": None,
+                    "commitment": None,
+                    "training": None,
+                    "sleep": None,
+                    "injuries": None,
+                },
+                "safety_hold": False,
+                "explanation": "Sin cambios de disponibilidad ni restricciones.",
+            }
+        if "Interpret the client's exercise substitution request" in system:
+            return {"excluded_equipment": [], "safety_hold": False, "clarification": None}
+        if "Propose 1-3 distinct alternatives" in system:
+            return {
+                "safety_hold": False,
+                "options": [
+                    {
+                        "exercise": {
+                            "exercise_id": 6,
+                            "name": "push up",
+                            "sets": 3,
+                            "reps": "8-10",
+                            "rest_seconds": 120,
+                            "rpe": 7.0,
+                            "notes": "Sin dolor.",
+                        },
+                        "rationale": "Mismo target pectoral, sin necesidad de barra.",
+                    }
+                ],
+            }
+        # Ojo: el prompt del interviewer tambien menciona "Trainer" al citar a
+        # los agentes siguientes. Hay que mirar la linea de ROLE.
+        if "You are the Trainer" in system:
+            if "This is a read-only consultation" in system:
+                if (
+                    messages
+                    and isinstance(messages[-1], dict)
+                    and "quiero cambiar" in str(messages[-1].get("content", "")).lower()
+                ):
+                    return {
+                        "status": "answer",
+                        "reply": "Elige el ejercicio con los botones.",
+                        "report": None,
+                        "plan": None,
+                        "intent": "exercise_swap",
+                        "swap_selection": (
+                            {"week": 1, "exercise_id": None, "reason": None}
+                            if "semana 1" in str(messages[-1].get("content", "")).lower()
+                            else None
+                        ),
+                    }
+                return {
+                    "status": "answer",
+                    "reply": "El plan indica 120 segundos de descanso.",
+                    "report": None,
+                    "plan": None,
+                }
+            if "# RENEWAL" in system:
+                return _renewal_turn()
+            return _TRAINER_TURN
+        return _INTERVIEWER_TURN
+
+    @staticmethod
+    def _telegram(method: str, body: dict[str, object]) -> dict[str, object]:
+        global REGISTERED_WEBHOOK_URL
+        if method == "setWebhook":
+            REGISTERED_WEBHOOK_URL = str(body["url"])
+            return {"ok": True, "result": True}
+        if method == "getWebhookInfo":
+            return {
+                "ok": True,
+                "result": {
+                    "url": REGISTERED_WEBHOOK_URL,
+                    "has_custom_certificate": False,
+                    "pending_update_count": 0,
+                },
+            }
+        if method == "getMe":
+            return {
+                "ok": True,
+                "result": {
+                    "id": 1,
+                    "is_bot": True,
+                    "first_name": "stub",
+                    "username": "stub_bot",
+                },
+            }
+        if method == "sendMessage":
+            SENT_MESSAGES.append(body)
+            return {
+                "ok": True,
+                "result": {
+                    "message_id": len(SENT_MESSAGES),
+                    "date": 0,
+                    "chat": {"id": body.get("chat_id", 1), "type": "private"},
+                    "text": body.get("text", ""),
+                },
+            }
+        if method == "sendPoll":
+            SENT_POLLS.append(body)
+            message_id = 10_000 + len(SENT_POLLS)
+            return {
+                "ok": True,
+                "result": {
+                    "message_id": message_id,
+                    "date": 0,
+                    "chat": {"id": body.get("chat_id", 1), "type": "private"},
+                    "poll": _poll(f"poll-{message_id}", body),
+                },
+            }
+        if method == "stopPoll":
+            STOPPED_POLLS.append(body)
+            return {
+                "ok": True,
+                "result": _poll(f"poll-{body.get('message_id')}", body, closed=True),
+            }
+        return {"ok": True, "result": True}
+
+
+def _poll(poll_id: str, body: dict[str, object], closed: bool = False) -> dict[str, object]:
+    """Poll minimo que python-telegram-bot puede deserializar."""
+    raw_options = body.get("options") or []
+    if isinstance(raw_options, str):
+        raw_options = json.loads(raw_options)
+    # persistent_id es obligatorio desde Bot API 9.6 (python-telegram-bot >= 22.8).
+    options = [
+        {
+            "text": option["text"] if isinstance(option, dict) else str(option),
+            "voter_count": 0,
+            "persistent_id": f"option-{index}",
+        }
+        for index, option in enumerate(raw_options)
+    ]
+    return {
+        "id": poll_id,
+        "question": str(body.get("question", "")),
+        "options": options,
+        "total_voter_count": 0,
+        "is_closed": closed,
+        "is_anonymous": False,
+        "type": "regular",
+        "allows_multiple_answers": False,
+        # Obligatorios desde Bot API 9.6 / 10.0 (python-telegram-bot >= 22.8).
+        "allows_revoting": False,
+        "members_only": False,
+    }
+
+
+if __name__ == "__main__":
+    # Escucha en todas las interfaces a proposito: es un contenedor de test aislado.
+    ThreadingHTTPServer(("0.0.0.0", PORT), StubHandler).serve_forever()  # noqa: S104  # nosec B104

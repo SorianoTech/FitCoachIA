@@ -1,0 +1,1072 @@
+"""Logica de conversacion: decide que responder a cada update de Telegram.
+
+La capa de API solo traduce HTTP; toda la decision de negocio (que comando se
+ha pedido, que se manda al modelo y que se le contesta al usuario) vive aqui.
+"""
+
+import asyncio
+import logging
+import time
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from typing import TypedDict
+
+from opentelemetry import trace
+from opentelemetry.trace import Span
+from telegram import Bot, InlineKeyboardMarkup, Message, PollAnswer, ReplyKeyboardMarkup, Update
+from telegram.error import BadRequest, RetryAfter
+
+from fitcoach.domain.agent_errors import AgentError, AgentErrorCode
+from fitcoach.domain.agents import AgentType
+from fitcoach.domain.constants import Constants
+from fitcoach.domain.entities import IAInput, IAMessage
+from fitcoach.domain.exercise_catalogue import EquipmentClarificationError
+from fitcoach.domain.rate_limiter import UsageLimits, UsageTier
+from fitcoach.domain.telegram import Commands
+from fitcoach.domain.token_usage import TokenUsage
+from fitcoach.domain.trainer_plan import (
+    TRAINING_STATUS_ACTIVE,
+    SwapSelection,
+    TrainerAction,
+    TrainerAnswerTurn,
+)
+from fitcoach.domain.training_evaluation import score_from_option
+from fitcoach.domain.training_lifecycle import utc_now
+from fitcoach.infrastructure.database.postgres_exercise_submission_repository import (
+    ExerciseSubmissionConflictError,
+)
+from fitcoach.infrastructure.observability.latency import timed
+from fitcoach.infrastructure.observability.telemetry import get_tracer
+from fitcoach.repository.conversation_repository import ConversationRepository
+from fitcoach.repository.evaluation_repository import EvaluationRepository
+from fitcoach.repository.training_repository import TrainingConflictError
+from fitcoach.service.agent import agent_factory
+from fitcoach.service.agent.exercise_retriever import ExerciseRetriever
+from fitcoach.service.agent.interviewer_chain import InterviewerChain, InterviewerReply
+from fitcoach.service.agent.trainer_chain import TrainerChain
+from fitcoach.service.exercise_moderation_service import ExerciseModerationService
+from fitcoach.service.exercise_submission_controls import (
+    exercise_submission_keyboard,
+    parse_exercise_submission_callback,
+)
+from fitcoach.service.exercise_submission_service import ExerciseSubmissionService
+from fitcoach.service.training_service import TrainingService
+from fitcoach.service.training_view import persistent_keyboard
+from fitcoach.service.typing_indicator import typing_indicator
+
+logger = logging.getLogger(__name__)
+_tracer = get_tracer(__name__)
+
+
+class _MessageMarkup(TypedDict, total=False):
+    reply_markup: InlineKeyboardMarkup | ReplyKeyboardMarkup
+
+
+def remove_emojis(text: str) -> str:
+    """Strip emoji, keeping letters, digits, punctuation and ordinary symbols.
+
+    Whitespace is collapsed but not rebalanced around the removal, so a padded
+    emoji leaves its separator behind: "¡Hola 👋, x" -> "¡Hola , x".
+    """
+    without_emojis = Constants.EMOJI_PATTERN.sub("", text)
+    return Constants.WHITESPACE_PATTERN.sub(" ", without_emojis).strip()
+
+
+def truncate(text: str) -> str:
+    """Repr en una sola linea; marca explicitamente si se ha recortado."""
+    if len(text) <= Constants.MAX_LOGGED_CHARS:
+        return repr(text)
+    return f"{text[: Constants.MAX_LOGGED_CHARS]!r}... [TRUNCADO: {len(text)} chars en total]"
+
+
+def user_label(message: Message | None) -> str:
+    """Nombre del usuario para trazas; ``from_user`` es None en channel posts."""
+    user = message.from_user if message is not None else None
+    if user is None:
+        return Constants.UNKNOWN_USER
+    return user.username or user.full_name or str(user.id)
+
+
+def telegram_user_id(message: Message | None) -> int:
+    """Id numerico de Telegram del remitente; distinto de ``chat_id`` en grupos/foros."""
+    user = message.from_user if message is not None else None
+    return user.id if user is not None else Constants.UNKNOWN_ID
+
+
+def format_llm_input(llm_input: IAInput) -> str:
+    """Contenido real de cada mensaje enviado al modelo, con su longitud."""
+    return " | ".join(
+        f"{item['role']}[{len(item['content'])} chars]={truncate(item['content'])}"
+        for item in llm_input.get_input()
+    )
+
+
+class ConversationService:
+    """Orquesta un turno de conversacion: update de Telegram -> respuesta al usuario.
+
+    Recibe sus colaboradores por constructor para poder sustituirlos en tests
+    sin levantar ni Telegram ni el modelo.
+    """
+
+    def __init__(
+        self,
+        bot: Bot,
+        interviewer: InterviewerChain,
+        conversation_repository: ConversationRepository,
+        usage_limits: UsageLimits,
+        history_window_messages: int = 20,
+        trainer: TrainerChain | None = None,
+        exercise_retriever: ExerciseRetriever | None = None,
+        trainer_history_window_messages: int = 10,
+        training_service: TrainingService | None = None,
+        evaluation_repository: EvaluationRepository | None = None,
+        quota_resolver: Callable[[int], Awaitable[UsageLimits]] | None = None,
+        exercise_submissions: ExerciseSubmissionService | None = None,
+        exercise_moderation: ExerciseModerationService | None = None,
+    ) -> None:
+        self._bot = bot
+        self._interviewer = interviewer
+        self._conversation_repository = conversation_repository
+        self._history_window_messages = history_window_messages
+        # Optional so existing tests and any deployment without the vector
+        # database keep working: /train then reports the trainer is unavailable
+        # instead of crashing the webhook.
+        self._trainer = trainer
+        self._exercise_retriever = exercise_retriever
+        self._trainer_history_window_messages = trainer_history_window_messages
+        self._usage_limits = usage_limits
+        self._training_service = training_service
+        self._evaluation_repository = evaluation_repository
+        self._quota_resolver = quota_resolver
+        self._exercise_submissions = exercise_submissions
+        self._exercise_moderation = exercise_moderation
+
+    async def handle_update(self, update: Update) -> None:
+        """Procesa un update y contesta al usuario. Nunca propaga excepciones.
+
+        Telegram reenvia cualquier update que no reciba un 2xx, asi que un fallo
+        no controlado aqui se convertiria en un bucle de reintentos.
+        """
+        message: Message | None = update.effective_message
+        ctx = self._build_context(update, message)
+        try:
+            if not await self._conversation_repository.claim_update(update.update_id):
+                # Re-delivery of an update whose first attempt is still running
+                # (or already answered): processing it again is the retry loop.
+                logger.warning(f"{ctx} update duplicado, se ignora")
+                return
+            if update.callback_query is not None:
+                await self._handle_callback(update, ctx)
+                return
+            if update.poll_answer is not None:
+                await self._record_poll_answer(update.poll_answer, ctx)
+                return
+            await self._process(update, message, ctx)
+        except Exception:
+            logger.exception(f"{ctx} error inesperado procesando el update")
+            await self._notify_server_error(message, ctx)
+
+    async def _record_poll_answer(self, answer: PollAnswer, ctx: str) -> None:
+        """Store a weekly poll vote; Telegram expects no reply to it."""
+        if self._evaluation_repository is None or answer.user is None:
+            logger.warning("%s poll answer ignored: no evaluation store or anonymous voter", ctx)
+            return
+        try:
+            score = score_from_option(answer.option_ids)
+        except ValueError:
+            logger.warning("%s poll answer with an option outside the scale", ctx)
+            return
+        recorded = await self._evaluation_repository.record_answer(
+            answer.poll_id, answer.user.id, score, utc_now()
+        )
+        logger.info(
+            "%s poll answer poll=%s score=%s recorded=%s", ctx, answer.poll_id, score, recorded
+        )
+
+    async def _handle_callback(self, update: Update, ctx: str) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        message = query.message
+        if (
+            not isinstance(message, Message)
+            or message.chat.type != "private"
+            or query.from_user.id != message.chat_id
+        ):
+            await self._bot.answer_callback_query(
+                query.id, text=Constants.TRAINING_CALLBACK_PRIVATE, show_alert=True
+            )
+            return
+        data = query.data or ""
+        if data.startswith("ex:"):
+            await self._handle_exercise_submission_callback(query.id, message, data, ctx)
+            return
+        if self._training_service is None:
+            await self._bot.answer_callback_query(
+                query.id, text=Constants.TRAINING_CALLBACK_PRIVATE, show_alert=True
+            )
+            return
+        await self._bot.answer_callback_query(query.id)
+        try:
+            async with typing_indicator(self._bot, message.chat_id, message.message_thread_id):
+                responses = await self._training_service.callback(message.chat_id, data)
+        except AgentError as error:
+            logger.warning("%s controlled callback error: %s", ctx, error.code)
+            await self._send(
+                message.chat_id,
+                message.message_thread_id,
+                self._message_for_agent_error(error.code),
+            )
+            return
+        if (
+            Constants.TRAINING_CALLBACK_INVALID not in responses
+            and Constants.TRAINING_CONFLICT_MESSAGE not in responses
+            and not data.startswith("tr:details:")
+        ):
+            try:
+                await self._bot.edit_message_reply_markup(
+                    chat_id=message.chat_id, message_id=message.message_id, reply_markup=None
+                )
+            except BadRequest:
+                logger.warning("%s could not retire original inline keyboard", ctx, exc_info=True)
+        await self._deliver_training_responses(
+            message.chat_id, message.message_thread_id, data, responses
+        )
+
+    async def _handle_exercise_submission_callback(
+        self,
+        callback_query_id: str,
+        message: Message,
+        data: str,
+        ctx: str,
+    ) -> None:
+        parsed = parse_exercise_submission_callback(data)
+        if parsed is None or self._exercise_submissions is None:
+            await self._bot.answer_callback_query(
+                callback_query_id,
+                text=Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID,
+                show_alert=True,
+            )
+            return
+        action, submission_id = parsed
+        try:
+            reply = await self._exercise_submissions.handle_callback(
+                message.chat_id,
+                submission_id,
+                action,
+            )
+        except (ValueError, ExerciseSubmissionConflictError):
+            logger.warning("%s invalid exercise submission callback", ctx, exc_info=True)
+            await self._bot.answer_callback_query(
+                callback_query_id,
+                text=Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID,
+                show_alert=True,
+            )
+            return
+        if not reply.callback_valid:
+            await self._bot.answer_callback_query(
+                callback_query_id,
+                text=Constants.EXERCISE_SUBMISSION_CALLBACK_INVALID,
+                show_alert=True,
+            )
+            return
+        await self._bot.answer_callback_query(callback_query_id)
+        try:
+            await self._bot.edit_message_reply_markup(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+                reply_markup=None,
+            )
+        except BadRequest:
+            logger.warning("%s could not retire exercise inline keyboard", ctx, exc_info=True)
+        for response in reply.messages:
+            await self._send(message.chat_id, message.message_thread_id, response)
+
+    async def _process(self, update: Update, message: Message | None, ctx: str) -> None:
+        edited = " (editado)" if update.edited_message is not None else ""
+        logger.info(f"{ctx} update recibido{edited}")
+
+        if message is None or not message.text:
+            logger.warning(f"{ctx} update ignorado: no contiene texto")
+            chat_id = message.chat_id if message is not None else Constants.UNKNOWN_ID
+            await self._bot.send_message(chat_id=chat_id, text=Constants.NO_CONTENT_MESSAGE)
+            return
+
+        chat_id = message.chat_id
+        message_thread_id = message.message_thread_id
+
+        input_text = remove_emojis(message.text)
+        if not input_text:
+            # Nothing but emojis/whitespace survived the cleanup.
+            logger.warning(f"{ctx} mensaje descartado: solo contenia emojis o espacios")
+            await self._send(chat_id, message_thread_id, Constants.INVALID_TEXT_MESSAGE)
+            return
+        navigation = {
+            Constants.TRAINING_NAVIGATION["week"]: "/train semana",
+            Constants.TRAINING_NAVIGATION["plan"]: "/train ver",
+            Constants.TRAINING_NAVIGATION["swap"]: "/train cambiar",
+            Constants.TRAINING_NAVIGATION["review"]: "/train revisar",
+        }
+        if self._training_service is not None and input_text in navigation:
+            await self._training_response(ctx, chat_id, message_thread_id, navigation[input_text])
+            return
+
+        raw_command = input_text.split(maxsplit=1)[0]
+        command = Commands.from_value(raw_command)
+        logger.info(f"{ctx} comando={command} entrada={input_text!r}")
+
+        with _tracer.start_as_current_span("conversation.turn") as span:
+            span.set_attribute("telegram_user_id", telegram_user_id(message))
+            span.set_attribute("chat_id", chat_id)
+            span.set_attribute("command", command.name if command is not None else "none")
+
+            if command is None and raw_command.startswith("/"):
+                suggestion = Commands.suggest(raw_command)
+                response = (
+                    Constants.UNKNOWN_COMMAND_SUGGESTION.format(
+                        command=raw_command,
+                        suggestion=suggestion,
+                    )
+                    if suggestion is not None
+                    else Constants.UNKNOWN_COMMAND_MESSAGE.format(command=raw_command)
+                )
+                await self._send(chat_id, message_thread_id, response)
+                return
+
+            if self._exercise_moderation is not None and command in {
+                Commands.REVIEW_EXERCISES,
+                Commands.APPROVE_EXERCISE,
+                Commands.REJECT_EXERCISE,
+            }:
+                await self._exercise_moderation_response(
+                    chat_id,
+                    message_thread_id,
+                    telegram_user_id(message),
+                    input_text,
+                )
+                return
+
+            if self._exercise_submissions is not None and (
+                command == Commands.ADD_EXERCISE
+                or (
+                    command is None
+                    and (
+                        await self._exercise_submissions.has_draft(chat_id)
+                        or self._exercise_submissions.is_natural_intent(input_text)
+                    )
+                )
+            ):
+                await self._exercise_submission_response(
+                    ctx,
+                    chat_id,
+                    message_thread_id,
+                    input_text,
+                    command == Commands.ADD_EXERCISE,
+                    message.chat.type == "private",
+                    span,
+                )
+                return
+
+            if self._training_service is not None:
+                if command == Commands.PROGRESS:
+                    await self._training_response(ctx, chat_id, message_thread_id, input_text)
+                    return
+                if command == Commands.TRAIN:
+                    stored = await self._conversation_repository.get_current_plan(chat_id)
+                    if (
+                        stored is not None or len(input_text.split(maxsplit=1)) > 1
+                    ) and not input_text.startswith("/train consulta "):
+                        await self._training_response(ctx, chat_id, message_thread_id, input_text)
+                        return
+                    if input_text.startswith("/train consulta "):
+                        blocked = await self._quota_message(ctx, chat_id, None)
+                        if blocked:
+                            await self._send(chat_id, message_thread_id, blocked)
+                        else:
+                            await self._answer_about_plan(
+                                ctx,
+                                chat_id,
+                                message_thread_id,
+                                input_text[len("/train consulta ") :],
+                            )
+                        return
+                elif command is None and await self._training_service.has_workflow(chat_id):
+                    await self._training_response(ctx, chat_id, message_thread_id, input_text)
+                    return
+
+            # Rate Limiter analyzer
+            blocked = await self._quota_message(ctx, chat_id, command)
+            if blocked is not None:
+                span.set_attribute("quota_blocked", True)
+                await self._send(chat_id, message_thread_id, blocked)
+                return
+
+            match command:
+                case Commands.START:
+                    await self._send(chat_id, message_thread_id, Constants.WELCOME_MESSAGE)
+                case Commands.INTERVIEW:
+                    span.set_attribute("agent", AgentType.INTERVIEWER.value)
+                    await self._conversation_repository.restart_interview(chat_id)
+                    await self._call_interviewer(
+                        ctx, chat_id, message_thread_id, Constants.INTERVIEW_SEED_MESSAGE
+                    )
+                case Commands.TRAIN:
+                    span.set_attribute("agent", AgentType.TRAINER.value)
+                    await self._generate_plan(ctx, chat_id, message_thread_id, input_text)
+                case Commands.ADD_EXERCISE:
+                    await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
+                case (
+                    Commands.REVIEW_EXERCISES | Commands.APPROVE_EXERCISE | Commands.REJECT_EXERCISE
+                ):
+                    await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
+                case Commands.DOUBTS | Commands.PROGRESS:
+                    # TODO: route to the doubts/Q&A and progress-tracking flows
+                    logger.info(f"{ctx} opcion todavia no implementada")
+                    await self._send(chat_id, message_thread_id, Constants.NOT_IMPLEMENTED_MESSAGE)
+                case None:
+                    await self._route_free_message(
+                        ctx, chat_id, message_thread_id, input_text, span
+                    )
+
+    async def _exercise_moderation_response(
+        self,
+        chat_id: int,
+        message_thread_id: int | None,
+        actor_user_id: int,
+        input_text: str,
+    ) -> None:
+        if self._exercise_moderation is None:
+            return
+        try:
+            reply = await self._exercise_moderation.handle(actor_user_id, input_text)
+        except AgentError as exc:
+            await self._send(chat_id, message_thread_id, self._message_for_agent_error(exc.code))
+            return
+        except ExerciseSubmissionConflictError:
+            await self._send(chat_id, message_thread_id, Constants.EXERCISE_MODERATION_USAGE)
+            return
+        for response in reply.messages:
+            await self._send(chat_id, message_thread_id, response)
+        if reply.notification is not None:
+            await self._send(
+                reply.notification.chat_id,
+                reply.notification.thread_id,
+                reply.notification.text,
+            )
+
+    async def _exercise_submission_response(
+        self,
+        ctx: str,
+        chat_id: int,
+        message_thread_id: int | None,
+        input_text: str,
+        command: bool,
+        private_chat: bool,
+        span: Span,
+    ) -> None:
+        if self._exercise_submissions is None:
+            return
+        span.set_attribute("agent", AgentType.EXERCISE_CURATOR.value)
+        if await self._exercise_submissions.will_invoke_model(chat_id, input_text, command=command):
+            blocked = await self._quota_message(ctx, chat_id, None)
+            if blocked is not None:
+                span.set_attribute("quota_blocked", True)
+                await self._send(chat_id, message_thread_id, blocked)
+                return
+        started = time.perf_counter()
+        try:
+            reply = await self._exercise_submissions.handle(
+                chat_id, message_thread_id, input_text, command=command
+            )
+        except AgentError as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            await self._record_token_usage(
+                ctx,
+                chat_id,
+                None,
+                exc.token_usages or [self._unknown_usage(exc.code, elapsed_ms)],
+                elapsed_ms,
+                AgentType.EXERCISE_CURATOR.value,
+            )
+            await self._send(chat_id, message_thread_id, self._message_for_agent_error(exc.code))
+            return
+        except (ValueError, ExerciseSubmissionConflictError):
+            logger.warning("%s invalid exercise submission transition", ctx, exc_info=True)
+            await self._send(chat_id, message_thread_id, Constants.INVALID_TEXT_MESSAGE)
+            return
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        keyboard = (
+            exercise_submission_keyboard(reply.confirmation_submission_id)
+            if private_chat and reply.confirmation_submission_id is not None
+            else None
+        )
+        for index, response in enumerate(reply.messages):
+            await self._send(
+                chat_id,
+                message_thread_id,
+                response,
+                keyboard if index == len(reply.messages) - 1 else None,
+            )
+        await self._record_token_usage(
+            ctx,
+            chat_id,
+            None,
+            reply.token_usages,
+            elapsed_ms,
+            AgentType.EXERCISE_CURATOR.value,
+        )
+
+    async def _route_free_message(
+        self,
+        ctx: str,
+        chat_id: int,
+        message_thread_id: int | None,
+        input_text: str,
+        span: Span,
+    ) -> None:
+        """Decide which agent owns a message that carries no command.
+
+        | entrevista   | entrenamiento | destino                         |
+        |--------------|---------------|---------------------------------|
+        | null         | -             | arranca entrevista              |
+        | in_progress  | -             | interviewer                     |
+        | completed    | null          | "usa /train"                    |
+        | completed    | active        | trainer, modo preguntas         |
+        """
+        status = await self._conversation_repository.get_interview_status(chat_id)
+        if status == "completed":
+            training_status = await self._conversation_repository.get_training_status(chat_id)
+            if training_status == TRAINING_STATUS_ACTIVE:
+                span.set_attribute("agent", AgentType.TRAINER.value)
+                await self._answer_about_plan(ctx, chat_id, message_thread_id, input_text)
+                if self._training_service is not None:
+                    await self._training_service.remind_on_interaction(
+                        chat_id, message_thread_id, self._send_reminder
+                    )
+                return
+            await self._send(chat_id, message_thread_id, Constants.INTERVIEW_COMPLETED_MESSAGE)
+            return
+        if status is None:
+            await self._conversation_repository.restart_interview(chat_id)
+        span.set_attribute("agent", AgentType.INTERVIEWER.value)
+        await self._call_interviewer(ctx, chat_id, message_thread_id, input_text)
+
+    async def _call_interviewer(
+        self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
+    ) -> None:
+        """Invoca al modelo y responde al usuario, degradando con un mensaje si falla."""
+        llm_input = self._build_llm_input(ctx, user_message)
+        logger.debug(f"{ctx} entrada al LLM: {format_llm_input(llm_input)}")
+
+        started = time.perf_counter()
+        try:
+            async with typing_indicator(self._bot, chat_id, message_thread_id):
+                reply = await self._reply_with_interviewer(chat_id, llm_input)
+        except AgentError as exc:
+            await self._record_token_usage(
+                ctx,
+                chat_id,
+                None,
+                exc.token_usages
+                or [self._unknown_usage(exc.code, (time.perf_counter() - started) * 1000)],
+                (time.perf_counter() - started) * 1000,
+            )
+            logger.warning(
+                "%s fallo controlado del modelo code=%s retryable=%s",
+                ctx,
+                exc.code,
+                exc.retryable,
+            )
+            await self._send(
+                chat_id,
+                message_thread_id,
+                self._message_for_agent_error(exc.code),
+            )
+            return
+        except Exception:
+            logger.exception(f"{ctx} fallo al invocar el modelo")
+            await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
+            return
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        turn = reply.turn
+
+        if turn.status == "completed":
+            if turn.report is None:
+                raise RuntimeError("Completed interviewer result is missing report")
+            llm_output = turn.report
+        else:
+            llm_output = turn.reply
+
+        if not llm_output.strip():
+            logger.error(f"{ctx} el modelo devolvio una respuesta vacia tras {elapsed_ms:.0f}ms")
+            await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
+            return
+
+        if elapsed_ms > Constants.SLOW_LLM_MS:
+            logger.warning(f"{ctx} respuesta lenta del modelo: {elapsed_ms:.0f}ms")
+
+        logger.info(f"{ctx} respuesta del LLM en {elapsed_ms:.0f}ms: {llm_output!r}")
+        await self._send(chat_id, message_thread_id, llm_output)
+        if turn.status == "completed":
+            if turn.profile is None or turn.report is None:
+                raise RuntimeError("Completed interviewer result is missing profile or report")
+            conversation_message_id = await self._conversation_repository.complete_interview(
+                chat_id,
+                user_message,
+                turn.reply,
+                turn.profile,
+                turn.report,
+            )
+        else:
+            conversation_message_id = await self._conversation_repository.add_turn(
+                chat_id, user_message, llm_output
+            )
+        await self._record_token_usage(
+            ctx, chat_id, conversation_message_id, reply.token_usages, elapsed_ms
+        )
+
+    async def _generate_plan(
+        self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
+    ) -> None:
+        """``/train``: profile -> retrieval -> one LLM call -> persisted plan."""
+        if self._trainer is None or self._exercise_retriever is None:
+            logger.warning(f"{ctx} /train sin entrenador configurado")
+            await self._send(chat_id, message_thread_id, Constants.TRAINER_UNAVAILABLE_MESSAGE)
+            return
+
+        profile = (
+            await self._training_service.profile(chat_id)
+            if self._training_service
+            else await self._conversation_repository.get_interviewer_profile(chat_id)
+        )
+        if profile is None:
+            logger.info(f"{ctx} /train sin perfil previo")
+            await self._send(chat_id, message_thread_id, Constants.NO_PROFILE_MESSAGE)
+            return
+
+        await self._send(chat_id, message_thread_id, Constants.PLAN_GENERATING_MESSAGE)
+
+        span = trace.get_current_span()
+        retrieval_started = time.perf_counter()
+        try:
+            exercises = await self._exercise_retriever.retrieve(profile)
+        except EquipmentClarificationError:
+            logger.warning("%s el equipamiento del perfil necesita aclaracion", ctx)
+            await self._send(chat_id, message_thread_id, Constants.TRAINING_EQUIPMENT_QUESTION)
+            return
+        except Exception:
+            # No catalogue means no plan worth delivering: a mesocycle invented
+            # from model memory is exactly what this agent exists to avoid.
+            logger.exception(f"{ctx} fallo recuperando ejercicios")
+            await self._send(chat_id, message_thread_id, Constants.TRAINER_UNAVAILABLE_MESSAGE)
+            return
+        span.set_attribute("rag.exercises_retrieved", len(exercises))
+        span.set_attribute("rag.latency_ms", int((time.perf_counter() - retrieval_started) * 1000))
+        span.set_attribute("rag.degraded", False)
+
+        if not exercises:
+            logger.error(f"{ctx} el catalogo de ejercicios devolvio 0 resultados")
+            await self._send(chat_id, message_thread_id, Constants.TRAINER_UNAVAILABLE_MESSAGE)
+            return
+
+        started = time.perf_counter()
+        try:
+            async with typing_indicator(self._bot, chat_id, message_thread_id):
+                reply = await self._trainer.generate_plan(profile, exercises)
+        except AgentError as exc:
+            await self._record_trainer_error(
+                ctx, chat_id, message_thread_id, TrainerAction.GENERATE_PLAN, exc, started
+            )
+            return
+        except Exception:
+            logger.exception(f"{ctx} fallo al invocar al entrenador")
+            await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
+            return
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        turn = reply.turn
+
+        if turn.status != "plan" or turn.plan is None or turn.report is None:
+            # The model answered instead of planning (for example because the
+            # catalogue looked unusable to it). Relay it, persist nothing.
+            logger.warning(f"{ctx} el entrenador no devolvio un plan: status={turn.status}")
+            await self._send(chat_id, message_thread_id, turn.reply)
+            await self._record_token_usage(
+                ctx,
+                chat_id,
+                None,
+                reply.token_usages,
+                elapsed_ms,
+                AgentType.TRAINER.value,
+            )
+            return
+
+        if elapsed_ms > Constants.SLOW_LLM_MS:
+            logger.warning(f"{ctx} respuesta lenta del entrenador: {elapsed_ms:.0f}ms")
+        logger.info(f"{ctx} plan generado en {elapsed_ms:.0f}ms")
+
+        try:
+            if self._training_service:
+                conversation_message_id = await self._conversation_repository.save_training_plan(
+                    chat_id,
+                    turn.plan,
+                    turn.report,
+                    user_message,
+                    turn.reply,
+                    reply.trace,
+                    initial_only=True,
+                )
+            else:
+                conversation_message_id = await self._conversation_repository.save_training_plan(
+                    chat_id, turn.plan, turn.report, user_message, turn.reply, reply.trace
+                )
+        except TrainingConflictError:
+            await self._record_token_usage(
+                ctx, chat_id, None, reply.token_usages, elapsed_ms, AgentType.TRAINER.value
+            )
+            await self._send(chat_id, message_thread_id, Constants.TRAINING_CONFLICT_MESSAGE)
+            return
+        await self._send(chat_id, message_thread_id, turn.report)
+        if self._training_service:
+            await self._training_service.remember_thread(chat_id, message_thread_id)
+        await self._record_token_usage(
+            ctx,
+            chat_id,
+            conversation_message_id,
+            reply.token_usages,
+            elapsed_ms,
+            AgentType.TRAINER.value,
+        )
+        if self._training_service:
+            await self._training_response(ctx, chat_id, message_thread_id, "/train semana")
+
+    async def _answer_about_plan(
+        self, ctx: str, chat_id: int, message_thread_id: int | None, user_message: str
+    ) -> None:
+        """Follow-up question about an existing plan."""
+        if self._trainer is None:
+            await self._send(chat_id, message_thread_id, Constants.TRAINER_UNAVAILABLE_MESSAGE)
+            return
+
+        stored_plan = await self._conversation_repository.get_current_plan(chat_id)
+        if stored_plan is None:
+            logger.warning(f"{ctx} sesion de entrenamiento activa sin plan almacenado")
+            await self._send(chat_id, message_thread_id, Constants.NO_PLAN_MESSAGE)
+            return
+
+        profile = (
+            await self._training_service.profile(chat_id)
+            if self._training_service
+            else await self._conversation_repository.get_interviewer_profile(chat_id)
+        )
+
+        history = await self._conversation_repository.get_recent(
+            chat_id, self._trainer_history_window_messages, AgentType.TRAINER.value
+        )
+
+        started = time.perf_counter()
+        try:
+            async with typing_indicator(self._bot, chat_id, message_thread_id):
+                reply = await self._trainer.answer(user_message, stored_plan.plan, history, profile)
+        except AgentError as exc:
+            await self._record_trainer_error(
+                ctx, chat_id, message_thread_id, TrainerAction.ANSWER_PLAN, exc, started
+            )
+            return
+        except Exception:
+            logger.exception(f"{ctx} fallo al invocar al entrenador")
+            await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
+            return
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        if not reply.turn.reply.strip():
+            logger.error(f"{ctx} el entrenador devolvio una respuesta vacia")
+            await self._send(chat_id, message_thread_id, Constants.LLM_ERROR_MESSAGE)
+            return
+
+        if self._training_service is not None and reply.turn.intent != "answer":
+            # Workflow messages are authoritative; do not send the model's speculative handoff.
+            await self._record_token_usage(
+                ctx, chat_id, None, reply.token_usages, elapsed_ms, AgentType.TRAINER.value
+            )
+            selection = (
+                reply.turn.swap_selection if isinstance(reply.turn, TrainerAnswerTurn) else None
+            )
+            await self._training_response(
+                ctx,
+                chat_id,
+                message_thread_id,
+                "/train cambiar" if reply.turn.intent == "exercise_swap" else "/train revisar",
+                swap_message=user_message if reply.turn.intent == "exercise_swap" else None,
+                swap_selection=selection,
+            )
+            return
+
+        await self._send(chat_id, message_thread_id, reply.turn.reply)
+        conversation_message_id = await self._conversation_repository.add_turn(
+            chat_id, user_message, reply.turn.reply, AgentType.TRAINER.value
+        )
+        await self._record_token_usage(
+            ctx,
+            chat_id,
+            conversation_message_id,
+            reply.token_usages,
+            elapsed_ms,
+            AgentType.TRAINER.value,
+        )
+
+    async def _training_response(
+        self,
+        ctx: str,
+        chat_id: int,
+        thread_id: int | None,
+        text: str,
+        *,
+        swap_message: str | None = None,
+        swap_selection: SwapSelection | None = None,
+    ) -> None:
+        if self._training_service is None:
+            return
+        try:
+            await self._training_service.remember_thread(chat_id, thread_id)
+            async with typing_indicator(self._bot, chat_id, thread_id):
+                responses = (
+                    await self._training_service.handle(
+                        chat_id, text, swap_message=swap_message, swap_selection=swap_selection
+                    )
+                    if swap_message
+                    else await self._training_service.handle(chat_id, text)
+                )
+        except AgentError as error:
+            logger.warning("%s controlled training error: %s", ctx, error.code)
+            await self._send(chat_id, thread_id, self._message_for_agent_error(error.code))
+            return
+        await self._deliver_training_responses(chat_id, thread_id, swap_message or text, responses)
+
+    async def _deliver_training_responses(
+        self, chat_id: int, thread_id: int | None, text: str, responses: list[str]
+    ) -> None:
+        if self._training_service is None:
+            return
+        if Constants.TRAINING_ACCEPTED_MESSAGE in responses:
+            await self._send(chat_id, thread_id, Constants.TRAINING_ACCEPTED_MESSAGE)
+            responses = await self._training_service.view(chat_id, mode="week")
+        if responses and responses[0].startswith((
+            Constants.TRAINING_NAVIGATION["title"].split("{")[0],
+            Constants.TRAINING_NAVIGATION["week_title"],
+        )):
+            await self._send(
+                chat_id, thread_id, Constants.TRAINING_NAVIGATION["menu"], persistent_keyboard()
+            )
+        markup = await self._training_service.keyboard(chat_id, responses)
+        await self._conversation_repository.add_turn(
+            chat_id, text, "\n".join(responses), AgentType.TRAINER.value
+        )
+        for index, response in enumerate(responses):
+            if markup is not None and index == len(responses) - 1:
+                await self._send(chat_id, thread_id, response, markup)
+            else:
+                await self._send(chat_id, thread_id, response)
+
+    async def _record_trainer_error(
+        self,
+        ctx: str,
+        chat_id: int,
+        message_thread_id: int | None,
+        action: TrainerAction,
+        exc: AgentError,
+        started: float,
+    ) -> None:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        await self._record_token_usage(
+            ctx,
+            chat_id,
+            None,
+            exc.token_usages or [self._unknown_usage(exc.code, elapsed_ms)],
+            elapsed_ms,
+            AgentType.TRAINER.value,
+        )
+        logger.warning(
+            "%s fallo controlado del entrenador --> action=%s, code=%s retryable=%s",
+            ctx,
+            action,
+            exc.code,
+            exc.retryable,
+        )
+        await self._send(chat_id, message_thread_id, self._message_for_agent_error(exc.code))
+
+    @staticmethod
+    def _unknown_usage(code: AgentErrorCode, elapsed_ms: float) -> TokenUsage:
+        return TokenUsage(
+            model="unknown",
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            status=code.value,
+            latency_ms=int(elapsed_ms),
+        )
+
+    async def _record_token_usage(
+        self,
+        ctx: str,
+        chat_id: int,
+        conversation_message_id: int | None,
+        token_usages: list[TokenUsage],
+        elapsed_ms: float,
+        agent: str = AgentType.INTERVIEWER.value,
+    ) -> None:
+        """Log + persist tokens per LLM call; skipped when the model reported no usage."""
+        if not token_usages:
+            return
+        total_tokens = sum(usage.total_tokens for usage in token_usages)
+        logger.info(f"{ctx} tokens consumidos: total={total_tokens} llamadas={len(token_usages)}")
+        span = trace.get_current_span()
+        span.set_attribute("llm.total_tokens", total_tokens)
+        span.set_attribute("llm.calls", len(token_usages))
+        for usage in token_usages:
+            await self._conversation_repository.record_token_usage(
+                chat_id=chat_id,
+                agent=agent,
+                model=usage.model,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                latency_ms=usage.latency_ms,
+                status=usage.status,
+                conversation_message_id=conversation_message_id,
+            )
+
+    async def _reply_with_interviewer(
+        self,
+        chat_id: int,
+        llm_input: IAInput,
+    ) -> InterviewerReply:
+        history = await self._conversation_repository.get_recent(
+            chat_id,
+            self._history_window_messages,
+        )
+        return await self._interviewer.respond(llm_input.get_user_message(), history)
+
+    def _build_llm_input(self, ctx: str, user_message: str) -> IAInput:
+        interviewer_agent = agent_factory.build_interviewer_agent()
+        system_prompt_with_context = interviewer_agent.insert_context("")
+        if not system_prompt_with_context:
+            logger.debug(f"{ctx} el system prompt va vacio: el modelo no recibe instrucciones")
+        return IAInput([
+            IAMessage(role="system", message=system_prompt_with_context),
+            IAMessage(message=user_message),
+        ])
+
+    @timed("telegram_delivery")
+    async def _send(
+        self,
+        chat_id: int,
+        message_thread_id: int | None,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | ReplyKeyboardMarkup | None = None,
+    ) -> None:
+        """Envia al usuario, reintentando una vez si Telegram aplica control de flujo."""
+        if len(text.encode("utf-16-le")) // 2 > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
+            chunks: list[str] = []
+            start = 0
+            size = 0
+            for index, character in enumerate(text):
+                units = 2 if ord(character) > 0xFFFF else 1
+                if size + units > Constants.TELEGRAM_MAX_MESSAGE_CHARS:
+                    chunks.append(text[start:index])
+                    start, size = index, 0
+                size += units
+            chunks.append(text[start:])
+            for index, chunk in enumerate(chunks):
+                await self._send(
+                    chat_id,
+                    message_thread_id,
+                    chunk,
+                    reply_markup if index == len(chunks) - 1 else None,
+                )
+            return
+        kwargs: _MessageMarkup = {"reply_markup": reply_markup} if reply_markup is not None else {}
+        try:
+            await self._bot.send_message(
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text, **kwargs
+            )
+        except RetryAfter as exc:
+            # PTB lo declara como int | timedelta, aunque la API devuelva segundos.
+            espera = (
+                exc.retry_after.total_seconds()
+                if isinstance(exc.retry_after, timedelta)
+                else float(exc.retry_after)
+            )
+            if espera > Constants.MAX_TELEGRAM_RETRY_SECONDS:
+                # Esperar mas bloquearia la peticion y Telegram reenviaria el update.
+                logger.warning(f"Telegram pide esperar {espera}s: se descarta el envio")
+                return
+            logger.warning(f"control de flujo de Telegram: reintento en {espera}s")
+            await asyncio.sleep(espera)
+            await self._bot.send_message(
+                chat_id=chat_id, message_thread_id=message_thread_id, text=text, **kwargs
+            )
+
+    async def _send_reminder(self, chat_id: int, thread_id: int | None, text: str) -> None:
+        await self._bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=text)
+
+    async def _notify_server_error(self, message: Message | None, ctx: str) -> None:
+        if message is None:
+            return
+        try:
+            await self._bot.send_message(
+                chat_id=message.chat_id, text=Constants.SERVER_ERROR_MESSAGE
+            )
+        except Exception:
+            logger.exception(f"{ctx} tampoco se pudo avisar al usuario del error")
+
+    @staticmethod
+    def _message_for_agent_error(code: AgentErrorCode) -> str:
+        messages = {
+            AgentErrorCode.AUTHENTICATION: Constants.LLM_AUTHENTICATION_ERROR_MESSAGE,
+            AgentErrorCode.QUOTA: Constants.LLM_QUOTA_ERROR_MESSAGE,
+            AgentErrorCode.RATE_LIMITED: Constants.LLM_RATE_LIMIT_ERROR_MESSAGE,
+            AgentErrorCode.INVALID_REQUEST: Constants.LLM_INVALID_REQUEST_ERROR_MESSAGE,
+            AgentErrorCode.OUTPUT_LIMIT: Constants.LLM_OUTPUT_LIMIT_ERROR_MESSAGE,
+            AgentErrorCode.TIMEOUT: Constants.LLM_TIMEOUT_ERROR_MESSAGE,
+            AgentErrorCode.UNAVAILABLE: Constants.LLM_UNAVAILABLE_ERROR_MESSAGE,
+            AgentErrorCode.INVALID_OUTPUT: Constants.LLM_INVALID_OUTPUT_ERROR_MESSAGE,
+        }
+        return messages[code]
+
+    @staticmethod
+    def _build_context(update: Update, message: Message | None) -> str:
+        """Prefijo comun a todas las trazas de una peticion, para poder correlacionarlas."""
+        chat_id = message.chat_id if message is not None else Constants.UNKNOWN_ID
+        message_id = message.message_id if message is not None else Constants.UNKNOWN_ID
+        thread_id = message.message_thread_id if message is not None else None
+        return (
+            f"[update={update.update_id} chat={chat_id} thread={thread_id} "
+            f"msg={message_id} user={user_label(message)} "
+            f"telegram_user_id={telegram_user_id(message)}]"
+        )
+
+    async def _quota_message(self, ctx: str, chat_id: int, command: Commands | None) -> str | None:
+        """Mensaje de corte si el chat ha agotado su cuota; None si puede continuar."""
+        if self._usage_limits.tier_for(command) == UsageTier.UNLIMITED:
+            return None
+        limits = (
+            await self._quota_resolver(chat_id)
+            if self._quota_resolver is not None
+            else self._usage_limits
+        )
+        limit = limits.limit_for(command)
+        if limit is None:
+            return None
+
+        since = datetime.now(UTC) - limits.window
+        used = await self._conversation_repository.tokens_used_since(chat_id, since)
+        if used < limit:
+            return None
+
+        tier = limits.tier_for(command)
+        logger.warning(f"{ctx} cuota superada: nivel={tier} consumido={used} limite={limit}")
+        # Por el consumo real, no por el nivel del comando: pasado el limite duro el
+        # mensaje blando prometeria una conversacion que tampoco esta disponible.
+        if used >= limits.hard_tokens:
+            return Constants.QUOTA_EXCEEDED_MESSAGE
+        return Constants.QUOTA_SOFT_MESSAGE

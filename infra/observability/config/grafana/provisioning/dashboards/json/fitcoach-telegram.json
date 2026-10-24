@@ -3,7 +3,7 @@
   "schemaVersion": 39, "tags": ["fitcoach", "tecnicas", "telegram"], "timezone": "browser",
   "time": {"from": "now-24h", "to": "now"}, "refresh": "1m",
   "templating": {"list": [
-    {"name": "environment", "label": "Entorno", "type": "custom", "query": "dev,prod", "current": {"text": "dev", "value": "dev"}, "includeAll": false, "multi": false}
+    {"name": "environment", "label": "Entorno", "type": "custom", "query": "production", "current": {"text": "production", "value": "production"}, "includeAll": false, "multi": false}
   ]},
   "panels": [
     {

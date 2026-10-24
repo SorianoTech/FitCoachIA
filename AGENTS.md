@@ -140,7 +140,8 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 
 ## 4. Configuration
 
-- Precedence: OS env vars > `.env.<APP_ENV>` > `.env` > defaults (`APP_ENV` defaults to `dev`).
+- Precedence: OS env vars > `FITCOACH_ENV_FILE` (set by the Makefile; defaults to `.env`) > defaults. `.env.<APP_ENV>` is no longer loaded;
+  `APP_ENV` (default `production`) is only the `deployment.environment.name` observability label.
 - One `BaseSettings` class per prefix in `infrastructure/config/settings.py`; `main.py` lifespan instantiates all of them
   so a missing/malformed value aborts startup (fail fast).
 - `bot_telegram_commands` is `name:description` pairs joined by commas; validate through `to_bot_command`.
@@ -189,11 +190,11 @@ Out of scope of this flow (independent images with their own pins): `infra/embed
 
 The `Makefile` is the shared entry point for local use and GitHub workflows (`.github/`). Do not duplicate its logic in YAML.
 
-- Targets: `build`, `run`, `stop`, `logs`, `clean*`, `tests`, `dev-up|down|logs`, `prod-up|down|logs`, `vector-up|down|logs`.
+- Targets: `build`, `run`, `stop`, `logs`, `clean*`, `tests`, `up|app|down|app-logs`, `vector-up|down|logs`.
 - `make tests`: starts `tests/docker-compose-test.yml`, runs unit + IT with coverage >= 80 %, tears it down.
   CI calls `make tests PYTEST=pytest`.
-- `make prod-up` is what `deploy.yml` runs on the server. The deploy copies **only** `docker-compose.yml` and `Makefile`,
-  so the prod compose cannot depend on other repo files.
+- `make up` is what `deploy.yml` runs on the server (`sudo -n make up`). The deploy rsyncs the repo checkout of the release tag
+  to `~/fitcoachia` and the image is **built on the server** (no registry image, no Docker Hub secrets); rollback = redeploy the previous version.
 - Workflows: `build.yml` (quality + security + semgrep + tests on `feat/**`, `feature/**`, `fix/**`, `bugfix/**`),
   `release.yml` (image build, Trivy, GitHub release, then `deploy.yml`), `validate-*-merge.yml`.
   Composite actions: `.github/actions/python-setup` and `quality-check` (ruff, mypy, gitleaks, pip-audit, bandit).
@@ -206,17 +207,14 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 
 | File | Purpose | Notes |
 |---|---|---|
-| `docker-compose.dev.yml` | Development stack (`build:`) | Reference one: change here first |
-| `docker-compose.local.yml` | Local all-in-one stack, used to **try changes locally** | Reads root `.env` |
-| `docker-compose.yml` | Production (`image:` published, no `build:`) | Adapt, do not copy, from dev |
+| `docker-compose.yml` | The single environment (`build:`; project `fitcoach`: `fitcoach-ia`, `embedder`, `postgres`, `pgadmin`; network `fitcoach-internal` + `proxy-network`) | Env file: `ENV_FILE` (default `/etc/fitcoachia/dev/.env.dev`) falling back to root `.env`, passed as `FITCOACH_ENV_FILE` |
 | `tests/docker-compose-test.yml` | Integration tests (app + Postgres + pgVector + stub server) | Must always work with `make tests` |
-| `infra/vector-db/docker-compose.vector-db*.yml` | pgVector catalogue (independent lifecycle) | Not part of app compose |
+| `infra/vector-db/docker-compose.vector-db.yml` | pgVector catalogue (independent lifecycle, joins `fitcoach-internal`) | Not part of app compose |
 | `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
 | `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3, Nginx Proxy Manager compose | Runs the composes above unchanged; see `docs/despliegue-aws-ec2.md` |
 
-Workflow for a compose-affecting change: edit **dev** -> try it with **local** -> if it works, replicate in **prod**
-(keep prod-specific things: `image:`, `restart`, healthchecks, networks, env files) -> keep the **test** compose runnable.
+Workflow for a compose-affecting change: edit `docker-compose.yml` -> try it with `make up` -> keep the **test** compose runnable.
 Dockerfile (`src/Dockerfile`): multi-stage, non-root user, context = repo root (`docker build -f src/Dockerfile .`);
 it only copies `src/requirements.txt`, `src/fitcoach`, `alembic` and `alembic.ini`.
 
@@ -267,7 +265,7 @@ Update every item that the change touches, in the same change:
 |---|---|
 | Any behaviour, flow or design | the matching file in `docs/` (Spanish), chosen as in golden rule 7 — **mandatory** |
 | Code | unit + IT tests (OK and KO cases) — **mandatory** |
-| Services, ports, env vars | `docker-compose.dev.yml`, `docker-compose.local.yml`, `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
+| Services, ports, env vars | `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
 | Env vars | the matching `.env.example` (+ `docs/how-to.md`) |
 | DB models | Alembic revision (conversational DB) or `infra/vector-db/ddl` script (vector DB) |
 | Dependencies | `pyproject.toml` -> regenerate both requirements files -> `docs/toml.md` |
@@ -278,6 +276,6 @@ Update every item that the change touches, in the same change:
 
 Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`,
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
-`docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md`, `docs/despliegue-aws-ec2.md` (single-EC2 AWS deployment), `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
-`docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/telegram-environments.md`.
+`docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md` (single environment, env file, Telegram bot/webhook), `docs/despliegue-aws-ec2.md` (single-EC2 AWS deployment), `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
+`docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`.
 `docs/plan/` holds design notes and `docs/todo/` the backlog.

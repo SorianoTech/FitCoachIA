@@ -10,7 +10,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
+  DOCKER_IMAGE_BASE: "fitcoachia/fitcoach-app"
 
 jobs:
   Release:
@@ -31,22 +31,13 @@ jobs:
           fi
           echo "Versión válida"
 
-      - name: Log in to registry
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Validar existencia de version
         run: |
-          echo "Verificamos la version  ${{ github.event.inputs.version }} existe en el repositorio de docker"
-          if docker manifest inspect $DOCKER_IMAGE_BASE:${{ github.event.inputs.version }} > /dev/null 2>&1; then
-            echo "La imagen ya existe. Aumente la versión minor de entrada"
+          if git ls-remote --exit-code --tags "https://github.com/${{ github.repository }}" "refs/tags/${{ github.event.inputs.version }}" > /dev/null 2>&1; then
+            echo "El tag ya existe. Aumente la versión minor de entrada"
             exit 1
-          else
-            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla"
           fi
-        continue-on-error: false
+          echo "Tag ${{ github.event.inputs.version }} no existe. Procedemos a generar la release"
 
       - name: Repository checkout
         uses: actions/checkout@v4
@@ -115,10 +106,6 @@ jobs:
           prerelease: false
           preserve_order: true
 
-      - name: Push image
-        env:
-          DOCKER_IMAGE: ${{ steps.image-metadata.outputs.tags }}
-        run: docker push $DOCKER_IMAGE
 
   Deploy:
     name: Deploy
@@ -130,5 +117,3 @@ jobs:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_PKEY: ${{ secrets.SERVER_PKEY }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
-      DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
-      ENV_FILE_PATH: ${{ secrets.ENV_FILE_PATH }}

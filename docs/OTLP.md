@@ -25,7 +25,7 @@ El endpoint actual es:
 http://fitcoach-otel-collector:4317
 ```
 
-Está configurado en `.env.dev`. El puerto `4317` corresponde a OTLP sobre gRPC; el `4318` sería OTLP sobre HTTP.
+Está configurado en el fichero de entorno. El puerto `4317` corresponde a OTLP sobre gRPC; el `4318` sería OTLP sobre HTTP.
 
 **Qué instrumenta automáticamente**
 

@@ -19,10 +19,10 @@
         "name": "environment",
         "label": "Entorno",
         "type": "custom",
-        "query": "dev,prod",
+        "query": "production",
         "current": {
-          "text": "dev",
-          "value": "dev"
+          "text": "production",
+          "value": "production"
         },
         "includeAll": false,
         "multi": false
@@ -43,7 +43,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "fieldConfig": {
         "defaults": {
@@ -73,7 +73,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "fieldConfig": {
         "defaults": {
@@ -103,7 +103,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "fieldConfig": {
         "defaults": {
@@ -133,7 +133,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "targets": [
         {
@@ -157,7 +157,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "targets": [
         {
@@ -181,7 +181,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "fieldConfig": {
         "defaults": {
@@ -211,7 +211,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "fieldConfig": {
         "defaults": {
@@ -241,7 +241,7 @@
       },
       "datasource": {
         "type": "postgres",
-        "uid": "fitcoach-postgres-${environment}"
+        "uid": "fitcoach-postgres"
       },
       "targets": [
         {

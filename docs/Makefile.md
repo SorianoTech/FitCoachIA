@@ -4,81 +4,56 @@
 
 ---
 
-## Levantar entornos
+## Levantar el entorno
 
-Son los comandos del día a día.
+Son los comandos del día a día. Hay un único entorno (`docker-compose.yml`).
 
 | Comando | Qué hace |
 |---|---|
-| `make dev-up` | Construye la imagen desde el código local y levanta dev (app + Postgres + Adminer); con `--remove-orphans`, elimina servicios que ya no están en el Compose |
-| `make dev-down` | Detiene dev y retira huérfanos |
-| `make dev-logs` | Sigue los logs de dev |
-| `sudo make prod-up VERSION=x.y.z` | Descarga esa versión del registro y levanta producción; con `--remove-orphans`, elimina servicios que ya no están en el Compose |
-| `sudo make prod-down` | Detiene producción |
-| `sudo make prod-logs` | Sigue los logs de producción |
+| `make up` | Crea las redes si faltan, construye las imágenes y levanta app, embedder, Postgres y pgAdmin; con `--remove-orphans`, elimina servicios que ya no están en el Compose |
+| `make app` | Reconstruye y reinicia solo la API (`--no-deps`; el resto debe estar ya levantado) |
+| `make down` | Detiene el stack y retira huérfanos |
+| `make app-logs` | Sigue los logs del stack |
 
-Diferencia esencial: **`dev-up` construye, `prod-up` descarga**. En producción nunca se compila; se
-despliega una imagen ya publicada y escaneada.
+La imagen **siempre se construye** donde se ejecuta `make up` (en el servidor, el workflow copia el
+código de la versión); no se descarga de ningún registro.
 
-El `sudo` de los targets de producción no es opcional: el fichero de entorno vive en una ruta con
-permisos restringidos.
+En el servidor se usa `sudo make up`: el fichero de entorno vive en una ruta con permisos
+restringidos.
 
 ### Detener sin perder datos
 
-`dev-down` y `prod-down` **no borran volúmenes**: la base de datos sobrevive. Para borrarla también
-hay que llamar a Compose a mano con `-v`, que es deliberadamente incómodo.
+`down` **no borra volúmenes** (`fitcoach-postgres`, `fitcoach-pgadmin`): la base de datos sobrevive. Para
+borrarla también hay que llamar a Compose a mano con `-v`, que es deliberadamente incómodo.
 
 ---
 
 ## Cómo se resuelve el fichero de entorno
 
-Cada target de entorno ejecuta antes una de estas dos rutinas, y te dice por consola cuál eligió:
+Cada target de entorno (`up`, `app`, `down`, `app-logs`) ejecuta antes esta rutina y te dice por consola
+cuál eligió:
 
 ```
->> entorno dev: /etc/fitcoachia/dev/.env.dev
-```
-
-**Desarrollo** — con alternativa:
-
-```
-¿existe /etc/fitcoachia/dev/.env.dev?
+¿es legible $(ENV_FILE)?   (por defecto /etc/fitcoachia/dev/.env.dev)
    sí → se usa
-   no → .env.dev del repositorio
+   no → .env de la raíz del repositorio (con aviso)
         └─ tampoco existe → ERROR
 ```
 
-**Producción** — sin alternativa:
-
-```
-¿es legible /etc/fitcoachia/prod/.env.prod?
-   sí → se usa
-   no → ERROR: "no existe o no tiene permisos de acceso"
-```
-
-La comprobación de producción usa `-r` (legible), no `-f` (existe). La diferencia importa: sin
-`sudo`, el fichero existe pero no se puede leer, y el mensaje te dice exactamente eso en vez de un
-«no existe» engañoso.
+La comprobación usa `-r` (legible), no `-f` (existe): sin `sudo`, un fichero de root existe pero no se
+puede leer, y por eso se cae al `.env` o se muestra el error indicándolo.
 
 ### Sobrescribir la ruta
 
-Las tres son variables de `make`, así que se pueden pasar en la llamada:
+`ENV_FILE` es una variable de `make`, así que se puede pasar en la llamada:
 
 ```bash
-make prod-up PROD_ENV_FILE=/otra/ruta/.env.prod
-make dev-up  ENV_ROOT=/tmp/config
+make up ENV_FILE=/otra/ruta/.env
 ```
-
-Es lo que usa el workflow de despliegue para inyectar la ruta que le llega por secreto.
-
-| Variable | Valor por defecto |
-|---|---|
-| `ENV_ROOT` | `/etc/fitcoachia` |
-| `DEV_ENV_FILE` | `$(ENV_ROOT)/dev/.env.dev` |
-| `PROD_ENV_FILE` | `$(ENV_ROOT)/prod/.env.prod` |
 
 Una vez resuelto, el fichero se pasa a Compose **por dos vías a la vez**: `--env-file` para
 interpolar `${VAR}` en el YAML, y `FITCOACH_ENV_FILE` para el `env_file:` que lo inyecta en el
-contenedor. Detalle en [entornos-y-despliegue.md](entornos-y-despliegue.md#2-los-ficheros-de-entorno).
+contenedor. Detalle en [entornos-y-despliegue.md](entornos-y-despliegue.md#2-el-fichero-de-entorno).
 
 ---
 
@@ -116,15 +91,11 @@ Utilidades de desarrollo local, sin Compose de por medio.
 | `make all` | `clean` + `build` + `run` |
 
 Ojo con `run`: usa el `.env` de la raíz y el nombre de contenedor `fitcoach-ia`, **el mismo que
-producción**. En tu máquina da igual; en el servidor chocaría.
+el del Compose**. En tu máquina da igual; con el stack levantado chocaría.
 
 ---
 
-## Nota sobre `version` y `VERSION`
+## Nota sobre `version`
 
-No son lo mismo y conviven:
-
-- **`version`** (minúsculas) — targets de imagen local (`build`, `run`, `clean-image`). Por defecto `latest`.
-- **`VERSION`** (mayúsculas) — la que interpola el Compose de producción en el tag de la imagen.
-
-Por eso `make prod-up VERSION=0.3.0` lleva mayúsculas y `make build version=0.3.0` minúsculas.
+`version` (minúsculas) solo afecta a los targets de imagen local (`build`, `run`, `clean-image`); por
+defecto `latest`. El Compose no interpola ninguna versión: `make up` siempre construye desde el código.

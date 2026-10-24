@@ -28,7 +28,6 @@ env:
   # Unica fuente de la version de Python en CI; debe ir alineada con
   # requires-python (pyproject.toml) y con la imagen base de src/Dockerfile.
   PYTHON_VERSION: "3.12"
-  ENVIRONMENT: development
   REQUIREMENTS_FILE_PATH: "./.github/requirements-ci.txt"
   SOURCECODE_PATH: ./src/fitcoach/
   CONFIG_FILE: pyproject.toml

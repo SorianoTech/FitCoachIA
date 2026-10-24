@@ -8,7 +8,7 @@ implementación, ver [plan/observabilidad.md](plan/observabilidad.md).
 ## 1. Visión general
 
 El stack vive en `infra/observability/`, **desacoplado** del compose de la
-aplicación (`docker-compose.yml` / `docker-compose.dev.yml`): tiene su propio
+aplicación (`docker-compose.yml`): tiene su propio
 `compose.yml`, arranca y se detiene de forma independiente, y la app sigue
 funcionando (sin telemetría) si el stack no está levantado.
 
@@ -52,12 +52,12 @@ flowchart LR
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
 | **Tempo** | `grafana/tempo:2.6.1` | 3200 (+ OTLP 4317/4318) | Almacena trazas. Retención 7 días. Su `metrics_generator` produce métricas RED (`traces_spanmetrics_*`) a partir de las trazas y las envía a Prometheus por remote-write. |
 | **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`. Reenvía logs a Loki, trazas a Tempo y métricas a Prometheus por remote-write. Las colas de Loki y Tempo se persisten en disco; la de métricas es en memoria (ver sección 9). |
-| **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
+| **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs del contenedor `fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
-Todos los servicios están en la red privada `observability`. Grafana se une además a las redes
-`fitcoach-dev-internal` y `fitcoach-prod-internal` para consultar cada PostgreSQL, y a
+Todos los servicios están en la red privada `observability`. Grafana se une además a la red
+`fitcoach-internal` para consultar PostgreSQL, y a
 `proxy-network` para que nginx proxy manager pueda publicarlo como `fitcoach-grafana:3000`. El
-Collector también se une a las dos redes internas de aplicación para recibir OTLP, pero no a la red
+Collector también se une a `fitcoach-internal` para recibir OTLP, pero no a la red
 del proxy.
 
 ## 3. Qué información se recoge
@@ -99,8 +99,8 @@ username).
 
 Grafana Alloy (`infra/observability/config/alloy/config.alloy`) lee estos logs
 del contenedor de la app vía el socket de Docker y los reenvía a Loki,
-etiquetados con `service_name=fitcoach-ia`, `environment` (`dev`/`prod`, según
-el nombre del contenedor) y `container`. Como `telegram_user_id` va embebido en
+etiquetados con `service_name=fitcoach-ia`, `environment` (etiqueta fija `prod` para
+`fitcoach-ia`, ver sección 8) y `container`. Como `telegram_user_id` va embebido en
 el texto del mensaje (no es un campo JSON de nivel superior), las consultas que
 necesiten filtrar por él usan una etapa `| regexp` de LogQL en lugar de `| json`
 (ver el panel de logs del dashboard, más abajo).
@@ -171,9 +171,8 @@ tiempo» del dashboard.
 
 Además de la vista general, se provisionan seis dashboards independientes:
 **Negocio y activación**, **Entrevistas**, **Telegram y backend**, **Agentes y LLM**
-y **RAG y catálogo**, además de **Moderación de ejercicios**. Cada uno tiene selector
-único `environment=dev|prod` que selecciona el datasource SQL y los logs del mismo
-entorno. Los paneles explican su denominador, cobertura y limitaciones; los KPIs sin
+y **RAG y catálogo**, además de **Moderación de ejercicios**. Cada uno usa el
+datasource SQL `PostgreSQL` y los logs de `fitcoach-ia`. Los paneles explican su denominador, cobertura y limitaciones; los KPIs sin
 datos fiables quedan pendientes, no se sustituyen por cifras engañosas.
 Detalle y matriz de métricas:
 [metricas-negogio-y-tecnicas.md](plan/metricas-negogio-y-tecnicas.md).
@@ -213,7 +212,7 @@ con variables de filtro dinámicas y paneles organizados en capas de complejidad
 
 ### 4.1 Variables de filtro
 
-- **`$datasource`** — elige entre `PostgreSQL Dev` y `PostgreSQL Prod`.
+- **`$datasource`** — usa por defecto el datasource `PostgreSQL`.
 - **`$agent`** — filtra por `interviewer`, `trainer`, `nutritionist`, `coach` (multiselecta).
 - **`$telegram_user_id`** — filtra por usuario de Telegram (multiselecta).
 - **`$log_level`** — filtra por nivel de log: `ERROR`, `WARNING`, `INFO`, `DEBUG` (multiselecta).
@@ -246,26 +245,22 @@ con variables de filtro dinámicas y paneles organizados en capas de complejidad
 
 Datasources disponibles para explorar libremente además del dashboard:
 **Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`),
-**PostgreSQL Dev** y **PostgreSQL Prod** (consultas SQL ad-hoc sobre
-`token_usage` u otras tablas de cada base, ver sección 10).
+**PostgreSQL** (uid `fitcoach-postgres`, consultas SQL ad-hoc sobre
+`token_usage` u otras tablas, ver sección 10).
 
 ### Alertas provisionadas
 
 En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
-(carpeta «FitCoachIA» en Grafana), duplicadas por entorno para poder
-distinguir un incidente en dev de uno en prod:
+(carpeta «FitCoachIA» en Grafana), en el grupo `fitcoach-llm`:
 
-- **`[dev]`/`[prod]` Latencia p95 del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
-- **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
+- **Latencia del LLM por encima del umbral** (`fitcoach-llm-latency-p95`): percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
+- **Tasa de fallos del LLM elevada** (`fitcoach-llm-failure-rate`): más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
 
-Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada
-grupo consulta su propio datasource (`fitcoach-postgres-dev` /
-`fitcoach-postgres-prod`).
+Ambas usan `severity: warning` y consultan el datasource `fitcoach-postgres`.
 
 ## 5. Cómo levantar el stack
 
-Requiere las redes externas `proxy-network`, `fitcoach-dev-internal` y
-`fitcoach-prod-internal`. Desde la raíz del repositorio pueden crearse de forma idempotente con:
+Requiere las redes externas `proxy-network` y `fitcoach-internal`. Desde la raíz del repositorio pueden crearse de forma idempotente con:
 
 ```bash
 make networks
@@ -277,8 +272,8 @@ Configurar las variables de entorno (una sola vez):
 cd infra/observability
 cp .env.example .env
 # Editar .env: GF_ADMIN_PASSWORD, DEPLOYMENT_ENVIRONMENT,
-# FITCOACH_POSTGRES_DEV_*/FITCOACH_POSTGRES_PROD_* (deben coincidir con las
-# credenciales reales de cada Postgres; ver seccion 8 sobre convivencia dev/prod).
+# FITCOACH_POSTGRES_DB/_USER/_PASSWORD (deben coincidir con las
+# credenciales reales del Postgres; ver sección 8).
 ```
 
 Levantar el stack:
@@ -318,7 +313,7 @@ sigue respondiendo peticiones normalmente, simplemente deja de emitir trazas
 
 ## 7. Cómo configurar la app para que envíe telemetría
 
-En el entorno de la app (`.env`, `.env.dev`, `.env.prod` o variables reales del
+En el fichero de entorno de la app (`/etc/fitcoachia/dev/.env.dev`, `.env` o variables reales del
 contenedor), añadir:
 
 ```bash
@@ -332,43 +327,34 @@ APP_VERSION=<git-sha o version>   # opcional, aparece como service.version en lo
   desarrollo local por defecto.
 - El host `fitcoach-otel-collector` solo es resoluble si el contenedor de la app está en la misma
   red que el Collector. El Compose de observabilidad conecta el Collector a
-  `fitcoach-dev-internal` y `fitcoach-prod-internal`.
-- Ya está activada en `.env.dev`. Para producción, añadir la misma línea a
-  `.env.prod` en el servidor (no está versionado, hay que editarlo a mano).
+  `fitcoach-internal`, la misma red del Compose de la app.
+- Añadir la línea al fichero de entorno real en el servidor (no está versionado, hay que editarlo a mano).
 
-## 8. Cómo conviven dev y producción sin pisarse
+## 8. Etiquetas de entorno
 
-El stack de observabilidad es único y compartido, pero cada canal de
-telemetría separa dev de prod de una forma distinta:
+Hay un único entorno, pero los canales de telemetría conservan una etiqueta de entorno:
 
-- **Trazas**: se distinguen por la etiqueta `deployment.environment.name`,
-  que sale de `APP_ENV` (`dev` en `docker-compose.dev.yml`, `prod` en
-  `docker-compose.yml`). Basta con activar `otel_exporter_otlp_endpoint` en
-  ambos `.env.<entorno>` para que las dos lleguen a la vez al mismo Collector.
-- **Logs**: Alloy ingiere `fitcoach-ia` y `dev-fitcoach-ia` simultáneamente
-  (ver `config/alloy/config.alloy`) y las distingue con la label
-  `environment` (`dev`/`prod`), calculada a partir del nombre del contenedor.
-- **Tokens/SQL (`token_usage`)**: cada entorno tiene su propio servicio Postgres
-  (`postgres-dev` en `docker-compose.dev.yml`, `postgres-prod` en
-  `docker-compose.yml`) y su propia red backend. Cada app solo puede resolver su base de datos.
-  Grafana se conecta a las dos redes y mantiene **dos datasources separados**
-  (`PostgreSQL Dev` → `postgres-dev:5432`, `PostgreSQL Prod` →
-  `postgres-prod:5432`), seleccionables en el dashboard con la variable
-  `$datasource`.
-- **La API mantiene nombres distintos por entorno** (`fitcoach-ia-dev` /
-  `fitcoach-ia-prod`). Solo estas APIs comparten `proxy-network`, por lo que sus alias deben seguir
-  siendo únicos. Esta regla evita repetir el incidente histórico en el que ambos servicios se
-  llamaban `fitcoach-ia` y Docker alternaba la resolución DNS entre dev y producción.
+- **Trazas**: la etiqueta `deployment.environment.name` sale de `APP_ENV` (opcional, por defecto
+  `production`; ya no selecciona ningún fichero `.env.<APP_ENV>`).
+- **Logs**: Alloy ingiere solo el contenedor `fitcoach-ia`.
+- **Tokens/SQL (`token_usage`)**: el servicio Postgres se llama `postgres` (contenedor
+  `fitcoach-postgres`) en la red `fitcoach-internal`.
+
+> **Datasource único.** Grafana provisiona un solo datasource `PostgreSQL` (uid `fitcoach-postgres`,
+> `postgres:5432`) que sustituye a los antiguos Dev/Prod, y un solo grupo de alertas `fitcoach-llm`.
+> Alloy mantiene una etiqueta `environment` fija en `config/alloy/config.alloy`.
+>
+> ⚠️ **El `infra/observability/.env` real debe actualizarse**: renombrar `FITCOACH_POSTGRES_DEV_*` a
+> `FITCOACH_POSTGRES_*` (`_DB`, `_USER`, `_PASSWORD`) y borrar las `FITCOACH_POSTGRES_PROD_*`. Sin
+> ello `docker compose` falla por `FITCOACH_POSTGRES_PASSWORD` obligatoria y Grafana no conecta.
 
 > **Regla general**: `proxy-network` solo admite interfaces que deban recibir tráfico de nginx.
 > Sus nombres de servicio deben ser únicos. PostgreSQL, embedder, pgVector, jobs y Collector no se
 > conectan a esa red.
-- **Alertas**: duplicadas por entorno (`[dev]`/`[prod]` en el título), cada
-  una apuntando a su propio datasource Postgres.
 
-Si vas a desplegar producción por primera vez en este host, solo hace falta:
-1. Añadir `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317` a `.env.prod`.
-2. Rellenar `FITCOACH_POSTGRES_PROD_DB/USER/PASSWORD` en `infra/observability/.env` con las credenciales reales de `docker-compose.yml`.
+Para activar la telemetría en el servidor:
+1. Añadir `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317` al fichero de entorno real.
+2. Rellenar `FITCOACH_POSTGRES_*` en `infra/observability/.env` con las credenciales reales de `docker-compose.yml`.
 3. `docker compose -f infra/observability/compose.yml up -d --force-recreate grafana` para que recargue las credenciales.
 
 ## 9. Cómo configurar cada componente
@@ -431,6 +417,6 @@ Grafana salvo que cambie el propio `compose.yml`.
 - **Alloy necesita el socket de Docker montado en solo lectura**: es un
   privilegio amplio (puede enumerar todos los contenedores del host), acotado
   únicamente por la configuración (`discovery.relabel` descarta todo lo que no
-  sea `fitcoach-ia`/`dev-fitcoach-ia` antes de leer sus logs). Revisar si el
+  sea `fitcoach-ia` antes de leer sus logs). Revisar si el
   entorno de despliegue requiere una alternativa (p. ej. el driver de log
   `loki` de Docker a nivel de daemon).

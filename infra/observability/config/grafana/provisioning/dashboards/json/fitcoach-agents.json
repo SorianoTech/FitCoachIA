@@ -3,15 +3,15 @@
   "schemaVersion": 39, "tags": ["fitcoach", "tecnicas", "llm"], "timezone": "browser",
   "time": {"from": "now-24h", "to": "now"}, "refresh": "1m",
   "templating": {"list": [
-    {"name": "environment", "label": "Entorno", "type": "custom", "query": "dev,prod", "current": {"text": "dev", "value": "dev"}, "includeAll": false, "multi": false},
-    {"name": "agent", "label": "Agente", "type": "query", "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"}, "query": "SELECT DISTINCT agent FROM token_usage ORDER BY agent", "refresh": 2, "includeAll": true, "multi": true, "current": {"text": "All", "value": "$__all"}}
+    {"name": "environment", "label": "Entorno", "type": "custom", "query": "production", "current": {"text": "production", "value": "production"}, "includeAll": false, "multi": false},
+    {"name": "agent", "label": "Agente", "type": "query", "datasource": {"type": "postgres", "uid": "fitcoach-postgres"}, "query": "SELECT DISTINCT agent FROM token_usage ORDER BY agent", "refresh": 2, "includeAll": true, "multi": true, "current": {"text": "All", "value": "$__all"}}
   ]},
   "panels": [
     {
       "id": 1, "title": "A1 · Llamadas fallidas (%)", "type": "stat",
       "description": "Llamadas registradas, reparaciones incluidas. status != success. No es porcentaje de turnos fallidos. Solo los fallos persistidos en token_usage son observables.",
       "gridPos": {"x": 0, "y": 0, "w": 8, "h": 5},
-      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres"},
       "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT 100.0*count(*) FILTER (WHERE status<>'success')/NULLIF(count(*),0) AS failed_calls_pct FROM token_usage WHERE $__timeFilter(created_at) AND agent IN (${agent:sqlstring})"}]
     },
@@ -19,28 +19,28 @@
       "id": 2, "title": "Tokens totales", "type": "stat",
       "description": "Tokens del periodo, fallos y reparaciones incluidos. No es saldo de cuota: la ventana de cuotas puede variar por usuario.",
       "gridPos": {"x": 8, "y": 0, "w": 8, "h": 5},
-      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres"},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT sum(total_tokens) AS tokens FROM token_usage WHERE $__timeFilter(created_at) AND agent IN (${agent:sqlstring})"}]
     },
     {
       "id": 3, "title": "Coste conocido y cobertura", "type": "table",
       "description": "NULL significa precio desconocido, no gratis. No dividir este coste entre planes para afirmar coste de generación.",
       "gridPos": {"x": 16, "y": 0, "w": 8, "h": 5},
-      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres"},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT sum(cost_usd) AS known_cost_usd,count(*) AS calls,100.0*count(cost_usd)/NULLIF(count(*),0) AS price_coverage_pct FROM token_usage WHERE $__timeFilter(created_at) AND agent IN (${agent:sqlstring})"}]
     },
     {
       "id": 4, "title": "A1 · Fiabilidad por agente y modelo", "type": "table",
       "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
       "description": "Latencias positivas registradas por llamada, no tiempo percibido ni histograma de turnos. Algunos fallos sin latencia se excluyen del percentil; columna timed_calls explicita cobertura.",
-      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres"},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT agent,model,count(*) AS calls,count(*) FILTER (WHERE status<>'success') AS failed_calls,100.0*count(*) FILTER (WHERE status<>'success')/NULLIF(count(*),0) AS failure_pct,count(*) FILTER (WHERE latency_ms>0) AS timed_calls,percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms>0) AS p50_ms,percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms>0) AS p95_ms FROM token_usage WHERE $__timeFilter(created_at) AND agent IN (${agent:sqlstring}) GROUP BY agent,model ORDER BY calls DESC"}]
     },
     {
       "id": 5, "title": "A1 · Estados y límite de salida", "type": "timeseries",
       "description": "llm_output_limit es límite de salida del proveedor. No equivale a cuota del usuario ni a timeout.",
       "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
-      "datasource": {"type": "postgres", "uid": "fitcoach-postgres-${environment}"},
+      "datasource": {"type": "postgres", "uid": "fitcoach-postgres"},
       "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "rawSql": "SELECT date_trunc('hour',created_at) AS time,agent || ' / ' || status AS metric,count(*) AS calls FROM token_usage WHERE $__timeFilter(created_at) AND agent IN (${agent:sqlstring}) GROUP BY 1,agent,status ORDER BY 1"}]
     },
     {

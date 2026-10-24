@@ -1,9 +1,11 @@
 apiVersion: 1
 
-# Datasource previo, unico, sustituido por "PostgreSQL Dev"/"PostgreSQL Prod"
-# (ver seccion 8 de docs/observabilidad.md sobre convivencia dev/prod).
+# Datasources previos Dev/Prod, sustituidos por el unico "PostgreSQL" (uid fitcoach-postgres).
+# Ver la seccion 8 de docs/observabilidad.md.
 deleteDatasources:
-  - name: PostgreSQL
+  - name: PostgreSQL Dev
+    orgId: 1
+  - name: PostgreSQL Prod
     orgId: 1
 
 datasources:
@@ -35,15 +37,15 @@ datasources:
         datasourceUid: prometheus
     editable: false
 
-  - name: PostgreSQL Dev
+  - name: PostgreSQL
     type: postgres
     access: proxy
-    url: postgres-dev:5432
-    database: ${FITCOACH_POSTGRES_DEV_DB}
-    user: ${FITCOACH_POSTGRES_DEV_USER}
-    uid: fitcoach-postgres-dev
+    url: postgres:5432
+    database: ${FITCOACH_POSTGRES_DB}
+    user: ${FITCOACH_POSTGRES_USER}
+    uid: fitcoach-postgres
     secureJsonData:
-      password: ${FITCOACH_POSTGRES_DEV_PASSWORD}
+      password: ${FITCOACH_POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1600
@@ -51,16 +53,3 @@ datasources:
     # (tokens/coste por telegram_user_id o por agente) sin pasar por Loki/Tempo.
     editable: false
 
-  - name: PostgreSQL Prod
-    type: postgres
-    access: proxy
-    url: postgres-prod:5432
-    database: ${FITCOACH_POSTGRES_PROD_DB}
-    user: ${FITCOACH_POSTGRES_PROD_USER}
-    uid: fitcoach-postgres-prod
-    secureJsonData:
-      password: ${FITCOACH_POSTGRES_PROD_PASSWORD}
-    jsonData:
-      sslmode: disable
-      postgresVersion: 1600
-    editable: false

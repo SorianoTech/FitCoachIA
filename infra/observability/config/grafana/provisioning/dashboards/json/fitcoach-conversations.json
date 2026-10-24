@@ -13,7 +13,7 @@
         "name": "datasource",
         "type": "datasource",
         "query": "postgres",
-        "current": { "text": "PostgreSQL Dev", "value": "fitcoach-postgres-dev" },
+        "current": { "text": "PostgreSQL", "value": "fitcoach-postgres" },
         "refresh": 1
       },
       {

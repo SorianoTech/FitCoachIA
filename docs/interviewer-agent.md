@@ -156,9 +156,9 @@ proveedor.
 | `llm_invalid_output` | Contenido no textual o JSON inválido tras el intento de reparación. |
 
 El límite de salida es especialmente relevante al finalizar: el perfil completo requiere más tokens
-que una pregunta normal. Configura `ia_max_tokens` en `.env.dev` con margen suficiente para el
+que una pregunta normal. Configura `ia_max_tokens` en el fichero de entorno con margen suficiente para el
 informe y el perfil; `2048` es un punto de partida razonable y algunos modelos necesitarán `4096`.
-Reinicia el entorno con `make dev-down && make dev-up` tras cambiar la configuración.
+Reinicia con `make down && make up` tras cambiar la configuración.
 
 Para `gpt-5-nano-2025-08-07`, el razonamiento no configurado usa esfuerzo `medium`.
 FitCoachIA envía `reasoning_effort=minimal` por defecto para reducir tiempo hasta la respuesta y
@@ -180,7 +180,7 @@ admite. Reducirlo no evita un timeout causado por indisponibilidad o saturación
 
 ## Configuración
 
-El modelo se configura con estas variables, normalmente en `.env.dev`:
+El modelo se configura con estas variables, en el fichero de entorno:
 
 ```dotenv
 ia_base_url=https://.../v1
@@ -194,7 +194,7 @@ ia_history_window_messages=20
 ia_skill=interviewer
 ```
 
-En desarrollo, `docker-compose.dev.yml` establece automáticamente `ia_skill=interviewer-dev`.
+Con `ia_skill=interviewer-dev` en el `.env` se usa una variante ligera.
 Esa variante pregunta solo identidad, datos básicos y objetivo/compromiso, y después genera el
 mismo perfil estructurado y el informe final usando valores conservadores para los campos que no
 se preguntan. Sirve para probar rápidamente la persistencia y el flujo de finalización; no debe

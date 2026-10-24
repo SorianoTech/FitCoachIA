@@ -1,6 +1,8 @@
 # Environments
 venv**/
 .env
+.env.*
+!.env.*example
 .venv
 env-*/
 
@@ -26,8 +28,6 @@ __pycache__/
 .mypy*elop
 
 infra/vector-db/loader/resources/**
-.env.dev
-.env.prod
 
 # Artefactos de las ejecuciones offline de los agentes (make trainer-debug)
 runs/

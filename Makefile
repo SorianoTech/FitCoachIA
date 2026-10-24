@@ -23,57 +23,39 @@ export IT_BASE_URL
 COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
 COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
 
-# Ficheros de entorno fuera del repositorio; dev cae al fichero local si no existen, prod no
-ENV_ROOT ?= /etc/fitcoachia
-DEV_ENV_FILE ?= $(ENV_ROOT)/dev/.env.dev
-PROD_ENV_FILE ?= $(ENV_ROOT)/prod/.env.prod
-DEV_ENV_FALLBACK=.env.dev
+# Fichero de entorno del sistema; si no existe se usa el .env del repositorio
+ENV_FILE ?= /etc/fitcoachia/dev/.env.dev
+ENV_FALLBACK=.env
 
-COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
-DEV_APP_SERVICE=fitcoach-ia-dev
-COMPOSE_PROD=$(DOCKER) compose
-DEV_INTERNAL_NETWORK ?= fitcoach-dev-internal
-PROD_INTERNAL_NETWORK ?= fitcoach-prod-internal
+COMPOSE_APP=$(DOCKER) compose
+APP_SERVICE=fitcoach-ia
+INTERNAL_NETWORK ?= fitcoach-internal
 PROXY_NETWORK ?= proxy-network
 # La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
 # cargan una sola vez y sobreviven a los despliegues de la app.
 COMPOSE_VECTOR=$(DOCKER) compose -f infra/vector-db/docker-compose.vector-db.yml
 
-define ensure_dev_networks
-for network in "$(DEV_INTERNAL_NETWORK)" "$(PROXY_NETWORK)"; do \
+define ensure_networks
+for network in "$(INTERNAL_NETWORK)" "$(PROXY_NETWORK)"; do \
 	$(DOCKER) network inspect "$$network" >/dev/null 2>&1 || $(DOCKER) network create "$$network"; \
 done
 endef
 
-define ensure_prod_networks
-for network in "$(PROD_INTERNAL_NETWORK)" "$(PROXY_NETWORK)"; do \
-	$(DOCKER) network inspect "$$network" >/dev/null 2>&1 || $(DOCKER) network create "$$network"; \
-done
-endef
-
-define resolve_dev_env
-if [ -f "$(DEV_ENV_FILE)" ]; then \
-	ENV_FILE="$(DEV_ENV_FILE)"; \
+define resolve_env
+if [ -r "$(ENV_FILE)" ]; then \
+	RESOLVED_ENV_FILE="$(ENV_FILE)"; \
+elif [ -f "$(ENV_FALLBACK)" ]; then \
+	RESOLVED_ENV_FILE="$(ENV_FALLBACK)"; \
+	echo ">> $(ENV_FILE) no encontrado o ilegible -> usando $(ENV_FALLBACK)"; \
 else \
-	ENV_FILE="$(DEV_ENV_FALLBACK)"; \
-	echo ">> $(DEV_ENV_FILE) no encontrado -> usando $(DEV_ENV_FALLBACK)"; \
-fi; \
-[ -f "$$ENV_FILE" ] || { echo "ERROR: no existe ningun fichero de entorno de desarrollo"; exit 1; }; \
-echo ">> entorno dev: $$ENV_FILE"; \
-export FITCOACH_ENV_FILE="$$ENV_FILE"
-endef
-
-define resolve_prod_env
-if [ ! -r "$(PROD_ENV_FILE)" ]; then \
-	echo "ERROR: $(PROD_ENV_FILE) no existe o no tiene permisos de acceso"; \
-	echo "       crea el fichero, o ejecuta el target con sudo"; \
+	echo "ERROR: no existe $(ENV_FILE) ni $(ENV_FALLBACK) (si el primero es de root, ejecuta con sudo)"; \
 	exit 1; \
 fi; \
-echo ">> entorno prod: $(PROD_ENV_FILE)"; \
-export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
+echo ">> fichero de entorno: $$RESOLVED_ENV_FILE"; \
+export FITCOACH_ENV_FILE="$$RESOLVED_ENV_FILE"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests networks dev-up dev-app dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
+.PHONY: container build run stop clean all help clean-image clean-images logs tests networks up app down app-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -90,14 +72,11 @@ help:
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
 	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
-	@echo "  make networks                       - Crea las redes Docker compartidas por dev, prod, proxy y observabilidad"
-	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado. Usa $(DEV_ENV_FILE) si existe, si no $(DEV_ENV_FALLBACK)"
-	@echo "  make dev-app                        - Reconstruye y reinicia solo la app de desarrollo (sin embedder ni postgres)"
-	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
-	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
-	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
-	@echo "  make prod-down                      - Detiene el entorno de produccion"
-	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
+	@echo "  make networks                       - Crea las redes Docker compartidas (internal, proxy y observabilidad)"
+	@echo "  make up                             - Construye y levanta la app. Usa $(ENV_FILE) si existe, si no $(ENV_FALLBACK)"
+	@echo "  make app                            - Reconstruye y reinicia solo la API (sin embedder ni postgres)"
+	@echo "  make down                           - Detiene la app"
+	@echo "  make app-logs                       - Muestra los logs de la app"
 	@echo "  make vector-up                      - Levanta pgVector y pgAdmin con el catalogo de ejercicios"
 	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
 	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
@@ -109,8 +88,7 @@ container:
 	@$(DOCKER) ps -a
 
 networks:
-	@$(ensure_dev_networks); \
-	$(ensure_prod_networks)
+	@$(ensure_networks)
 
 build:
 	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile .
@@ -121,38 +99,25 @@ build:
 		echo "Imagen construida: $(IMAGE_LATEST)"; \
 	fi
 
-dev-up:
-	@$(ensure_dev_networks); \
-	$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --remove-orphans
+up:
+	@$(ensure_networks); \
+	$(resolve_env); \
+	$(COMPOSE_APP) --env-file "$$FITCOACH_ENV_FILE" up -d --build --remove-orphans
 
-# Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y postgres,
-# que deben estar ya levantados con `make dev-up`.
-dev-app:
-	@$(ensure_dev_networks); \
-	$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(DEV_APP_SERVICE)
+# Reconstruye solo la API: --no-deps evita reconstruir el embedder (lento) y postgres,
+# que deben estar ya levantados con `make up`.
+app:
+	@$(ensure_networks); \
+	$(resolve_env); \
+	$(COMPOSE_APP) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(APP_SERVICE)
 
-dev-down:
-	@$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
+down:
+	@$(resolve_env); \
+	$(COMPOSE_APP) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
 
-dev-logs:
-	@$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" logs -f
-
-prod-up:
-	@$(ensure_prod_networks); \
-	$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d --remove-orphans
-
-prod-down:
-	@$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
-
-prod-logs:
-	@$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
+app-logs:
+	@$(resolve_env); \
+	$(COMPOSE_APP) --env-file "$$FITCOACH_ENV_FILE" logs -f
 
 vector-up:
 	@$(COMPOSE_VECTOR) up -d --build
@@ -167,17 +132,17 @@ vector-logs:
 
 # Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
 trainer-debug:
-	@$(resolve_dev_env); \
+	@$(resolve_env); \
 	uv run python -m fitcoach.devtools.trainer_debug $(ARGS)
 
 trainer-compare:
-	@$(resolve_dev_env); \
+	@$(resolve_env); \
 	uv run python -m fitcoach.devtools.trainer_compare $(ARGS)
 
 TRAINER_CASES=evals/trainer/cases
 
 trainer-refresh-catalogues:
-	@$(resolve_dev_env); \
+	@$(resolve_env); \
 	for case in $(TRAINER_CASES)/*/; do \
 		uv run python -m fitcoach.devtools.trainer_debug --case-dir "$$case" --live-retrieval \
 			--save-catalogue "$$case/catalogue.json" --render-only --out /tmp/fitcoach-trainer-render || exit 1; \

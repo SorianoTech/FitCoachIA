@@ -1,8 +1,9 @@
 # Probar OpenRouter como modelo LLM
 
-## Configuración de desarrollo
+## Configuración
 
-Configura OpenRouter como endpoint compatible con OpenAI en `.env.dev`:
+Configura OpenRouter como endpoint compatible con OpenAI en el fichero de entorno
+(`/etc/fitcoachia/dev/.env.dev` o `.env`):
 
 ```dotenv
 ia_base_url=https://openrouter.ai/api/v1
@@ -54,9 +55,9 @@ Una respuesta con `choices[0].message.content` confirma que OpenRouter está dis
 
 ## Aplicar la configuración
 
-Reinicia el entorno de desarrollo después de modificar `.env.dev`:
+Reinicia el stack después de modificar el fichero de entorno:
 
 ```bash
-make dev-down
-make dev-up
+make down
+make up
 ```

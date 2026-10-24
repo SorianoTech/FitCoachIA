@@ -206,7 +206,7 @@ Resources:
             echo '/swapfile none swap sw 0 0' >> /etc/fstab
           fi
 
-          # Deploy user: docker without sudo, sudo only for what reads the root-owned .env.prod.
+          # Deploy user: docker without sudo, sudo only for what reads the root-owned .env.dev.
           id "$DEPLOY_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$DEPLOY_USER"
           usermod -aG docker "$DEPLOY_USER"
           install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
@@ -216,10 +216,10 @@ Resources:
           echo "$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/make, /usr/bin/test, /bin/ls" > /etc/sudoers.d/fitcoach-deploy
           chmod 0440 /etc/sudoers.d/fitcoach-deploy
           visudo -c
-          install -d -m 700 -o root -g root /etc/fitcoachia/prod /etc/fitcoachia/dev
+          install -d -m 700 -o root -g root /etc/fitcoachia/dev
 
           # External networks of the app, pgVector and observability composes.
-          for network in proxy-network fitcoach-prod-internal fitcoach-dev-internal; do
+          for network in proxy-network fitcoach-internal; do
             docker network inspect "$network" >/dev/null 2>&1 || docker network create "$network"
           done
 

@@ -14,7 +14,7 @@ miniapp_auth_max_age_seconds=86400
 ```
 
 La URL debe apuntar al mismo origen HTTPS que sirve la API, sin query ni fragmento.
-Reconstruir y reiniciar la aplicación (`make dev-app` en desarrollo con PostgreSQL
+Reconstruir y reiniciar la aplicación (`make app` con PostgreSQL
 y embedder ya activos). La imagen compila el frontend y aplica las migraciones
 Alembic al arrancar. No recrear ni borrar el volumen de PostgreSQL.
 El arranque registra el botón de menú y `/train` incorpora «Abrir entrenamiento».
@@ -28,9 +28,8 @@ para acceder; la autorización se comprueba en cada endpoint del servidor.
 ### Nginx Proxy Manager
 
 Usar el mismo **Proxy Host** que ya publica el webhook; no crear otro puerto
-ni otro servicio. En desarrollo, si Nginx Proxy Manager comparte `proxy-network`,
-el destino es `http://fitcoach-ia-dev:8000` (nombre de servicio de Compose).
-En otros entornos, usar el nombre del servicio API correspondiente.
+ni otro servicio. Si Nginx Proxy Manager comparte `proxy-network`,
+el destino es `http://fitcoach-ia:8000` (nombre de servicio de Compose).
 Si el proxy está en otro servidor, usar la dirección y puerto publicados de la
 API, limitando su acceso al proxy.
 

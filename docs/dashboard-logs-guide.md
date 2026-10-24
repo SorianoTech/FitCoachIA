@@ -18,7 +18,7 @@ Todos los paneles responden a estos filtros:
 
 | Filtro | Tipo | Valor | Uso |
 |--------|------|-------|-----|
-| `$datasource` | Dropdown | PostgreSQL Dev / Prod | Aislar entorno |
+| `$datasource` | Dropdown | PostgreSQL (único) | Datasource SQL |
 | `$agent` | Multiselecta | interviewer, trainer, ... | Filtrar por agente LLM |
 | `$telegram_user_id` | Multiselecta | IDs de chat | Seguimiento de usuario |
 | `$log_level` | Multiselecta | ERROR, WARNING, INFO, DEBUG | Severidad de eventos |
@@ -199,7 +199,6 @@ Ve que "conversation_service" domina "Actividad por logger"
 
 ### Intervalo de refresco
 - **Producción**: 1 minuto (por defecto)
-- **Desarrollo local**: 30 segundos (más responsivo)
 
 ### Rango de tiempo
 - **Alert triage**: Last 6 hours (contexto histórico)
@@ -208,15 +207,15 @@ Ve que "conversation_service" domina "Actividad por logger"
 
 ### Variables predefinidas
 ```
-Desarrollo local:
-  datasource = PostgreSQL Dev
+Vista general:
+  datasource = PostgreSQL
   agent = All
   telegram_user_id = All
   log_level = All
   logger = conversation_service
 
-Producción:
-  datasource = PostgreSQL Prod
+Vista de incidencias:
+  datasource = PostgreSQL
   agent = interviewer (selecciona agente activo)
   telegram_user_id = All (o specific user id)
    log_level = ERROR,WARNING (excluye info spam)

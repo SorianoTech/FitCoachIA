@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile-pgVector
     container_name: pgvector
     env_file:
-      - .env.prod
+      - .env.dev
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
@@ -26,7 +26,7 @@ services:
     image: dpage/pgadmin4
     container_name: pgadmin
     env_file:
-      - .env.prod
+      - .env.dev
     ports:
       - "${PGADMIN_PORT}:${STANDARD_HTTP_PORT}"
     volumes:
@@ -49,5 +49,5 @@ volumes:
 
 networks:
   internal:
-    name: fitcoach-prod-internal
+    name: fitcoach-internal
     external: true

@@ -11,14 +11,10 @@ services:
     environment:
       GF_SERVER_ROOT_URL: https://grafana.fitcoach.sergiosoriano.es
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD is required}
-      # Credenciales de cada Postgres (docker-compose.dev.yml / docker-compose.yml);
-      # Grafana llega a cada uno por la red interna de su entorno.
-      FITCOACH_POSTGRES_DEV_DB: ${FITCOACH_POSTGRES_DEV_DB:-fitcoach}
-      FITCOACH_POSTGRES_DEV_USER: ${FITCOACH_POSTGRES_DEV_USER:-fitcoach}
-      FITCOACH_POSTGRES_DEV_PASSWORD: ${FITCOACH_POSTGRES_DEV_PASSWORD:?FITCOACH_POSTGRES_DEV_PASSWORD is required}
-      FITCOACH_POSTGRES_PROD_DB: ${FITCOACH_POSTGRES_PROD_DB:-fitcoach}
-      FITCOACH_POSTGRES_PROD_USER: ${FITCOACH_POSTGRES_PROD_USER:-fitcoach}
-      FITCOACH_POSTGRES_PROD_PASSWORD: ${FITCOACH_POSTGRES_PROD_PASSWORD:-changeme}
+      # Credenciales del Postgres de la app (docker-compose.yml); Grafana llega a el por la red interna.
+      FITCOACH_POSTGRES_DB: ${FITCOACH_POSTGRES_DB:-fitcoach}
+      FITCOACH_POSTGRES_USER: ${FITCOACH_POSTGRES_USER:-fitcoach}
+      FITCOACH_POSTGRES_PASSWORD: ${FITCOACH_POSTGRES_PASSWORD:?FITCOACH_POSTGRES_PASSWORD is required}
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - fitcoach-observability-grafana:/var/lib/grafana
@@ -28,8 +24,7 @@ services:
       - tempo
     networks:
       - observability
-      - dev-internal
-      - prod-internal
+      - internal
       - proxy-network
 
   prometheus:
@@ -89,8 +84,7 @@ services:
         condition: service_started
     networks:
       - observability
-      - dev-internal
-      - prod-internal
+      - internal
 
   otel-collector-init:
     image: alpine:3.20
@@ -113,7 +107,7 @@ services:
     volumes:
       - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
       # Solo lectura; el propio config.alloy filtra para leer unicamente
-      # fitcoach-ia/dev-fitcoach-ia, aunque el socket expone todo el host.
+      # fitcoach-ia, aunque el socket expone todo el host.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       - loki
@@ -122,11 +116,8 @@ services:
 
 networks:
   observability: {}
-  dev-internal:
-    name: fitcoach-dev-internal
-    external: true
-  prod-internal:
-    name: fitcoach-prod-internal
+  internal:
+    name: fitcoach-internal
     external: true
   proxy-network:
     external: true

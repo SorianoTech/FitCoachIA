@@ -1,16 +1,15 @@
-name: fitcoach-prod
+name: fitcoach
 
-# Los servicios internos comparten una red exclusiva de produccion. Solo la API
-# publica se conecta tambien a proxy-network.
+# Entorno unico: la imagen se construye en el servidor. Los servicios internos comparten
+# la red `fitcoach-internal`; solo la API se conecta tambien a proxy-network.
 services:
-  fitcoach-ia-prod:
+  fitcoach-ia:
     container_name: fitcoach-ia
     restart: unless-stopped
-    image: fitcoachia/fitcoach-app:${VERSION:-1.0.0}
+    image: fitcoachia/fitcoach-app:local
     build:
       context: .
       dockerfile: src/Dockerfile
-
     ports:
       - "${APP_PORT}:8000"
     healthcheck:
@@ -23,31 +22,28 @@ services:
       start_interval: 5s
     env_file:
       # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
+      - path: .env
         required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
         required: false
     depends_on:
-      postgres-prod:
+      postgres:
         condition: service_healthy
-      embedder-prod:
+      embedder:
         condition: service_healthy
     networks:
       - internal
       - proxy-network
 
-  embedder-prod:
+  embedder:
     container_name: fitcoach-embedder
     restart: unless-stopped
-    image: fitcoachia/embedder:${VERSION:-1.0.0}
+    image: fitcoachia/embedder:local
     build:
       context: infra/embedder
       dockerfile: Dockerfile-embedder
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
+      - path: infra/embedder/.env
         required: false
     healthcheck:
       # /health solo responde 200 cuando el modelo esta cargado en memoria.
@@ -60,20 +56,19 @@ services:
     networks:
       - internal
 
-  postgres-prod:
+  postgres:
     # Nombre fijo: sin el, un rename de servicio crearia un segundo Postgres
     # sobre el mismo volumen en vez de fallar por conflicto de nombre.
     container_name: fitcoach-postgres
     image: postgres:16-alpine
     restart: unless-stopped
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
+      - path: .env
         required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
         required: false
     volumes:
-      - fitcoach-prod-postgres:/var/lib/postgresql/data
+      - fitcoach-postgres:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
       interval: 5s
@@ -82,18 +77,17 @@ services:
     networks:
       - internal
 
-  pgadmin-prod:
+  pgadmin:
+    container_name: fitcoach-pgadmin
     image: dpage/pgadmin4
     restart: unless-stopped
-    container_name: pgadmin4-prod
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
+      - path: .env
         required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
+      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/dev/.env.dev}
         required: false
     volumes:
-      - pgadmin-prod_data:/root/.pgadmin
+      - fitcoach-pgadmin:/root/.pgadmin
     networks:
       - internal
     healthcheck:
@@ -102,16 +96,16 @@ services:
       timeout: 10s
       retries: 5
     depends_on:
-      postgres-prod:
+      postgres:
         condition: service_healthy
 
 networks:
   internal:
-    name: fitcoach-prod-internal
+    name: fitcoach-internal
     external: true
   proxy-network:
     external: true
 
 volumes:
-  fitcoach-prod-postgres:
-  pgadmin-prod_data:
+  fitcoach-postgres:
+  fitcoach-pgadmin:

@@ -10,7 +10,7 @@ miniapp_admin_chat_ids=123456789,987654321
 
 Son ids positivos de usuarios/chats privados, separados por comas.
 Una lista vacía deshabilita el acceso administrativo para todos. Cambiar
-administradores requiere recrear/reiniciar la aplicación (`make dev-app`).
+administradores requiere recrear/reiniciar la aplicación (`make app`).
 No basta con ocultar controles en el frontend: usuarios no autorizados reciben
 403 desde el servidor. El acceso no exige que el administrador tenga un plan.
 

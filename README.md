@@ -76,9 +76,7 @@ FitCoachIA/
 ├── .dockerignore                 # Contexto de build de la imagen (lista de permitidos)
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit, cfn-lint)
 ├── alembic.ini                   # Configuración de alembic
-├── docker-compose.dev.yml        # Entorno de desarrollo
-├── docker-compose.local.yml      # Entorno local para probar cambios
-├── docker-compose.yml            # Entorno de producción
+├── docker-compose.yml            # Único entorno: app, embedder, Postgres y pgAdmin (la imagen se construye en el servidor)
 ├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
 ├── AGENTS.md                     # Mapa del proyecto e instrucciones para asistentes de IA
 ├── CLAUDE.md                     # Importa AGENTS.md
@@ -103,8 +101,9 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tests` | Levanta el entorno de tests, ejecuta unitarios e integración con cobertura (falla si < 80%) y lo detiene |
-| `make dev-up` / `dev-down` / `dev-logs` | Entorno de desarrollo (`docker-compose.dev.yml`) |
-| `make prod-up [VERSION=x.y.z]` / `prod-down` / `prod-logs` | Entorno de producción (`docker-compose.yml`) |
+| `make up` | Construye y levanta el stack (`docker-compose.yml`); usa `/etc/fitcoachia/dev/.env.dev` o, si no existe, `.env` |
+| `make app` | Reconstruye y reinicia solo la API (`--no-deps`) |
+| `make down` / `make app-logs` | Detiene el stack / sigue los logs |
 | `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
 
 El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md).
@@ -169,8 +168,8 @@ El proyecto tiene estos workflows en `.github/workflows/`:
 | `build.yml` | Push y PRs en ramas `feat/**`, `feature/**`, `fix/**`, `bugfix/**` (ignora cambios solo de docs y `.md`) y ejecución manual | Calidad y seguridad (Ruff, Mypy, Gitleaks, pip-audit, Bandit, Semgrep) → `make tests` (unitarios e integración, cobertura >= 80%) |
 | `validate-develop-merge.yml` | PRs a `develop` | Bloquea merges que no provengan de ramas `feat/`, `feature/` o `fix/` |
 | `validate-main-merge.yml` | PRs a `main` | Bloquea merges que no provengan de `develop` |
-| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye la imagen Docker, la escanea con Trivy, publica en el registry, crea la GitHub Release y lanza `deploy.yml` |
-| `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en el servidor por SSH con `make prod-up`, verifica el arranque y hace rollback si falla |
+| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye la imagen Docker, la escanea con Trivy, crea la GitHub Release (tag) y lanza `deploy.yml` |
+| `deploy.yml` | Llamado por `release.yml` o manual | Copia el código del tag al servidor por SSH, ejecuta `sudo -n make up` (construye en el servidor) y verifica el arranque; sin rollback automático: se relanza con la versión anterior |
 
 Las actions reutilizables están en `.github/actions/`: `python-setup` instala Python y `uv` con caché y audita `requirements-ci.txt` antes de instalar; `quality-check` agrupa Ruff, Mypy, Gitleaks, pip-audit y Bandit. El detalle está en [docs/ci-cd.md](docs/ci-cd.md).
 

@@ -89,17 +89,16 @@ usa en local. Gate: cobertura mínima del 80 % como proxy de calidad.
 **Dispara**: `workflow_dispatch` manual con input `version` (`X.Y.Z`) — publicar una versión es una
 decisión humana explícita. **Guardia**: solo se ejecuta si la rama es `develop` o `release/**`.
 
-Objetivo general: convertir un commit en un artefacto versionado, escaneado y trazable, publicando
-únicamente cuando lo anterior ya existe. El orden es deliberado — **se escanea la imagen antes de
-publicarla, y solo se publica después de crear el tag/release**:
+Objetivo general: convertir un commit en un release versionado, escaneado y trazable. No se publica
+ninguna imagen en un registro: la imagen se construye en el servidor al desplegar. El orden es
+deliberado — **se construye y escanea la imagen antes de crear el tag/release**:
 
 | Paso | Objetivo |
 |---|---|
-| Validar formato semver + que la versión no exista ya en el registro | Evita releases ambiguos o sobrescribir un tag ya publicado. |
-| Build de la imagen sin publicarla (`push: false`) | Permite escanearla antes de que sea pública. |
+| Validar formato semver + que el tag de la versión no exista ya en el repositorio | Evita releases ambiguos o sobrescribir un tag ya publicado. |
+| Build de la imagen sin publicarla (`push: false`) | Permite escanearla antes de crear el release. |
 | **Trivy** (escaneo de la imagen) | Equivalente a Semgrep pero sobre el artefacto construido (paquetes de SO + librerías del contenedor), no sobre el código fuente. Informativo, no bloquea el release; sube SARIF a la misma pestaña **Security** de GitHub que Semgrep, como un hallazgo distinto. |
-| **GitHub Release** (tag + notas autogeneradas) | El artefacto final y trazable que queda publicado en GitHub (pestaña *Releases*, no *Security*): la versión pasa a existir oficialmente aquí, antes incluso de publicarse la imagen. |
-| `docker push` | Último paso: la imagen solo llega al registro una vez que el release ya existe y fue escaneada. |
+| **GitHub Release** (tag + notas autogeneradas) | El artefacto final y trazable que queda publicado en GitHub (pestaña *Releases*, no *Security*): la versión pasa a existir oficialmente aquí. |
 
 > Semgrep y Trivy son dos escáneres distintos en dos momentos distintos del ciclo — código fuente
 > en CI, imagen construida en el release — pero ambos convergen en la misma pestaña Security de
@@ -111,20 +110,20 @@ publicarla, y solo se publica después de crear el tag/release**:
 `workflow_dispatch` para redesplegar una versión ya publicada. Los datos de conexión SSH viajan
 como `secrets` (no `inputs`) para que GitHub los enmascare en los logs.
 
-Patrón: **recreate verificado con rollback**. Se retira el contenedor en servicio conservando su
-imagen (el artefacto de rollback), se levanta la nueva versión con `make prod-up` y se espera a que
-Docker la marque `healthy` (`healthcheck` de `docker-compose.yml`, sondeado hasta 10 intentos); si
-no lo consigue, se descartan contenedor e imagen nuevos y se restaura la versión anterior —también
-con `make prod-up`— desde la imagen retenida. La
-imagen previa solo se conserva hasta que la nueva demuestra estar sana. Esto implica una ventana
-breve sin servicio en cada despliegue (~10-40 s, más si hay que revertir): el proxy devuelve 502 y
-Telegram reintenta los updates, así que no se pierden mensajes.
+Patrón: **build en el servidor y verificación de salud**. El workflow hace checkout del tag de la
+versión, copia el repositorio por rsync a `~/fitcoachia` en el servidor, ejecuta `sudo -n make up`
+(construye la imagen y levanta el stack) y espera a que Docker marque `fitcoach-ia` como `healthy`
+(`healthcheck` de `docker-compose.yml`, sondeado hasta 10 intentos). Si no lo consigue, el workflow
+falla y vuelca los últimos logs; **no hay rollback automático**: para volver atrás se relanza
+`deploy.yml` con la versión anterior. Esto implica una ventana breve sin servicio en cada despliegue:
+el proxy devuelve 502 y Telegram reintenta los updates, así que no se pierden mensajes.
 
 **Prerrequisitos que CI nunca provee**, deben existir ya en el servidor: el fichero
-`/etc/fitcoachia/prod/.env.prod` con permisos restringidos (no legible por el usuario de
-despliegue), una regla `sudoers` NOPASSWD para ese usuario (ver [`docs/how-to.md`](how-to.md)) y la
-capacidad de crear las redes Docker externas `fitcoach-prod-internal` y `proxy-network`.
-`make prod-up` las crea de forma idempotente si todavía no existen.
+`/etc/fitcoachia/dev/.env.dev` con permisos restringidos (no legible por el usuario de
+despliegue; si no existe se usa `.env` del repositorio, que el rsync no copia), una regla `sudoers`
+NOPASSWD para ese usuario (ver [`docs/how-to.md`](how-to.md)) y la capacidad de crear las redes Docker
+externas `fitcoach-internal` y `proxy-network`. `make up` las crea de forma idempotente si todavía no
+existen.
 
 ### 2.6 Continuous Monitoring
 
@@ -169,7 +168,6 @@ flowchart TD
         H --> H1[Trivy scan]
         H1 --> H2[[SARIF Trivy]]
         H1 --> H3[GitHub Release\ntag + notas]
-        H3 --> H4[docker push]
     end
 
     subgraph MON["Continuous Monitoring"]
@@ -179,13 +177,11 @@ flowchart TD
     end
 
     subgraph CD2["Continuous Deployment — deploy.yml"]
-        H4 -->|ok| I[ssh-deploy: rsync\ndocker-compose.yml + Makefile]
-        I --> J[docker pull nueva imagen\ncontenedor anterior aún en servicio]
-        J --> J1[Retirar contenedor en servicio\nsu imagen se conserva: artefacto de rollback]
-        J1 --> K[make prod-up]
+        H3 -->|ok| I[checkout del tag + ssh-deploy: rsync\ndel repositorio a ~/fitcoachia]
+        I --> K[sudo -n make up\nconstruye y levanta]
         K --> L{Docker lo marca healthy\n·Continuous Monitoring·}
-        L -->|sí| M[✅ poda de huérfanos\ne imágenes antiguas]
-        L -->|no| N[↩️ descarta contenedor e imagen nuevos\ny restaura la versión anterior]
+        L -->|sí| M[✅ versión operativa]
+        L -->|no| N[❌ workflow en rojo\nrollback = relanzar con la versión anterior]
     end
 ```
 
@@ -197,35 +193,28 @@ sequenceDiagram
     participant S as Servidor (SSH)
 
     Note over R,S: Continuous Deployment — deploy.yml
-    R->>S: rsync docker-compose.yml + Makefile
+    R->>R: checkout del tag de la versión
+    R->>S: rsync del repositorio a ~/fitcoachia
     R->>S: SCRIPT_BEFORE (sesión SSH 1)
     activate S
-    S->>S: 1/4 Verificar acceso al fichero de entorno (sudo -n)
-    S->>S: 2/4 Estado del contenedor actual (informativo)
-    S->>S: 3/4 Imágenes locales antes del pull
-    S->>S: 4/4 docker pull nueva imagen\n(contenedor anterior sigue vivo)
+    S->>S: Verificar sudo -n
     deactivate S
     R->>S: SCRIPT_AFTER (sesión SSH 2)
     activate S
-    S->>S: 1/6 Capturar la versión en servicio\n(artefacto de rollback)
-    S->>S: 2/6 Retirar el contenedor\n(su imagen se conserva)
-    S->>S: 3/6 sudo -n env VERSION=… PROD_ENV_FILE=… make prod-up
+    S->>S: sudo -n make up
     Note right of S: Continuous Monitoring
-    S->>S: 4/6 Esperar 5s + 10 intentos x 5s\ndocker inspect .State.Health.Status
+    S->>S: Esperar 5s + 10 intentos x 5s\ndocker inspect .State.Health.Status
     alt healthy
-        S->>S: 5/6 Eliminar contenedores huérfanos
-        S->>S: 6/6 Podar imágenes semver antiguas\n(conserva la desplegada y tags no-semver)
+        S-->>R: exit 0
     else unhealthy o se agotan los intentos
         S->>S: Volcar últimas 50 líneas de log
-        S->>S: docker rm -f + docker rmi de lo recién desplegado
-        S->>S: make prod-up con la versión anterior
         S-->>R: exit 1 (workflow en rojo)
     end
     deactivate S
 ```
 
 > `SCRIPT_BEFORE` y `SCRIPT_AFTER` son **sesiones SSH distintas**: las variables no cruzan entre
-> ellas, y por eso la versión anterior se captura en el paso `1/6` y no antes. Detalle completo del
+> ellas. Detalle completo del
 > despliegue y de los targets del `Makefile` en
 > [entornos-y-despliegue.md](entornos-y-despliegue.md).
 
@@ -240,10 +229,10 @@ sequenceDiagram
 | Semgrep (`p/python`, `p/owasp-top-ten`) | `build.yml` → `semgrep-analysis` | Informa (SARIF) |
 | Cobertura de tests ≥ 80 % | `build.yml` → `test-gate` | Bloquea |
 | Formato semver de la versión | `release.yml`, `deploy.yml` | Bloquea |
-| Versión no debe existir ya en el registro | `release.yml` | Bloquea |
+| Versión no debe existir ya como tag | `release.yml` | Bloquea |
 | Trivy (imagen, HIGH/CRITICAL) | `release.yml` | Informa (SARIF) |
 | Origen de release: `develop` o `release/*` | `release.yml` (`if:`) | Bloquea |
-| Estado `healthy` del contenedor tras el despliegue | `deploy.yml` | Bloquea **y revierte** a la versión anterior |
+| Estado `healthy` del contenedor tras el despliegue | `deploy.yml` | Bloquea (workflow en rojo; sin rollback automático) |
 
 ### Artefactos publicados
 
@@ -252,14 +241,11 @@ sequenceDiagram
 | SARIF Semgrep | `build.yml` → `semgrep-analysis` | Pestaña *Security* (code scanning) |
 | SARIF Trivy | `release.yml` | Pestaña *Security* (code scanning) |
 | GitHub Release (tag + notas) | `release.yml` | Pestaña *Releases* |
-| Imagen Docker versionada | `release.yml` (`docker push`) | Registro Docker Hub |
 
 ### Secretos
 
 | Secreto | Usado en |
 |---|---|
-| `DOCKER_USER`, `DOCKER_PASSWORD` | `release.yml` (login en Docker Hub) |
-| `DOCKER_IMAGE_NAME` | `release.yml`, `deploy.yml` (nombre base de la imagen) |
 | `SERVER_HOST`, `SERVER_USER`, `SERVER_PKEY` | `deploy.yml` (conexión SSH al servidor) |
 
 Ningún workflow expone valores de estos secretos en logs; `deploy.yml` los declara como `secrets`

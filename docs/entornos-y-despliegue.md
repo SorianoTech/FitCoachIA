@@ -1,9 +1,10 @@
-# Entornos y despliegue
+# Entorno y despliegue
 
-Cómo encajan el workflow de CI/CD, el `Makefile`, los dos Compose y los ficheros de entorno. Para el
-detalle de las fases del pipeline, ver [ci-cd.md](ci-cd.md); para los comandos, [Makefile.md](Makefile.md).
-Para replicar este mismo esquema en una instancia EC2 de AWS, ver
-[despliegue-aws-ec2.md](despliegue-aws-ec2.md).
+Hay **un único entorno**: la imagen se construye en el propio servidor a partir del código y se
+levanta con un solo `docker-compose.yml`. Este documento explica cómo encajan el workflow de CI/CD, el
+`Makefile`, el Compose, el fichero de entorno y el bot de Telegram. Para el detalle de las fases del
+pipeline, ver [ci-cd.md](ci-cd.md); para los comandos, [Makefile.md](Makefile.md). Para replicar este
+esquema en una instancia EC2 de AWS, ver [despliegue-aws-ec2.md](despliegue-aws-ec2.md).
 
 ---
 
@@ -11,32 +12,29 @@ Para replicar este mismo esquema en una instancia EC2 de AWS, ver
 
 | Pieza | Responsabilidad |
 |---|---|
-| **`deploy.yml`** | Copia ficheros al servidor por SSH y orquesta el cutover con rollback |
+| **`deploy.yml`** | Copia el código de la versión al servidor por SSH y lanza `make up` |
 | **`Makefile`** | Resuelve **qué fichero de entorno** usar y lanza `docker compose` |
 | **Compose** | Define los servicios; recibe el fichero ya resuelto |
 
-La clave está en el reparto: el workflow **no sabe** dónde vive la configuración, solo pasa una ruta.
-El `Makefile` **no sabe** desplegar, solo resolver el entorno. Por eso el mismo `make prod-up`
-funciona igual lanzado a mano en el servidor que invocado por el despliegue.
+El workflow **no sabe** dónde vive la configuración. El `Makefile` **no sabe** desplegar, solo resolver
+el fichero de entorno. Por eso el mismo `make up` funciona igual lanzado a mano en el servidor que
+invocado por el despliegue.
 
 ---
 
-## 2. Los ficheros de entorno
+## 2. El fichero de entorno
 
-Dos ubicaciones, con reglas distintas por entorno:
+| Ubicación preferida | Si no existe |
+|---|---|
+| `/etc/fitcoachia/dev/.env.dev` (variable `ENV_FILE` del `Makefile`) | usa `.env` de la raíz del repositorio (y avisa por consola) |
 
-| Entorno | Ubicación preferida | Si no existe |
-|---|---|---|
-| **dev** | `/etc/fitcoachia/dev/.env.dev` | usa `.env.dev` del repositorio |
-| **prod** | `/etc/fitcoachia/prod/.env.prod` | **falla**; no hay alternativa |
+Se puede cambiar con `make up ENV_FILE=/otra/ruta`. En el servidor el fichero es de root con permisos
+restringidos: **el usuario de despliegue no puede leerlo**, por eso el workflow ejecuta `sudo -n make up`
+y ese usuario necesita una regla `sudoers` sin contraseña. Ver [how-to.md](how-to.md#desplegar-en-el-servidor).
 
-La asimetría es deliberada. En desarrollo trabajas en tu máquina y no quieres crear rutas de sistema
-para arrancar; en producción, un fichero olvidado que caiga silenciosamente a otro sería peor que un
-error.
-
-`/etc/fitcoachia/prod` tiene permisos restringidos: **el usuario de despliegue no puede leerlo**. Por
-eso el workflow ejecuta el comando con `sudo -n` y ese usuario necesita una regla `sudoers` sin
-contraseña. Ver [how-to.md](how-to.md#desplegar-producción).
+La app **ya no carga `.env.<APP_ENV>`**: lee solo el fichero indicado en `FITCOACH_ENV_FILE` o, si no
+está definida, `.env`. `APP_ENV` queda solo como etiqueta de observabilidad
+(`deployment.environment.name`, por defecto `production`).
 
 ### Cómo llega el fichero al contenedor
 
@@ -49,15 +47,25 @@ Makefile: resuelve la ruta
 
 **Son dos mecanismos distintos y ambos hacen falta**, que es la confusión más común:
 
-- `--env-file` alimenta la **interpolación** del YAML: `${POSTGRES_PASSWORD}`, `${VERSION}`. Se
+- `--env-file` alimenta la **interpolación** del YAML: `${POSTGRES_PASSWORD}`, `${APP_PORT}`. Se
   resuelve al leer el fichero, antes de crear nada.
 - `env_file:` inyecta variables **dentro del contenedor**, para que la app las lea.
 
 Una variable que solo esté en `env_file:` no sirve para interpolar, y al revés.
 
+> **⚠️ Hostnames y volúmenes renombrados (migración desde un despliegue anterior).**
+> Los servicios se llaman ahora `postgres`, `embedder` y (en la BD vectorial) `pgvector`. El fichero real
+> `/etc/fitcoachia/dev/.env.dev` debe actualizar los hostnames: `database_url` → `@postgres:5432`,
+> `vector_database_url` y `vector_database_writer_url` → `@pgvector:5432`, `embedder_url` →
+> `http://embedder:8100` y `embedder_host=embedder`. Con los nombres antiguos (`postgres-dev`,
+> `postgres-prod`…) la app no conectará.
+> Además, los volúmenes se llaman ahora `fitcoach-postgres` y `fitcoach-pgadmin`: los datos de los
+> volúmenes antiguos **no se migran solos**. Hay que copiarlos o renombrarlos a mano antes de `make up`
+> (p. ej. `pg_dump` del Postgres antiguo y restaurar en el nuevo) o **se perderán los datos**.
+
 ---
 
-## 3. Levantar cada entorno
+## 3. Levantar el entorno
 
 ### Scheduler de avisos y encuestas
 
@@ -89,120 +97,180 @@ aviso con un bloqueo fijo de 2 minutos y su reintento a los 5 minutos (o lo que 
 configuración solo toma `training_reminder_max_attempts`.
 
 El proceso coordina todo con PostgreSQL, no usa Redis/Celery ni llama al modelo. Al apagar la app se detiene
-la tarea antes de cerrar la base. `make dev-up` y `make prod-up` llevan `--remove-orphans`, así que al desplegar
+la tarea antes de cerrar la base. `make up` lleva `--remove-orphans`, así que al desplegar
 se eliminan los contenedores `training-reminders*` y `evaluation*` antiguos. La app debe tener `poll_answer` en
 `allowed_updates` (lo registra al arrancar) para recibir los votos.
 
-### Desarrollo
+### Despliegue
 
 ```bash
-make dev-up
+make up          # construye y levanta app, embedder, Postgres y pgAdmin
+make app         # reconstruye y reinicia solo la API (--no-deps)
+make down        # para el stack
+make app-logs    # logs en directo
 ```
 
-Construye la imagen desde el código local (`--build`), levanta `dev-fitcoach-ia`, su Postgres y
-Adminer. Usa `/etc/fitcoachia/dev/.env.dev` si existe; si no, `.env.dev` del repositorio y te avisa
-por consola de cuál ha elegido.
+En el servidor se lanza con `sudo make up` (el fichero de entorno es de root). `make up` crea las redes
+`fitcoach-internal` y `proxy-network` si no existen, construye las imágenes (`--build`) y lleva
+`--remove-orphans`.
 
-### Producción
+| | |
+|---|---|
+| Compose | `docker-compose.yml` (proyecto `fitcoach`) |
+| Servicios | `fitcoach-ia`, `embedder`, `postgres`, `pgadmin` |
+| Contenedores | `fitcoach-ia`, `fitcoach-embedder`, `fitcoach-postgres`, `fitcoach-pgadmin` |
+| Volúmenes | `fitcoach-postgres`, `fitcoach-pgadmin` |
+| Imagen | **se construye en el servidor** (`build:`); no hay imagen publicada en un registro |
+| Redes | `fitcoach-internal` (interna) y `proxy-network` (solo la API, hacia Nginx Proxy Manager) |
 
-```bash
-sudo make prod-up VERSION=0.3.0
-```
-
-**No construye nada**: descarga la imagen ya publicada con ese tag. El `sudo` hace falta porque el
-fichero de entorno es de root.
-
-| | dev | prod |
-|---|---|---|
-| Imagen | se construye en local | se descarga del registro |
-| Compose | `docker-compose.dev.yml` | `docker-compose.yml` |
-| Proyecto | `fitcoach-dev` | `fitcoach-prod` |
-| Servicio app | `fitcoach-ia-dev` | `fitcoach-ia-prod` |
-| Contenedor | `dev-fitcoach-ia` | `fitcoach-ia` |
-| Base de datos | `postgres-dev` | `postgres-prod` |
-| Extras | Adminer | — |
-
-Ambos conviven en el mismo servidor sobre redes internas distintas:
-`fitcoach-dev-internal` y `fitcoach-prod-internal`. Los **nombres de servicio** también son distintos
-por claridad operativa y como defensa adicional frente a una conexión accidental a una red
-compartida. La separación evita repetir un incidente histórico en el que ambos entornos compartían
-alias en `proxy-network` y el bot de producción respondía desde el contenedor de desarrollo.
+La BD vectorial (`make vector-up`, `infra/vector-db/docker-compose.vector-db.yml`, con su `.env.dev` en
+esa carpeta) y el stack de observabilidad (`infra/observability/compose.yml`) se unen a la misma red
+`fitcoach-internal`; su ciclo de vida es independiente del de la app.
 
 ---
 
 ## 4. El despliegue, paso a paso
 
-Lo dispara `release.yml` al publicar una versión, o a mano por `workflow_dispatch`.
+Lo dispara `release.yml` al publicar una versión, o a mano por `workflow_dispatch` de `deploy.yml`.
 
 ```
 ┌─ GitHub Actions ─────────────────────────────────────────┐
 │  1. Valida el formato de la versión (X.Y.Z)              │
-│  2. rsync por SSH: docker-compose.yml + Makefile         │
-│                    → /home/<usuario>/                    │
+│  2. checkout del tag de la versión                       │
+│  3. rsync por SSH del repositorio → ~/fitcoachia         │
 └──────────────────────────┬───────────────────────────────┘
                            │  SCRIPT_BEFORE (sesión SSH 1)
 ┌──────────────────────────▼───────────────────────────────┐
-│  1/4  sudo -n disponible y .env.prod legible             │
-│  2/4  estado del contenedor actual (informativo)         │
-│  3/4  imágenes locales                                   │
-│  4/4  docker pull de la nueva imagen                     │
+│  comprueba que `sudo -n` está disponible                 │
 └──────────────────────────┬───────────────────────────────┘
                            │  SCRIPT_AFTER (sesión SSH 2)
 ┌──────────────────────────▼───────────────────────────────┐
-│  1/6  captura la versión en servicio → rollback          │
-│  2/6  retira el contenedor (conserva su imagen)          │
-│  3/6  sudo -n env VERSION=… PROD_ENV_FILE=… make prod-up │
-│  4/6  espera a `healthy` (10 intentos × 5 s)             │
-│  5/6  limpia contenedores huérfanos                      │
-│  6/6  elimina imágenes semver antiguas                   │
+│  sudo -n make up   (construye y levanta)                 │
+│  espera a `healthy` (10 intentos × 5 s)                  │
 └──────────────────────────────────────────────────────────┘
 ```
 
-Tres detalles que explican por qué está montado así:
+**`SCRIPT_BEFORE` y `SCRIPT_AFTER` son sesiones SSH distintas.** Las variables no cruzan entre ellas.
 
-**`SCRIPT_BEFORE` y `SCRIPT_AFTER` son sesiones SSH distintas.** Las variables no cruzan entre ellas,
-por eso la versión anterior se captura en el paso 1/6 y no antes.
-
-**Si el `docker pull` falla, `SCRIPT_AFTER` no llega a ejecutarse.** El contenedor en servicio queda
-intacto: una versión inexistente en el registro no tumba producción.
-
-**El `Makefile` viaja con el despliegue.** Por eso el `SOURCE` del rsync incluye los dos ficheros: el
-servidor necesita el compose *y* la lógica de resolución del entorno.
+**El repositorio viaja con el despliegue** (excluye `.git`, `.github`, `tests`, `docs`, `evals` y
+cualquier `.env*`), porque el servidor construye la imagen.
 
 ### Si algo falla
 
-Se descartan contenedor e imagen nuevos y se restaura la versión anterior desde la imagen retenida.
-Por eso el paso 6/6 —borrar imágenes antiguas— va **al final**: hasta que la nueva versión no está
-sana, la anterior es el artefacto de vuelta atrás.
-
-Esto implica una ventana breve sin servicio en cada despliegue. Durante ella el proxy devuelve 502 y
-Telegram reintenta los updates, así que no se pierden mensajes.
+El workflow termina en error y muestra los últimos logs del contenedor. **No hay rollback automático**:
+para volver atrás, relanza `deploy.yml` con la versión anterior, que reconstruye desde su tag. Hay una
+ventana breve sin servicio en cada despliegue; el proxy devuelve 502 y Telegram reintenta los updates,
+así que no se pierden mensajes.
 
 ---
 
-## 5. Variables por entorno
+## 5. Variables del entorno
 
-Ninguna se comparte entre dev y prod:
-
-| Variable | Por qué difiere |
+| Variable | Notas |
 |---|---|
-| `bot_telegram_token` | un bot distinto por entorno |
-| `bot_telegram_secret_token` | un secreto por bot; compartirlo permitiría falsificar updates de prod desde dev |
-| `bot_telegram_webhook_base_url` | cada entorno tiene su dominio público |
-| `POSTGRES_PASSWORD` | bases de datos independientes |
-| `ia_skill` | dev usa `interviewer-dev`, con tres preguntas |
-
-`APP_ENV` no se configura: lo fija cada Compose (`dev` / `prod`) y de él salen la etiqueta
-`deployment.environment.name` de las trazas y el sufijo del fichero `.env.<APP_ENV>` que carga la app.
+| `bot_telegram_token` | token del bot (ver sección 6) |
+| `bot_telegram_secret_token` | secreto del webhook |
+| `bot_telegram_webhook_base_url` | dominio público HTTPS de la app |
+| `POSTGRES_PASSWORD` | solo se aplica al inicializar el volumen |
+| `ia_skill` | skill del entrevistador (`interviewer`, o la variante ligera `interviewer-dev`) |
+| `APP_ENV` | opcional; solo etiqueta de observabilidad, por defecto `production` |
 
 ---
 
-## 6. Problemas frecuentes
+## 6. Bot de Telegram
+
+El entorno usa **un único bot**, con su token y su webhook. Token, secreto y URL base se leen del fichero
+de entorno real (`/etc/fitcoachia/dev/.env.dev`). **Telegram solo admite un webhook activo por bot**: no
+registres el mismo token desde otro sitio (otro despliegue o tu máquina) o desviarás los updates. Al
+arrancar con este bot, la app **(re)registra el webhook** en la URL de `bot_telegram_webhook_base_url`
+(ver «Registro del webhook»); si el bot venía apuntando a otra URL, basta con reiniciar la app.
+
+```dotenv
+bot_telegram_url=https://api.telegram.org/bot          # base de la API de Telegram
+bot_telegram_token=<token del bot>
+bot_telegram_secret_token=<secreto del webhook>
+bot_telegram_webhook_base_url=https://dev.fitcoach.sergiosoriano.es
+bot_telegram_commands=start:Inicia FitCoach,interview:Entrevista,doubts:Resuelve dudas,progress:Tu progreso
+```
+
+Dos que se confunden con facilidad:
+
+- **`bot_telegram_url`** es el base URL de la **API de Telegram**.
+- **`bot_telegram_webhook_base_url`** es la URL pública de **tu aplicación**, sin path. El path
+  (`/webhook/response`) lo resuelve el código desde el router.
+
+### El secreto del webhook
+
+Es la credencial con la que la app comprueba que quien llama es Telegram. Telegram lo devuelve en la
+cabecera `X-Telegram-Bot-Api-Secret-Token` de cada update, y lo que no la traiga recibe un **403**.
+
+Genéralo así:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Admite 1-256 caracteres de `A-Z a-z 0-9 _ -`; la app valida el formato al arrancar.
+
+### Registro del webhook
+
+**Lo hace la aplicación sola al arrancar.** No hay que ejecutar ningún `curl`. En cada arranque, el
+`lifespan`:
+
+1. Construye la URL a partir de `bot_telegram_webhook_base_url` y la ruta del router.
+2. Llama a `setWebhook` con esa URL y el secreto.
+3. Lee `getWebhookInfo` y comprueba que Telegram registró la que esperaba.
+
+**Si algo de eso falla, la app no arranca.** Es intencionado: con la validación del secreto activa, un
+registro fallido dejaría a Telegram entregando sin la cabecera y la app respondería 403 a todo. El bot
+quedaría muerto con el contenedor en verde. Abortando, el despliegue lo detecta.
+
+En los logs verás:
+
+```
+[webhook 1/4] resolviendo URL de registro
+[webhook 2/4] bot autenticado en Telegram
+[webhook 3/4] setWebhook aceptado con secreto
+[webhook 4/4] registro confirmado por Telegram
+```
+
+El paso en el que se detenga es medio diagnóstico: si no pasa del **2**, el token es inválido; del
+**3**, Telegram rechazó la URL —tiene que ser HTTPS y alcanzable desde fuera—; del **4**, hay un
+registro apuntando a otro sitio.
+
+**Sin una URL HTTPS pública, la app no levanta.** Para probar en local hace falta un dominio público o
+un túnel (`cloudflared`, `ngrok`). `localhost` y `http://` no valen nunca: Telegram los rechaza.
+
+### Verificación
+
+**1. El registro es el correcto** — el secreto no lo devuelve Telegram, solo el resto:
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+Mira `url`, `pending_update_count` y `last_error_message`.
+
+**2. El candado funciona** — la única forma de comprobar el secreto desde fuera:
+
+```bash
+curl -i -X POST https://<tu-dominio>/webhook/response -d '{}' -H 'Content-Type: application/json'
+```
+
+Debe responder **403**. Si responde 200, la validación no está activa.
+
+**3. El bot habla con tu despliegue** — `/start` debe contestarlo `fitcoach-ia`. Compruébalo en los
+logs del contenedor (`make app-logs`), no solo por la respuesta en Telegram.
+
+---
+
+## 7. Problemas frecuentes
 
 | Síntoma | Causa |
 |---|---|
-| `no existe o no tiene permisos de acceso` al hacer `prod-up` | falta `sudo`, o la regla `sudoers` |
-| `POSTGRES_PASSWORD is required` en `dev-down` | el target no pasaba `--env-file`; ya corregido |
+| `no existe /etc/fitcoachia/dev/.env.dev ni .env` al hacer `make up` | falta el fichero, o falta `sudo` (el fichero es de root) |
+| La app no conecta a Postgres/embedder tras actualizar | el `.env` conserva los hostnames antiguos; usar `postgres`, `pgvector`, `embedder` |
+| Faltan los datos tras actualizar | los volúmenes se renombraron a `fitcoach-postgres`/`fitcoach-pgadmin`; migrarlos a mano |
 | `password authentication failed` con Postgres sano | `POSTGRES_PASSWORD` solo se aplica al **inicializar** el volumen; cambiarlo después no altera la contraseña guardada |
 | El bot no recibe nada, la app en verde | webhook registrado en otro sitio: `getWebhookInfo` |
-| Conflicto de nombre de contenedor al desplegar | quedó un huérfano; `make prod-down` ya usa `--remove-orphans` |
+| Conflicto de nombre de contenedor al desplegar | quedó un huérfano; `make down` y `make up` usan `--remove-orphans` |

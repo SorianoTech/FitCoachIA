@@ -30,8 +30,8 @@ El documento tiene tres partes:
 | Contenedores | `docker-compose.yml` + Compose de pgVector | Los mismos | No |
 | Observabilidad | `infra/observability/compose.yml` | El mismo, en la misma instancia | No |
 | Proxy y TLS | Nginx Proxy Manager en `proxy-network` | El mismo, con [nginx-proxy-manager.compose.yml](../infra/aws/ec2/nginx-proxy-manager.compose.yml) | Fichero nuevo de referencia |
-| Secretos | `/etc/fitcoachia/prod/.env.prod` (root) e `infra/*/.env*` | Igual | No |
-| Despliegue | `deploy.yml`: SSH + `sudo make prod-up` | Igual; solo cambian los secretos `SERVER_*` de GitHub | No |
+| Secretos | `/etc/fitcoachia/dev/.env.dev` (root) e `infra/*/.env*` | Igual | No |
+| Despliegue | `deploy.yml`: SSH + `sudo -n make up` (construye en el servidor) | Igual; solo cambian los secretos `SERVER_*` de GitHub | No |
 | Dominio | `dev.fitcoach.sergiosoriano.es`, `grafana.fitcoach.sergiosoriano.es` | Nuevo `fitcoach.sergiosoriano.es` para producción y `grafana.fitcoach` a la Elastic IP | No |
 | Datos | — | Producción arranca con las bases vacías: no se migra nada | No |
 | Backups | — | Snapshots EBS diarios (DLM) + `pg_dump` nocturno a S3 | Script nuevo |
@@ -88,7 +88,7 @@ flowchart LR
         DLM["DLM<br/>snapshot diario"]
     end
 
-    EXT["LLM · Telegram API<br/>Sentry · Docker Hub"]
+    EXT["LLM · Telegram API<br/>Sentry"]
 
     TG --> DNS
     USR --> DNS
@@ -127,8 +127,8 @@ flowchart LR
 
 Las líneas discontinuas son acceso de administración o tareas de AWS. Grafana lee además
 `fitcoach-postgres` para los dashboards de negocio. Las redes de Docker son las de hoy:
-`proxy-network` une Nginx Proxy Manager con la API y Grafana; `fitcoach-prod-internal` une la API con
-el embedder, los dos Postgres y el collector, y también llega a Grafana; `observability` es la red
+`proxy-network` une Nginx Proxy Manager con la API y Grafana; `fitcoach-internal` une la API con
+el embedder, Postgres, pgVector y el collector, y también llega a Grafana; `observability` es la red
 interna del stack de observabilidad.
 
 ### 1.3 Qué crea la plantilla
@@ -150,10 +150,9 @@ En el primer arranque, el *user data* de la instancia la deja como el servidor a
    la API de Docker.
 3. 2 GB de swap.
 4. Usuario de despliegue en el grupo `docker`, con la clave pública de GitHub Actions y la regla
-   `sudoers` que exige `deploy.yml` ([how-to.md](how-to.md#desplegar-producción)).
-5. `/etc/fitcoachia/prod` y `/etc/fitcoachia/dev` propiedad de root con permisos `700`.
-6. Las redes `proxy-network`, `fitcoach-prod-internal` y `fitcoach-dev-internal` (el Compose de
-   observabilidad exige las dos internas aunque dev no corra aquí).
+   `sudoers` que exige `deploy.yml` ([how-to.md](how-to.md#desplegar-en-el-servidor)).
+5. `/etc/fitcoachia/dev` propiedad de root con permisos `700` (ahí va `.env.dev`).
+6. Las redes `proxy-network` y `fitcoach-internal`.
 7. El repositorio en `/opt/fitcoachia` (rama o tag `RepositoryRef`), y una copia de
    `docker-compose.yml` y `Makefile` en el *home* del usuario de despliegue, que es donde
    `deploy.yml` los sobrescribe.
@@ -496,7 +495,7 @@ aws ssm start-session --profile fitcoach --region eu-west-1 --target <instance-i
 | Panel | `portNumber` | Ejemplo de `localPortNumber` |
 |---|---|---|
 | Nginx Proxy Manager | `81` | `8081` |
-| pgAdmin de pgVector | `PGADMIN_PORT` de `infra/vector-db/.env.prod` | `8010` |
+| pgAdmin de pgVector | `PGADMIN_PORT` de `infra/vector-db/.env.dev` | `8010` |
 
 En PowerShell, las comillas de `--parameters` son obligatorias: sin ellas la coma parte el argumento
 en dos.
@@ -598,27 +597,26 @@ del repositorio, y se instalan con permisos `600` de `root`:
 
 | Fichero local (ejemplo) | Destino en la instancia | Plantilla |
 |---|---|---|
-| `app.env.prod` | `/etc/fitcoachia/prod/.env.prod` | [`.env.example`](../.env.example) |
-| `vector-db.env.prod` | `/opt/fitcoachia/infra/vector-db/.env.prod` | [`.env.vector-db.example`](../infra/vector-db/.env.vector-db.example) |
+| `app.env` | `/etc/fitcoachia/dev/.env.dev` | [`.env.example`](../.env.example) |
+| `vector-db.env` | `/opt/fitcoachia/infra/vector-db/.env.dev` | [`.env.vector-db.example`](../infra/vector-db/.env.vector-db.example) |
 | `observability.env` | `/opt/fitcoachia/infra/observability/.env` | [`.env.example`](../infra/observability/.env.example) |
 
 **Valores que dependen de esta instancia**, a revisar antes de copiarlos:
 
-- `.env.prod` de la app:
-  - Token y secreto del **bot de producción**, que es otro bot distinto del de desarrollo
-    ([telegram-environments.md](telegram-environments.md)).
+- `.env.dev` de la app:
+  - Token y secreto del bot del entorno único
+    ([entornos-y-despliegue.md](entornos-y-despliegue.md#6-bot-de-telegram)).
   - `bot_telegram_webhook_base_url=https://fitcoach.sergiosoriano.es`.
   - `miniapp_url=https://fitcoach.sergiosoriano.es/miniapp/`.
-  - `vector_database_url` y `vector_database_writer_url` con el host `pgvector` (el contenedor de
-    `infra/vector-db/docker-compose.vector-db.yml`).
+  - Hostnames de servicio `postgres`, `pgvector` y `embedder` (`database_url`, `vector_database_url`,
+    `vector_database_writer_url`, `embedder_url`, `embedder_host`).
   - `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317`
     ([observabilidad.md](observabilidad.md)).
-- `.env.prod` de pgVector: `POSTGRES_PORT`, `PGADMIN_PORT` y el resto de variables de la plantilla;
+- `.env.dev` de pgVector: `POSTGRES_PORT`, `PGADMIN_PORT` y el resto de variables de la plantilla;
   `VECTOR_DB_RO_PASSWORD` y `VECTOR_DB_WRITER_PASSWORD` deben coincidir con las URL de la app.
 - `.env` de observabilidad: `GF_ADMIN_PASSWORD` (contraseña del usuario `admin` de Grafana),
-  `DEPLOYMENT_ENVIRONMENT=prod` y `FITCOACH_POSTGRES_PROD_*` con las credenciales del Postgres de
-  producción. `FITCOACH_POSTGRES_DEV_PASSWORD` es obligatoria para el Compose; como dev no corre en
-  esta instancia, cualquier valor sirve y el datasource «PostgreSQL Dev» quedará en error.
+  `DEPLOYMENT_ENVIRONMENT` y `FITCOACH_POSTGRES_*` con las credenciales del Postgres. Si el
+  `.env` ya existía, ver el aviso de [observabilidad.md](observabilidad.md#8-etiquetas-de-entorno).
 
 **Opción A: `scp`.** Necesita el alias `fitcoach-ec2` de la [sección 6.4](#64-ssh-por-encima-de-session-manager-opcional).
 Desde la carpeta local donde estén los ficheros, enviar la clave y lanzar `scp` en menos de 60
@@ -628,14 +626,14 @@ segundos. Los ficheros quedan en `/home/ubuntu` (no en `/tmp`, que es de todos):
 
 ```powershell
 aws ec2-instance-connect send-ssh-public-key --profile $AwsProfile --region eu-west-1 --instance-id $InstanceId --instance-os-user ubuntu --ssh-public-key "file://$HOME/.ssh/fitcoach-personal.pub"
-scp .\app.env.prod .\vector-db.env.prod .\observability.env fitcoach-ec2:
+scp .\app.env .\vector-db.env .\observability.env fitcoach-ec2:
 ```
 
 **bash (Linux, macOS, WSL):**
 
 ```bash
 aws ec2-instance-connect send-ssh-public-key --profile "$AWS_PROFILE_NAME" --region eu-west-1 --instance-id "$INSTANCE_ID" --instance-os-user ubuntu --ssh-public-key "file://$HOME/.ssh/fitcoach-personal.pub"
-scp ./app.env.prod ./vector-db.env.prod ./observability.env fitcoach-ec2:
+scp ./app.env ./vector-db.env ./observability.env fitcoach-ec2:
 ```
 
 Después, en la instancia, instalarlos en su sitio y borrar las copias:
@@ -643,10 +641,10 @@ Después, en la instancia, instalarlos en su sitio y borrar las copias:
 **bash (en la instancia):**
 
 ```bash
-sudo install -m 600 -o root -g root /home/ubuntu/app.env.prod /etc/fitcoachia/prod/.env.prod
-sudo install -m 600 -o root -g root /home/ubuntu/vector-db.env.prod /opt/fitcoachia/infra/vector-db/.env.prod
+sudo install -m 600 -o root -g root /home/ubuntu/app.env /etc/fitcoachia/dev/.env.dev
+sudo install -m 600 -o root -g root /home/ubuntu/vector-db.env /opt/fitcoachia/infra/vector-db/.env.dev
 sudo install -m 600 -o root -g root /home/ubuntu/observability.env /opt/fitcoachia/infra/observability/.env
-sudo shred -u /home/ubuntu/app.env.prod /home/ubuntu/vector-db.env.prod /home/ubuntu/observability.env
+sudo shred -u /home/ubuntu/app.env /home/ubuntu/vector-db.env /home/ubuntu/observability.env
 ```
 
 **Opción B: pegar el contenido, sin SSH.** Desde Session Manager, crear cada fichero directamente en
@@ -655,21 +653,18 @@ su destino y pegar el contenido en el editor:
 **bash (en la instancia):**
 
 ```bash
-sudo install -m 600 -o root -g root /dev/null /etc/fitcoachia/prod/.env.prod
-sudo nano /etc/fitcoachia/prod/.env.prod
-# Igual con /opt/fitcoachia/infra/vector-db/.env.prod y /opt/fitcoachia/infra/observability/.env
+sudo install -m 600 -o root -g root /dev/null /etc/fitcoachia/dev/.env.dev
+sudo nano /etc/fitcoachia/dev/.env.dev
+# Igual con /opt/fitcoachia/infra/vector-db/.env.dev y /opt/fitcoachia/infra/observability/.env
 ```
 
 No usar S3 como paso intermedio: los secretos quedarían guardados en el bucket (y en sus versiones),
 y el rol de la instancia solo puede leer `postgres/`.
 
-### 7.3 Login de Docker Hub (solo si los repositorios son privados)
+### 7.3 Imágenes
 
-**bash (en la instancia):**
-
-```bash
-sudo -iu <DEPLOY_USER> docker login
-```
+No hay registro de imágenes: la app y el embedder se construyen en la instancia (`build:`), y las
+imágenes base (Postgres, pgAdmin, Grafana…) son públicas. No hace falta `docker login`.
 
 ---
 
@@ -703,7 +698,7 @@ de contraseñas del equipo.
 |---|---|---|
 | Details | Domain Names | `fitcoach.sergiosoriano.es` |
 | Details | Scheme | `http` |
-| Details | Forward Hostname / IP | `fitcoach-ia-prod` (servicio de `docker-compose.yml`) |
+| Details | Forward Hostname / IP | `fitcoach-ia` (servicio de `docker-compose.yml`) |
 | Details | Forward Port | `8000` |
 | Details | Cache Assets, Websockets Support, Access List | Sin marcar / *Publicly Accessible* |
 | SSL | SSL Certificate | *Request a new SSL Certificate* |
@@ -752,7 +747,7 @@ En PowerShell 5.1, `curl` a secas es un alias de `Invoke-WebRequest`; `curl.exe`
 
 ## 9. Arrancar los servicios
 
-**Antes de nada, comprobar que no hay ninguna API de producción viva en el servidor actual.** Dos
+**Antes de nada, comprobar que no hay ninguna API viva en el servidor actual.** Dos
 APIs con el mismo bot se quitarían el webhook la una a la otra y sus schedulers enviarían avisos
 duplicados:
 
@@ -760,8 +755,8 @@ duplicados:
 
 ```bash
 docker ps --filter name=fitcoach-ia --format '{{.Names}}'
-# Si aparece "fitcoach-ia" (la de producción; la de desarrollo es otra), pararla:
-sudo make prod-down
+# Si aparece "fitcoach-ia", pararla:
+sudo make down
 ```
 
 Después, en la instancia y en este orden: observabilidad (para recoger logs desde el primer
@@ -775,11 +770,11 @@ cd /opt/fitcoachia/infra/observability && sudo docker compose up -d
 
 # 2. Base vectorial: la primera vez carga el catálogo y tarda varios minutos
 cd /opt/fitcoachia/infra/vector-db
-sudo docker compose --env-file .env.prod -f docker-compose.vector-db.yml up -d --build
+sudo docker compose -f docker-compose.vector-db.yml up -d --build
 sudo docker logs -f pgvector   # esperar a "database system is ready to accept connections"; Ctrl+C
 
 # 3. Aplicación
-cd /opt/fitcoachia && sudo make prod-up VERSION=<versión>
+cd /opt/fitcoachia && sudo make up
 sudo docker ps
 ```
 
@@ -787,7 +782,7 @@ Qué pasa en cada paso:
 
 - **Base vectorial**: con el volumen vacío, la imagen ejecuta los scripts de
   `infra/vector-db/ddl/` (catálogo de ejercicios y roles `fitcoach_ro` y `fitcoach_writer`). Solo
-  ocurre la primera vez. `--env-file .env.prod` hace falta porque el Compose toma de ese fichero los
+  ocurre la primera vez. El Compose toma de `.env.dev` (`env_file:`) los
   puertos `POSTGRES_PORT` y `PGADMIN_PORT`; quedan publicados en la instancia, pero el security group
   no los deja pasar (pgAdmin se usa por túnel, [sección 6.3](#63-túneles-a-paneles-internos)).
 - **Aplicación**: se arranca desde el repositorio porque `docker-compose.yml` sabe construir las
@@ -808,29 +803,29 @@ Tres cambios fuera de la instancia:
    `grafana.fitcoach` a la Elastic IP ([sección 5](#5-pedir-el-dns)). Cuando resuelva, editar la regla
    de Grafana en NPM (*Edit* → *SSL*) y pedir el certificado como en la regla de la API. El Grafana del
    servidor actual deja de tener nombre público; se puede seguir usando por túnel o con otro nombre.
-2. **BotFather.** Si el bot de producción tiene la Mini App configurada también en BotFather
+2. **BotFather.** Si el bot del entorno tiene la Mini App configurada también en BotFather
    (*Main Mini App*), cambiar allí la URL a `https://fitcoach.sergiosoriano.es/miniapp/`.
 3. **Secretos de GitHub** (los cambia un administrador del repositorio). A partir de aquí los
    despliegues van por `deploy.yml` como hoy:
    - `SERVER_PKEY`: la clave privada de la [sección 4.1](#41-clave-ssh-de-despliegue).
    - `SERVER_HOST`: la Elastic IP o `fitcoach.sergiosoriano.es`.
    - `SERVER_USER`: `DeployUser` de la pila (por defecto `fitcoach`).
-   - `DOCKER_IMAGE_NAME` y `ENV_FILE_PATH` no cambian.
+   - `DOCKER_USER`, `DOCKER_PASSWORD`, `DOCKER_IMAGE_NAME` y `ENV_FILE_PATH` ya no se usan.
 
 ---
 
 ## 11. Comprobar
 
 - `sudo docker ps`: todos los contenedores `healthy`.
-- `https://api.telegram.org/bot<TOKEN>/getWebhookInfo` (con el token del bot de producción): `url`
+- `https://api.telegram.org/bot<TOKEN>/getWebhookInfo` (con el token del bot): `url`
   es `https://fitcoach.sergiosoriano.es/webhook/response` y no hay `last_error_message`.
-- `/start` al bot de producción responde, y la Mini App abre desde el botón de menú.
+- `/start` al bot responde, y la Mini App abre desde el botón de menú.
 - `https://grafana.fitcoach.sergiosoriano.es` (usuario `admin`, contraseña `GF_ADMIN_PASSWORD`):
-  aparecen logs y trazas con entorno `prod`.
+  aparecen logs y trazas de `fitcoach-ia`.
 - Al día siguiente, el primer backup está en S3 (`/var/log/fitcoach-backup.log`).
 
-Si algo falla y hay que dar marcha atrás, basta con `sudo make prod-down` en la instancia: no había
-producción anterior que restaurar.
+Si algo falla y hay que dar marcha atrás, basta con `sudo make down` en la instancia: no había
+nada anterior que restaurar.
 
 ---
 
@@ -874,10 +869,10 @@ pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-li
 
 ### 12.3 Despliegues de la aplicación
 
-Los hace `deploy.yml` como hoy: copia `docker-compose.yml` y el `Makefile` en `/home/<DEPLOY_USER>`
-y lanza `sudo make prod-up VERSION=x.y.z` desde allí. El arranque de la
+Los hace `deploy.yml` como hoy: sincroniza (rsync) el código de la etiqueta en `/home/<DEPLOY_USER>/fitcoachia`
+y lanza `sudo -n make up` desde allí, construyendo la imagen en el servidor. El arranque de la
 [sección 9](#9-arrancar-los-servicios) se hace desde `/opt/fitcoachia`, pero como el Compose fija
-`name: fitcoach-prod`, los dos sitios gestionan los mismos contenedores y volúmenes. pgVector y la
+`name: fitcoach`, los dos sitios gestionan los mismos contenedores y volúmenes. pgVector y la
 observabilidad no los toca `deploy.yml`: se actualizan a mano desde `/opt/fitcoachia` tras un
 `git pull`.
 
@@ -917,17 +912,11 @@ Para mantener los cambios al mínimo, esta variante deja a propósito como está
 - **Dos Postgres en contenedor** y el nombre `fitcoach` en ambas: siguen en contenedores separados.
 - **Volcado `pg_dumpall` de PG 18** en la imagen de pgVector: carga el catálogo una sola vez, al
   crear el volumen.
-- **Docker Hub** como registro y **el DNS** de `sergiosoriano.es` donde esté hoy: Route 53 y ECR no
-  aportan nada aquí.
+- **El DNS** de `sergiosoriano.es` donde esté hoy: Route 53 y ECR no
+  aportan nada aquí; tampoco hay registro de imágenes (se construyen en la instancia).
 - **Observabilidad**: el mismo Compose y la misma configuración; ningún servicio de AWS la sustituye.
 - **`proxy-network` y las redes internas**: idénticas.
 
 Puntos abiertos:
 
-1. **Imagen del embedder en los despliegues.** Ningún workflow publica `fitcoachia/embedder:<versión>`.
-   El primer arranque la construye en la instancia desde `/opt/fitcoachia`, pero `deploy.yml` lanza
-   `make prod-up` desde `/home/<DEPLOY_USER>`, donde no está el código: con una versión nueva no
-   podrá descargarla ni construirla.
-2. **Entorno de desarrollo**: dejarlo en el servidor actual (por defecto en este documento) o
-   moverlo a la EC2 con `t3.xlarge`.
-3. **Región**: `eu-west-1` (por defecto) o `eu-south-2`.
+1. **Región**: `eu-west-1` (por defecto) o `eu-south-2`.

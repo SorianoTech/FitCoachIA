@@ -83,6 +83,12 @@ de Telegram. El bot y su webhook salen de `/etc/fitcoachia/dev/.env.dev`. Detall
 `database_url` se lee del fichero de entorno tanto con Python local (`localhost`) como en el
 Compose, donde debe apuntar al servicio `postgres` (el Postgres solo está en la red `fitcoach-internal`).
 
+## rag-doc
+
+La web de preguntas a la documentación (`infra/rag-doc`) tiene su propio fichero de entorno
+(`infra/rag-doc/.env`, plantilla `.env.rag-doc.example`) y es obligatoria `RAG_LLM_API_KEY`. Variables,
+arranque e indexado en [rag-doc.md](rag-doc.md).
+
 ## Cuota de consumo por chat
 
 Cada chat tiene un presupuesto de tokens en una ventana móvil. Al agotarlo, la app responde con un

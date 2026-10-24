@@ -57,6 +57,19 @@ contenedor. Detalle en [entornos-y-despliegue.md](entornos-y-despliegue.md#2-el-
 
 ---
 
+## rag-doc (preguntas a la documentación)
+
+| Comando | Qué hace |
+|---|---|
+| `make rag-up` | Construye y levanta Qdrant y la web `rag-doc` (`infra/rag-doc`); publica `127.0.0.1:8200` |
+| `make rag-index` | Reindexa la lista blanca `infra/rag-doc/sources.yml` en Qdrant (idempotente) |
+| `make rag-logs` | Sigue los logs |
+| `make rag-down` | Detiene el stack; no borra el volumen del índice |
+
+Es independiente del stack principal. Detalle en [rag-doc.md](rag-doc.md).
+
+---
+
 ## Tests
 
 | Comando | Qué hace |

@@ -12,7 +12,7 @@ Language rules: code, identifiers and this file in **English**; everything under
 1. Do only what was asked. No unrequested features, refactors or rewrites.
 2. **Forbidden files**: never read, write, grep, glob or print any `.env` / `.env.*` file (root or `infra/*/.env`).
    The only allowed ones are `*.example` (`.env.example`, `infra/embedder/.env.embedder.example`,
-   `infra/vector-db/.env.vector-db.example`, `infra/observability/.env.example`).
+   `infra/vector-db/.env.vector-db.example`, `infra/observability/.env.example`, `infra/rag-doc/.env.rag-doc.example`).
    Do not run commands that print resolved env values (e.g. `docker compose config` with `--env-file`).
 3. New environment variables go in the `.env.example` of the affected component, never in a real `.env`.
    If a value must change in a real `.env`, propose it in the chat and let the user apply it.
@@ -182,7 +182,7 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 4. Update `docs/toml.md`.
 
 Out of scope of this flow (independent images with their own pins): `infra/embedder/requirements.txt`,
-`infra/vector-db/loader/requirements.txt`.
+`infra/vector-db/loader/requirements.txt`, `infra/rag-doc/requirements.txt`.
 
 ---
 
@@ -212,6 +212,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 | `infra/vector-db/docker-compose.vector-db.yml` | pgVector catalogue (independent lifecycle, joins `fitcoach-internal`) | Not part of app compose |
 | `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
+| `infra/rag-doc/` | Public PWA to ask the docs by text/voice (FastAPI + Qdrant + LangChain LLM + faster-whisper/Piper); `make rag-up`/`rag-index` | Independent of app code and tests; see `docs/rag-doc.md` |
 | `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3, Nginx Proxy Manager compose | Runs the composes above unchanged; see `docs/despliegue-aws-ec2.md` |
 
 Workflow for a compose-affecting change: edit `docker-compose.yml` -> try it with `make up` -> keep the **test** compose runnable.
@@ -274,7 +275,7 @@ Update every item that the change touches, in the same change:
 | Makefile, workflows, actions | `docs/Makefile.md`, `docs/ci-cd.md` |
 | Architecture, layers, agents, this map | this `AGENTS.md` |
 
-Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/train-command-flow.md`, `docs/devtools.md` (offline trainer debugging: `trainer-debug`, `trainer-compare`),
+Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/devtools.md` (offline trainer debugging: `trainer-debug`, `trainer-compare`), `docs/rag-doc.md` (docs Q&A web, `infra/rag-doc`),
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
 `docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md` (single environment, env file, Telegram bot/webhook), `docs/despliegue-aws-ec2.md` (single-EC2 AWS deployment), `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
 `docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`.

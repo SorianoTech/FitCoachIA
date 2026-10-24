@@ -59,6 +59,7 @@ FitCoachIA/
 │   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation, backup a S3 y Nginx Proxy Manager
 │   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
 │   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
+│   ├── rag-doc/                  # Web PWA (texto y voz) para preguntar a la documentación: Qdrant + LLM
 │   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
 ├── tests/
 │   ├── unit_test/                # Tests unitarios
@@ -106,6 +107,7 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make app` | Reconstruye y reinicia solo la API (`--no-deps`) |
 | `make down` / `make app-logs` | Detiene el stack / sigue los logs |
 | `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
+| `make rag-up` / `rag-down` / `rag-logs` / `rag-index` | Web de preguntas a la documentación (`infra/rag-doc`) e indexación |
 
 El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md). Los targets `trainer-*` se explican en [docs/devtools.md](docs/devtools.md).
 

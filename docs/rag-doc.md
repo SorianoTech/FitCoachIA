@@ -11,7 +11,7 @@ Navegador (PWA) ──HTTPS──> Nginx Proxy Manager ──> rag-doc (FastAPI,
                                                      ├─ embeddings: multilingual-e5-base (en la imagen)
                                                      ├─ Qdrant (red privada rag-internal)
                                                      ├─ LLM: API compatible con OpenAI vía LangChain
-                                                     ├─ STT: faster-whisper (small, CPU)
+                                                     ├─ STT: API en la nube (gpt-4o-mini-transcribe) + faster-whisper local de respaldo
                                                      └─ TTS: Piper (es_ES-davefx-medium)
 ```
 
@@ -82,7 +82,7 @@ Errores: `422` entrada no válida, `413` audio demasiado grande o largo, `415` t
 El navegador graba con `MediaRecorder`, envía el audio a `/api/stt` y lanza la pregunta con el texto
 obtenido; cada respuesta tiene un botón "Escuchar" que pide el audio a `/api/tts`. El mismo botón se
 convierte en "Parar" mientras suena (o se prepara) y al pulsarlo corta el audio y cancela la
-petición; solo suena una respuesta a la vez. Whisper (`small`,
+petición; solo suena una respuesta a la vez. La transcripción usa por defecto una API en la nube (rápida y más precisa); si falla, recurre a Whisper local. Whisper (`small`,
 int8, CPU) y la voz de Piper van **dentro de la imagen** y en ejecución `HF_HUB_OFFLINE=1`, así que
 el arranque no depende de la red. Cambiar `RAG_STT_MODEL` exige reconstruir la imagen. El micrófono
 solo funciona con HTTPS (o `localhost`).
@@ -129,7 +129,12 @@ Todas con prefijo `RAG_`; plantilla en `infra/rag-doc/.env.rag-doc.example`.
 | `RAG_RATE_LIMIT_PER_MINUTE` | `10` | Peticiones por minuto y por IP |
 | `RAG_DAILY_CALL_CAP` | `500` | Tope diario global |
 | `RAG_TRUST_PROXY_HEADERS` | `true` | Confiar en `X-Forwarded-For` |
-| `RAG_STT_MODEL` | `small` | Tamaño de Whisper (reconstruir la imagen) |
+| `RAG_STT_MODEL` | `small` | Tamaño de Whisper local (reconstruir la imagen) |
+| `RAG_STT_PROVIDER` | `cloud` | `cloud` (API + respaldo local) o `local` (solo Whisper) |
+| `RAG_STT_CLOUD_MODEL` | `gpt-4o-mini-transcribe` | Modelo de transcripción en la nube (p. ej. `whisper-1`, `gpt-4o-transcribe`) |
+| `RAG_STT_CLOUD_BASE_URL` | `https://api.openai.com/v1` | Endpoint OpenAI-compatible de transcripción |
+| `RAG_STT_CLOUD_API_KEY` | vacío | Clave; si está vacía usa `RAG_LLM_API_KEY` |
+| `RAG_STT_CLOUD_TIMEOUT_SECONDS` | `20` | Timeout de la llamada |
 | `RAG_PORT` | `8200` | Puerto publicado en `127.0.0.1` |
 | `RAG_LOG_LEVEL` | `INFO` | Nivel de log |
 

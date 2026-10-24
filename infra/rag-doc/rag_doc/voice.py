@@ -1,8 +1,11 @@
-"""Speech adapters: faster-whisper (speech to text) and Piper (text to speech), CPU only."""
+"""Speech adapters: OpenAI/faster-whisper (speech to text) and Piper (text to speech)."""
 
 import io
+import logging
 import wave
-from typing import Protocol
+from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class VoiceError(Exception):
@@ -51,6 +54,47 @@ class WhisperTranscriber:
             raise
         except Exception as exc:
             raise SpeechRecognitionError("could not decode the audio") from exc
+
+
+def _audio_filename(audio: bytes) -> str:
+    # The API infers the container from the file extension, so sniff it from the magic bytes
+    if audio[:4] == b"\x1a\x45\xdf\xa3":
+        return "audio.webm"
+    if audio[:4] == b"OggS":
+        return "audio.ogg"
+    if audio[4:8] == b"ftyp":
+        return "audio.mp4"
+    if audio[:4] == b"RIFF":
+        return "audio.wav"
+    return "audio.webm"
+
+
+class CloudTranscriber:
+    def __init__(self, client: Any, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    def transcribe(self, audio: bytes) -> str:
+        try:
+            result = self._client.audio.transcriptions.create(
+                model=self._model, file=(_audio_filename(audio), audio), language="es"
+            )
+        except Exception as exc:
+            raise SpeechRecognitionError("cloud transcription failed") from exc
+        return str(result.text).strip()
+
+
+class FallbackTranscriber:
+    def __init__(self, primary: SpeechToText, fallback: SpeechToText) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    def transcribe(self, audio: bytes) -> str:
+        try:
+            return self._primary.transcribe(audio)
+        except SpeechRecognitionError:
+            logger.warning("primary transcription failed, using the local fallback", exc_info=True)
+            return self._fallback.transcribe(audio)
 
 
 class PiperSynthesizer:

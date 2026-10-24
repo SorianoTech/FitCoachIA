@@ -10,6 +10,8 @@ from rag_doc.limits import RateLimiter
 from rag_doc.texts import MAX_AUDIO_BYTES, MAX_TTS_CHARS
 from rag_doc.voice import (
     AudioTooLongError,
+    CloudTranscriber,
+    FallbackTranscriber,
     PiperSynthesizer,
     SpeechRecognitionError,
     SpeechSynthesisError,
@@ -164,3 +166,43 @@ def test_piper_wraps_failures() -> None:
 
     with pytest.raises(SpeechSynthesisError):
         synthesizer.synthesize("hola")
+
+
+def _cloud(create):
+    client = SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create)))
+    return CloudTranscriber(client, "gpt-4o-mini-transcribe")
+
+
+def test_cloud_transcriber_sends_model_language_and_container_name() -> None:
+    calls = {}
+
+    def create(**kwargs):
+        calls.update(kwargs)
+        return SimpleNamespace(text=" hola ")
+
+    assert _cloud(create).transcribe(b"\x1a\x45\xdf\xa3rest") == "hola"
+    assert calls["model"] == "gpt-4o-mini-transcribe"
+    assert calls["language"] == "es"
+    assert calls["file"][0] == "audio.webm"
+
+
+def test_cloud_transcriber_wraps_provider_failures() -> None:
+    def boom(**_k):
+        raise RuntimeError("401")
+
+    with pytest.raises(SpeechRecognitionError):
+        _cloud(boom).transcribe(b"a")
+
+
+def test_fallback_uses_local_when_cloud_fails() -> None:
+    def boom(**_k):
+        raise RuntimeError("down")
+
+    local = SimpleNamespace(transcribe=lambda _a: "local")
+    assert FallbackTranscriber(_cloud(boom), local).transcribe(b"a") == "local"
+
+
+def test_fallback_keeps_cloud_result_when_it_works() -> None:
+    cloud = _cloud(lambda **_k: SimpleNamespace(text="nube"))
+    local = SimpleNamespace(transcribe=lambda _a: "local")
+    assert FallbackTranscriber(cloud, local).transcribe(b"a") == "nube"

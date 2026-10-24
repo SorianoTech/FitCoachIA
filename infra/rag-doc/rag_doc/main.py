@@ -5,22 +5,43 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import openai
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from qdrant_client import QdrantClient
 
 from rag_doc.api import router
-from rag_doc.config import get_settings
+from rag_doc.config import RagSettings, get_settings
 from rag_doc.embeddings import Embedder
 from rag_doc.limits import RateLimiter
 from rag_doc.llm import LLMClient, build_chat_model
 from rag_doc.service import AnswerService
 from rag_doc.store import VectorStore
 from rag_doc.texts import MAX_AUDIO_SECONDS
-from rag_doc.voice import PiperSynthesizer, WhisperTranscriber
+from rag_doc.voice import (
+    CloudTranscriber,
+    FallbackTranscriber,
+    PiperSynthesizer,
+    SpeechToText,
+    WhisperTranscriber,
+)
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def build_stt(settings: RagSettings) -> SpeechToText:
+    local = WhisperTranscriber(settings.stt_model, settings.stt_model_dir, MAX_AUDIO_SECONDS)
+    if settings.stt_provider != "cloud":
+        return local
+    key = settings.stt_cloud_api_key or settings.llm_api_key
+    client = openai.OpenAI(
+        api_key=key.get_secret_value() if key else "",
+        base_url=settings.stt_cloud_base_url,
+        timeout=settings.stt_cloud_timeout_seconds,
+        max_retries=1,
+    )
+    return FallbackTranscriber(CloudTranscriber(client, settings.stt_cloud_model), local)
 
 
 @asynccontextmanager
@@ -36,9 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     embedder = Embedder(settings.embedding_model, settings.embedding_dimensions)
     embedder.embed_query("warm-up")
     llm = LLMClient(build_chat_model(settings))
-    app.state.stt = WhisperTranscriber(
-        settings.stt_model, settings.stt_model_dir, MAX_AUDIO_SECONDS
-    )
+    app.state.stt = build_stt(settings)
     app.state.tts = PiperSynthesizer(settings.tts_voice_path)
     store = VectorStore(QdrantClient(url=settings.qdrant_url), settings.qdrant_collection)
     app.state.answer_service = AnswerService(

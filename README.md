@@ -69,6 +69,7 @@ FitCoachIA/
 │   │   ├── python-setup/         # Action reutilizable: Python + uv + auditoría de dependencias
 │   │   └── quality-check/        # Action reutilizable: ruff, mypy, gitleaks, pip-audit, bandit
 │   ├── skills/
+│   │   ├── cloud-architect/      # Skill para diseño de arquitecturas cloud
 │   │   └── prompt-engineering/   # Skill para diseñar y optimizar prompts
 │   ├── workflows/                # build, release, deploy y validate-develop/main-merge
 │   ├── copilot-instructions.md   # Puntero a AGENTS.md

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "fastapi-expert": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/fastapi-expert/SKILL.md",
+      "computedHash": "687496fcceddb0e01d5a9e7110e035e32993ddf04e45ed79065f0c28bcea9e7f"
+    },
+    "python-testing-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/python-development/skills/python-testing-patterns/SKILL.md",
+      "computedHash": "a0c0cd2841eb80fc082b360ebbee1ad69275234229e525a6da1baaee3f5a52bd"
+    },
+    "terraform-engineer": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/terraform-engineer/SKILL.md",
+      "computedHash": "438f0af8389dc2970c6c7b84d206767e671b0b4b6e3b6024cd4bafa07d5893a1"
+    }
+  }
+}

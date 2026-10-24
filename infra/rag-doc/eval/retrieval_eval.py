@@ -33,6 +33,9 @@ VARIANTS = {
 
 
 def is_hit(chunk: Chunk, case: dict) -> bool:
+    if chunk.source in case.get("alt_sources", []):
+        # The same answer lives in several documents: any of the case's facts is enough.
+        return any(fact.lower() in chunk.text.lower() for fact in case["facts"])
     if chunk.source != case["source"]:
         return False
     needle = case["heading"].lower()

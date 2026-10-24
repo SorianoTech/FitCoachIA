@@ -112,10 +112,11 @@ Criterios para ajustar la precisión:
 - Si `minOn` < `maxOff`, ninguna puntuación separa preguntas del tema de las de fuera de tema:
   `RAG_MIN_SCORE` no sirve de filtro y decide el prompt del sistema.
 - Con pocos casos una diferencia de un solo acierto es ruido (con 24 preguntas, 0,042); amplía
-  `gold_set.jsonl` antes de fiarte de décimas. Hoy tiene 69 casos (61 del tema, repartidos por 11
-  documentos de la lista blanca con preguntas reformuladas, y 8 fuera de tema). Cada caso del tema lleva
-  `source` y `heading` (basta con que aparezcan en el fragmento) y `facts` orientativos; los fuera de
-  tema llevan `"offtopic": true`. El eval solo embebe `question` y no usa `history`. Los resultados
+  `gold_set.jsonl` antes de fiarte de décimas. Hoy tiene 90 casos (81 del tema, repartidos por los documentos de la lista blanca con
+  preguntas reformuladas, y 9 fuera de tema). Cada caso del tema lleva `source` y `heading` (basta con
+  que aparezcan en el fragmento) y `facts` orientativos; los fuera de tema llevan `"offtopic": true`.
+  Si la misma respuesta vive en varios documentos, el caso añade `alt_sources`: un fragmento de
+  esas fuentes cuenta como acierto si contiene alguno de los `facts`. El eval solo embebe `question` y no usa `history`. Los resultados
   guardados antes de la ampliación no son comparables con los nuevos.
 - Compara siempre `local` y `openai` con la misma tabla antes de cambiar de proveedor.
 

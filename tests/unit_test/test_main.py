@@ -3,9 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from fitcoach import main
 from fitcoach.infrastructure.config.settings import SchedulerSettings
+from fitcoach.infrastructure.database.session import get_session
+from fitcoach.infrastructure.vectordb.session import get_vector_session
 from fitcoach.main import app
 
 
@@ -15,10 +18,41 @@ class TestAppEndpoints:
         assert response.status_code == 200
         assert response.json()["status"] == "online"
 
-    def test_health_returns_healthy(self) -> None:
+    def test_health_reports_liveness(self) -> None:
         response = TestClient(app).get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
+        assert response.json() == {"status": "alive"}
+
+    def test_readiness_checks_both_database_dependencies(self) -> None:
+        session = AsyncMock()
+        vector_session = AsyncMock()
+        app.dependency_overrides[get_session] = lambda: session
+        app.dependency_overrides[get_vector_session] = lambda: vector_session
+        try:
+            response = TestClient(app).get("/ready")
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+            app.dependency_overrides.pop(get_vector_session, None)
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ready"}
+        session.execute.assert_awaited_once()
+        vector_session.execute.assert_awaited_once()
+
+    def test_readiness_returns_503_when_a_database_is_unavailable(self) -> None:
+        session = AsyncMock()
+        vector_session = AsyncMock()
+        vector_session.execute.side_effect = SQLAlchemyError("database unavailable")
+        app.dependency_overrides[get_session] = lambda: session
+        app.dependency_overrides[get_vector_session] = lambda: vector_session
+        try:
+            response = TestClient(app, raise_server_exceptions=False).get("/ready")
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+            app.dependency_overrides.pop(get_vector_session, None)
+
+        assert response.status_code == 503
+        assert response.json() == {"detail": "Required database dependencies are unavailable"}
 
 
 class TestScheduler:

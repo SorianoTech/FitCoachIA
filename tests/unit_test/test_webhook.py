@@ -319,6 +319,15 @@ class TestTelegramWebhook:
         assert response.status_code == 400
         mock_bot.send_message.assert_not_awaited()
 
+    @pytest.mark.parametrize("payload", [[], {"message": "not a Telegram message"}])
+    def test_invalid_update_shape_returns_400(
+        self, client: TestClient, mock_bot: AsyncMock, payload: object
+    ) -> None:
+        response = client.post("/webhook/response", json=payload)
+
+        assert response.status_code == 400
+        mock_bot.send_message.assert_not_awaited()
+
 
 class TestEditedMessage:
     def test_edited_message_is_processed_like_a_new_message(

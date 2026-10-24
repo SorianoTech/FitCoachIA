@@ -130,8 +130,10 @@ capacidad de crear las redes Docker externas `fitcoach-prod-internal` y `proxy-n
 No hay un job dedicado; el monitoreo continuo se apoya en dos señales que ya generan las fases
 anteriores:
 
-- **`healthcheck` del contenedor** sobre `/health` — decide el resultado del despliegue (y su
-  rollback), y después sigue sondeando cada 5 min como señal de salud continua en producción.
+- **`healthcheck` del contenedor** sobre `/ready` — verifica las bases de datos conversacional y
+  vectorial, decide el resultado del despliegue (y su rollback), y después sigue sondeando cada
+  5 min como señal de disponibilidad continua en producción. `/health` queda como liveness del
+  proceso, sin depender de esas bases de datos.
 - **Pestaña Security de GitHub** — acumula los SARIF de Semgrep (CI, código fuente) y Trivy
   (release, imagen construida) como registro continuo de hallazgos, independiente de si bloquearon
   o no el pipeline que los generó.

@@ -167,8 +167,8 @@ las tareas mínimas de Fargate y la salida de red.
 - El arranque actual registra el webhook de Telegram. Hacer esa operación una sola vez como paso
   de despliegue o tarea controlada, evitando que las réplicas compitan por registrar la misma
   configuración.
-- El endpoint `/health` actual devuelve estado saludable sin comprobar dependencias. Definir una
-  comprobación de readiness adecuada para el ALB, sin acoplarla a la disponibilidad del proveedor
+- `/health` comprueba liveness del proceso y `/ready` comprueba las bases de datos necesarias. Usar
+  `/ready` para el health check del ALB y mantenerlo desacoplado de la disponibilidad del proveedor
   LLM.
 - El scheduler corre dentro de cada proceso de aplicación. Su coordinación actual mediante
   PostgreSQL debe conservarse y probarse con varias tareas ECS; revisar la configuración para

@@ -153,7 +153,11 @@ La API queda disponible en <http://localhost:8000>. Comprueba el servicio con:
 
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 ```
+
+`/health` comprueba que el proceso responde. `/ready` comprueba además que las bases PostgreSQL
+conversacional y vectorial aceptan consultas; devuelve `503` si alguna no está disponible.
 
 Para detener PostgreSQL, ejecuta `docker stop fitcoach-postgres`.
 
@@ -245,15 +249,18 @@ contenedores, volumen PostgreSQL y configuración `APP_ENV`.
 
 ### Health check del contenedor
 
-Ambos Compose definen un `healthcheck` sobre `/health` que Docker sondea **cada 5 minutos** en
-régimen estable, para no llenar los logs con una petición cada pocos segundos durante toda la vida
-del contenedor. Para que eso no ralentice los despliegues, lleva además `start_interval: 5s`: mientras
-el contenedor arranca se sondea cada 5 segundos, así que pasa a `healthy` en cuanto responde y el
-workflow de despliegue no espera 5 minutos para darlo por bueno.
+Los Compose de la aplicación definen un `healthcheck` sobre `/ready` que Docker sondea **cada 5
+minutos** en régimen estable, para no llenar los logs con una petición cada pocos segundos durante
+toda la vida del contenedor. Esta comprobación valida las conexiones a PostgreSQL conversacional y
+pgVector.
+Para que no ralentice los despliegues, lleva además `start_interval: 5s`: mientras el contenedor
+arranca se sondea cada 5 segundos, así que pasa a `healthy` en cuanto las bases de datos responden
+y el workflow de despliegue no espera 5 minutos para darlo por bueno. `/health` se mantiene como
+sonda de liveness, sin consultar dependencias.
 
 ```yaml
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready',timeout=2)"]
       interval: 5m
       timeout: 5s
       retries: 3

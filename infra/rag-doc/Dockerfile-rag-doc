@@ -4,10 +4,20 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# El modelo vive dentro de la imagen: el arranque no depende de HuggingFace ni de la red.
+ENV HF_HOME=/opt/hf
+ENV RAG_EMBEDDING_MODEL=intfloat/multilingual-e5-small
+
 WORKDIR /app
+
+# torch solo CPU (la build CUDA multiplica la imagen); antes de requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Si cambias RAG_EMBEDDING_MODEL, reconstruye la imagen y reindexa (make rag-index)
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${RAG_EMBEDDING_MODEL}')"
 
 RUN useradd --create-home --uid 10001 raguser
 COPY rag_doc ./rag_doc

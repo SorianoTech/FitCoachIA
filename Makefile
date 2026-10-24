@@ -57,7 +57,7 @@ echo ">> fichero de entorno: $$RESOLVED_ENV_FILE"; \
 export FITCOACH_ENV_FILE="$$RESOLVED_ENV_FILE"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests networks up app down app-logs vector-up vector-down vector-logs rag-up rag-down rag-logs trainer-debug trainer-compare trainer-refresh-catalogues
+.PHONY: container build run stop clean all help clean-image clean-images logs tests networks up app down app-logs vector-up vector-down vector-logs rag-up rag-down rag-logs rag-index trainer-debug trainer-compare trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -85,6 +85,7 @@ help:
 	@echo "  make rag-up                         - Levanta rag-doc (FAQ sobre docs/ e infra/) y su Qdrant"
 	@echo "  make rag-down                       - Detiene rag-doc (conserva el volumen de Qdrant)"
 	@echo "  make rag-logs                       - Muestra los logs de rag-doc"
+	@echo "  make rag-index                      - Reindexa en Qdrant la lista blanca de infra/rag-doc/sources.yml"
 	@echo "  make trainer-debug ARGS=\"...\"       - Ejecuta el entrenador offline y guarda artefactos en runs/trainer (ver docs/trainer-agent.md)"
 	@echo "  make trainer-compare ARGS=\"...\"     - Compara skills/modelos sobre el golden set"
 	@echo "  make trainer-refresh-catalogues     - Regenera los catalogos congelados de evals/trainer/cases con la recuperacion real"
@@ -145,6 +146,12 @@ rag-down:
 
 rag-logs:
 	@$(COMPOSE_RAG) logs -f
+
+# Reindexa la lista blanca infra/rag-doc/sources.yml en Qdrant (idempotente)
+rag-index:
+	@$(ensure_networks)
+	@$(COMPOSE_RAG) up -d qdrant
+	@$(COMPOSE_RAG) --profile index run --rm --build indexer
 
 # Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
 trainer-debug:

@@ -1,0 +1,14 @@
+# Lista blanca de ficheros indexables. Solo lo listado aqui puede llegar al RAG (la web es publica).
+# Rutas relativas a la raiz del repo; solo .md. Tras cambiarla: make rag-index
+files:
+  - docs/how-to.md
+  - docs/interviewer-agent.md
+  - docs/trainer-agent.md
+  - docs/scheduler.md
+  - docs/encuestas-satisfaccion.md
+  - docs/vector-db.md
+  - docs/modelo-datos.md
+  - docs/rag-recuperacion-ejercicios.md
+  - docs/observabilidad.md
+  - docs/ci-cd.md
+  - docs/Makefile.md

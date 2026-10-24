@@ -41,6 +41,28 @@ services:
       timeout: 5s
       retries: 5
 
+  indexer:
+    # Unico servicio con acceso al repo (solo lectura); la web publica no monta nada.
+    build:
+      context: ./
+      dockerfile: Dockerfile-rag-doc
+    profiles: [ "index" ]
+    command: [ "python", "-m", "rag_doc.indexer" ]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RAG_QDRANT_URL: http://qdrant:6333
+    volumes:
+      - ../../docs:/corpus/docs:ro
+      - ../../infra:/corpus/infra:ro
+      - ./sources.yml:/app/sources.yml:ro
+    networks:
+      - rag-internal
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
 volumes:
   qdrant_storage:
 

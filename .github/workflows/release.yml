@@ -19,8 +19,10 @@ jobs:
     if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
     permissions:
       contents: read
+    # Solo nombres de servicio: GitHub descarta un output que contenga el valor de un secreto, y
+    # los nombres de imagen llevan el namespace fitcoachia, que coincide con DOCKER_USER.
     outputs:
-      images: ${{ steps.images.outputs.images }}
+      services: ${{ steps.images.outputs.services }}
     steps:
       - name: Validar formato version
         run: |
@@ -50,13 +52,8 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml config --no-interpolate --format json \
-            | jq -c --arg root "$PWD" --arg version "$VERSION" '
-                [.services | to_entries[] | select(.value.build)
-                 | (.value.build.context | if . == $root then "." else "./" + ltrimstr($root + "/") end) as $ctx
-                 | {service: .key,
-                    image: (.value.image | sub("\\$\\{VERSION:-latest\\}$"; $version)),
-                    context: $ctx,
-                    file: ($ctx + "/" + .value.build.dockerfile)}]' > images.json
+            | jq -c --arg root "$PWD" --arg version "$VERSION" -f .github/scripts/compose-images.jq \
+            > images.json
 
           if jq -e 'any(.[]; (.image | contains("$")) or (.image | split("/") | last | contains(":") | not))' \
                images.json > /dev/null; then
@@ -78,10 +75,10 @@ jobs:
               echo "- \`$image\`: ya publicada, se omite" >> "$GITHUB_STEP_SUMMARY"
             else
               echo "- \`$image\`: se construye y publica" >> "$GITHUB_STEP_SUMMARY"
-              pending=$(jq -c --argjson entry "$entry" '. + [$entry]' <<< "$pending")
+              pending=$(jq -c --arg service "$service" '. + [$service]' <<< "$pending")
             fi
           done < <(jq -c '.[]' images.json)
-          echo "images=$pending" >> "$GITHUB_OUTPUT"
+          echo "services=$pending" >> "$GITHUB_OUTPUT"
 
   Build:
     name: Build-${{ matrix.service }}
@@ -94,12 +91,25 @@ jobs:
       # Las imagenes son independientes: un fallo no cancela las demas.
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.Prepare.outputs.images) }}
+        service: ${{ fromJSON(needs.Prepare.outputs.services) }}
     steps:
       - name: Repository checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
+
+      # Imagen, contexto y Dockerfile del servicio, leidos del compose como en Prepare.
+      - name: Resolver imagen del servicio
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          SERVICE: ${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml config --no-interpolate --format json \
+            | jq -c --arg root "$PWD" --arg version "$VERSION" -f .github/scripts/compose-images.jq \
+            | jq -r --arg service "$SERVICE" '.[] | select(.service == $service)
+                | "IMAGE=\(.image)", "CONTEXT=\(.context)", "DOCKERFILE=\(.file)"' >> "$GITHUB_ENV"
+          grep -q '^IMAGE=' "$GITHUB_ENV" || { echo "::error::$SERVICE no esta en docker-compose.yml"; exit 1; }
 
       - name: Log in to registry
         uses: docker/login-action@v3
@@ -115,11 +125,11 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
+          context: ${{ env.CONTEXT }}
+          file: ${{ env.DOCKERFILE }}
           push: false
           load: true  # necesario para que trivy inspeccione localmente
-          tags: ${{ matrix.image }}
+          tags: ${{ env.IMAGE }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           labels: |
@@ -136,7 +146,7 @@ jobs:
       - name: Container scan (trivy)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ matrix.image }}
+          image-ref: ${{ env.IMAGE }}
           format: 'sarif'
           output: 'trivy-${{ matrix.service }}.sarif'
           severity: HIGH,CRITICAL
@@ -151,9 +161,7 @@ jobs:
           category: trivy-${{ matrix.service }}
 
       - name: Push image
-        env:
-          DOCKER_IMAGE: ${{ matrix.image }}
-        run: docker push "$DOCKER_IMAGE"
+        run: docker push "$IMAGE"
 
   # Solo se crea la release cuando todas las imagenes estan publicadas.
   Release:

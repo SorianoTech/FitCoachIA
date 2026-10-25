@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 70
     # El rol de AWS solo acepta tokens OIDC de este environment.
-    environment: production
+    environment: prod-aws
     permissions:
       contents: read
       id-token: write

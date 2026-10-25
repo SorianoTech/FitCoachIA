@@ -215,7 +215,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 | `infra/vector-db/docker-compose.vector-db*.yml` | pgVector catalogue (independent lifecycle) | Not part of app compose |
 | `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
-| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3, Nginx Proxy Manager compose | Runs the composes above unchanged; see `docs/despliegue-aws-ec2.md` |
+| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template and Postgres backup to S3 | Runs `docker-compose.yml` unchanged; see `docs/despliegue-aws-ec2.md` |
 
 Workflow for a compose-affecting change: edit **dev** -> try it with **local** -> if it works, replicate in **prod**
 (keep prod-specific things: `image:`, `restart`, healthchecks, networks, env files) -> keep the **test** compose runnable.

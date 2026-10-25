@@ -55,7 +55,7 @@ FitCoachIA/
 │   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
 ├── alembic/                      # Migraciones de la base de datos conversacional
 ├── infra/
-│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation, backup a S3 y Nginx Proxy Manager
+│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation y backup a S3
 │   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
 │   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
 │   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador

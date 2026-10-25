@@ -218,12 +218,7 @@ Resources:
           visudo -c
           install -d -m 700 -o root -g root /etc/fitcoachia/prod /etc/fitcoachia/dev
 
-          # External networks of the app, pgVector and observability composes.
-          for network in proxy-network fitcoach-prod-internal fitcoach-dev-internal; do
-            docker network inspect "$network" >/dev/null 2>&1 || docker network create "$network"
-          done
-
-          # Repository: pgVector build context, observability configs and these scripts.
+          # Repository: build context of every image in docker-compose.yml and these scripts.
           [ -d /opt/fitcoachia/.git ] || git clone --branch "$REPO_REF" "$REPO_URL" /opt/fitcoachia
           install -m 644 -o "$DEPLOY_USER" -g "$DEPLOY_USER" \
             /opt/fitcoachia/docker-compose.yml /opt/fitcoachia/Makefile "/home/$DEPLOY_USER/"
@@ -234,9 +229,6 @@ Resources:
           PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
           30 3 * * * root BACKUP_BUCKET=$BACKUP_BUCKET /usr/local/bin/fitcoach-backup >> /var/log/fitcoach-backup.log 2>&1
           CRON
-
-          # Reverse proxy: needs no secrets, so it can start now.
-          docker compose -f /opt/fitcoachia/infra/aws/ec2/nginx-proxy-manager.compose.yml up -d
 
   ElasticIp:
     Type: AWS::EC2::EIP

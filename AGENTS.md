@@ -195,7 +195,8 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
   (all on the single `docker-compose.yml`; `dev-up` builds, `prod-up` pulls and never builds).
 - `make tests`: starts `tests/docker-compose-test.yml`, runs unit + IT with coverage >= 80 %, tears it down.
   CI calls `make tests PYTEST=pytest`.
-- `make prod-up` is what `deploy.yml` runs on the server. The deploy copies **only** `docker-compose.yml` and `Makefile`,
+- `make prod-up` is what `deploy.yml` runs on the server, through SSM and `infra/aws/ec2/deploy-release.sh`.
+  The deploy copies **only** `docker-compose.yml`, `Makefile` and the two `infra/aws/ec2` scripts (no repo clone),
   so the prod compose cannot depend on other repo files.
 - Workflows: `build.yml` (quality + security + semgrep + tests on `feat/**`, `feature/**`, `fix/**`, `bugfix/**`),
   `release.yml` (builds every compose image whose tag is not on Docker Hub yet: app = release version,
@@ -215,7 +216,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 | `infra/vector-db/` | pgVector image (`Dockerfile-pgVector`) and DDL | Built by `docker-compose.yml` |
 | `infra/observability/config/<component>/` | One image per observability component, with its config copied in | Built by `docker-compose.yml`; config changes need `--build` |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
-| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template and Postgres backup to S3 | Runs `docker-compose.yml` unchanged; see `docs/despliegue-aws-ec2.md` |
+| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3 and the release deploy script | Runs `docker-compose.yml` unchanged; see `docs/despliegue-aws-ec2.md` |
 
 Workflow for a compose-affecting change: edit `docker-compose.yml`, add any new variable to `.env.example`, try it locally
 with `docker compose up -d --build` -> keep the **test** compose runnable.

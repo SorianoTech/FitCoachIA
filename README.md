@@ -55,7 +55,7 @@ FitCoachIA/
 │   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
 ├── alembic/                      # Migraciones de la base de datos conversacional
 ├── infra/
-│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation y backup a S3
+│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation, backup a S3 y script de despliegue
 │   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
 │   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
 │   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
@@ -168,7 +168,7 @@ El proyecto tiene estos workflows en `.github/workflows/`:
 | `validate-develop-merge.yml` | PRs a `develop` | Bloquea merges que no provengan de ramas `feat/`, `feature/` o `fix/` |
 | `validate-main-merge.yml` | PRs a `main` | Bloquea merges que no provengan de `develop` |
 | `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye las imágenes de `docker-compose.yml` cuyo tag aún no está en Docker Hub (la app con la versión de la release, el resto con su tag fijo), las escanea con Trivy, las publica, crea la GitHub Release y lanza `deploy.yml` |
-| `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en el servidor por SSH con `make prod-up`, verifica el arranque y hace rollback si falla |
+| `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en la EC2 de producción por SSM (rol de AWS por OIDC, ficheros vía S3): `make prod-up`, espera a que todo esté sano y vuelve a la versión anterior si falla |
 
 Las actions reutilizables están en `.github/actions/`: `python-setup` instala Python y `uv` con caché y audita `requirements-ci.txt` antes de instalar; `quality-check` agrupa Ruff, Mypy, Gitleaks, pip-audit y Bandit. El detalle está en [docs/ci-cd.md](docs/ci-cd.md).
 

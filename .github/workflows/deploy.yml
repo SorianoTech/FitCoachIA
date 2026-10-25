@@ -14,245 +14,123 @@ on:
         required: true
         type: string
         description: "Release version to deploy. Format: X.Y.Z"
-    # Como secrets y no como inputs: un input string no se enmascara en los logs.
-    secrets:
-      SERVER_HOST:
-        required: true
-      SERVER_PKEY:
-        required: true
-      SERVER_USER:
-        required: true
-      DOCKER_IMAGE_NAME:
-        required: true
-      ENV_FILE_PATH:
-        required: true
+
+# Un solo despliegue a la vez; el que esta en curso nunca se cancela.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 env:
-  PYTHON_VERSION: "3.12"
-  DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
-  CONTAINER_NAME: "fitcoach-ia"
-  APP_PORT: "8000"
-  DEPLOY_TARGET_DIR: "/home/${{ secrets.SERVER_USER }}"
-  SSH_PORT: 22
-  ENV_FILE: "${{ secrets.ENV_FILE_PATH }}/.env.prod"
+  DEPLOY_PREFIX: "deploy"
+  # Cubre pull + prod-up (900 s) y, si falla, el rollback completo.
+  SSM_EXECUTION_TIMEOUT: "3600"
 
 jobs:
   Deploy:
     name: Deploy-to-server
     runs-on: ubuntu-latest
+    timeout-minutes: 70
+    # El rol de AWS solo acepta tokens OIDC de este environment.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
     steps:
-      - name: Repository checkout
-        uses: actions/checkout@v4
-
-      - name: Componer nombre de imagen
-        id: image_version
+      - name: Validar formato version
         run: |
-          VERSION="${{ inputs.version }}"
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "ERROR: version debe tener formato X.Y.Z"
             exit 1
           fi
-          IMAGE="${{ env.DOCKER_IMAGE_BASE }}:$VERSION"
-          echo "Imagen a desplegar: $IMAGE"
-          echo "IMAGE=$IMAGE" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      # Los SCRIPT_* corren en el servidor remoto: el env del runner no cruza el SSH.
-      - name: deploy
-        uses: easingthemes/ssh-deploy@v5.1.0
+      # El compose y el Makefile del tag de la release fijan las imagenes que se despliegan.
+      - name: Repository checkout
+        uses: actions/checkout@v4
         with:
-          REMOTE_HOST: ${{ secrets.SERVER_HOST }}
-          SSH_PRIVATE_KEY: ${{ secrets.SERVER_PKEY }}
-          REMOTE_USER: ${{ secrets.SERVER_USER }}
-          REMOTE_PORT: ${{ env.SSH_PORT }}
-          SOURCE: docker-compose.yml Makefile
-          TARGET: ${{ env.DEPLOY_TARGET_DIR }}/
-          SCRIPT_BEFORE_REQUIRED: true
-          SCRIPT_BEFORE: |
-            set -e
-            CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
-            IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
-            NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
-            ENV_FILE="${{ env.ENV_FILE }}"
-            ENV_DIR="$(dirname "$ENV_FILE")"
+          ref: ${{ inputs.version }}
 
-            step() { echo ""; echo "=== $* ==="; }
-            log()  { echo "    $*"; }
+      - name: Configurar credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-            step "Contexto"
-            log "Servidor:           $(hostname)"
-            log "Imagen a desplegar: $NEW_IMAGE"
-            log "Contenedor:         $CONTAINER_NAME"
-            log "Fichero de entorno: $ENV_FILE"
-            log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
+      - name: Leer instancia y bucket de la pila
+        id: stack
+        env:
+          STACK_NAME: ${{ secrets.AWS_STACK_NAME }}
+        run: |
+          set -euo pipefail
+          outputs=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs' --output json)
+          instance=$(jq -r '.[] | select(.OutputKey == "InstanceId") | .OutputValue' <<< "$outputs")
+          bucket=$(jq -r '.[] | select(.OutputKey == "BackupBucketName") | .OutputValue' <<< "$outputs")
+          if [ -z "$instance" ] || [ -z "$bucket" ]; then
+            echo "ERROR: la pila no expone InstanceId y BackupBucketName"
+            exit 1
+          fi
+          echo "instance-id=$instance" >> "$GITHUB_OUTPUT"
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
 
-            step "1/4 Verificar acceso al fichero de entorno"
-            if ! sudo -n true 2>/dev/null; then
-              log "ERROR: el usuario de despliegue no puede usar 'sudo -n' (falta regla NOPASSWD)"
-              exit 1
-            fi
-            if ! sudo -n test -r "$ENV_FILE"; then
-              log "ERROR: $ENV_FILE no existe o no es legible ni con sudo"
-              log "Contenido de $ENV_DIR:"
-              sudo -n ls -la "$ENV_DIR" 2>/dev/null | sed 's/^/      /' || log "      (no accesible)"
-              exit 1
-            fi
-            log "Fichero de entorno accesible con sudo: $ENV_FILE"
+      - name: Subir los ficheros de la release a S3
+        env:
+          BUCKET: ${{ steps.stack.outputs.bucket }}
+        run: |
+          set -euo pipefail
+          for f in docker-compose.yml Makefile infra/aws/ec2/backup-postgres.sh infra/aws/ec2/deploy-release.sh; do
+            aws s3 cp --only-show-errors "$f" "s3://$BUCKET/$DEPLOY_PREFIX/$VERSION/$(basename "$f")"
+            echo "subido: $f"
+          done
 
-            step "2/4 Estado actual del contenedor"
-            CURRENT_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
-            if [ -z "$CURRENT_IMAGE" ]; then
-              log "No existe ningún contenedor '$CONTAINER_NAME'"
-            else
-              log "Contenedor '$CONTAINER_NAME' encontrado"
-              log "  imagen actual: $CURRENT_IMAGE"
-              log "  estado:        $(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")"
-            fi
+      # La instancia descarga los ficheros y ejecuta deploy-release.sh como root: sin SSH ni sudo.
+      - name: Desplegar en la instancia (SSM)
+        env:
+          INSTANCE_ID: ${{ steps.stack.outputs.instance-id }}
+          BUCKET: ${{ steps.stack.outputs.bucket }}
+        run: |
+          set -euo pipefail
+          params=$(jq -n --arg src "s3://$BUCKET/$DEPLOY_PREFIX/$VERSION/" --arg version "$VERSION" \
+            --arg timeout "$SSM_EXECUTION_TIMEOUT" '{
+              executionTimeout: [$timeout],
+              commands: [
+                "set -eu",
+                "export PATH=\"$PATH:/snap/bin\"",
+                "WORK=$(mktemp -d)",
+                "trap '\''rm -rf \"$WORK\"'\'' EXIT",
+                ("aws s3 cp --recursive --only-show-errors " + $src + " \"$WORK/\""),
+                ("bash \"$WORK/deploy-release.sh\" " + $version + " \"$WORK\"")
+              ]}')
+          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript --comment "FitCoachIA $VERSION" \
+            --parameters "$params" --query Command.CommandId --output text)
+          echo "Comando SSM: $command_id"
 
-            step "3/4 Imágenes locales de la aplicación (antes del pull)"
-            docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}  creada {{.CreatedSince}}' \
-              | grep "$IMAGE_BASE" || log "Ninguna imagen local de la aplicación"
+          # Bucle propio: 'aws ssm wait command-executed' se rinde a los ~100 s.
+          deadline=$((SECONDS + SSM_EXECUTION_TIMEOUT + 120))
+          status=Pending
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            sleep 15
+            status=$(aws ssm get-command-invocation --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in
+              Pending|InProgress|Delayed) echo "$(date -u +%T) $status" ;;
+              *) break ;;
+            esac
+          done
 
-            step "4/4 Descargar nueva imagen"
-            log "docker pull $NEW_IMAGE (con el contenedor anterior aún vivo)"
-            docker pull "$NEW_IMAGE"
-            log "Descargada: $(docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "$NEW_IMAGE" || true)"
+          echo "::group::Salida del despliegue"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text || true
+          echo "::endgroup::"
+          errors=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text || true)
+          if [ -n "$errors" ] && [ "$errors" != "None" ]; then
+            echo "::group::Errores del despliegue"
+            echo "$errors"
+            echo "::endgroup::"
+          fi
 
-          SCRIPT_AFTER_REQUIRED: true
-          SCRIPT_AFTER: |
-            set -e
-            CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
-            IMAGE_BASE="${{ env.DOCKER_IMAGE_BASE }}"
-            NEW_IMAGE="${{ steps.image_version.outputs.IMAGE }}"
-            VERSION="${{ steps.image_version.outputs.VERSION }}"
-            DEPLOY_DIR="${{ env.DEPLOY_TARGET_DIR }}"
-            ENV_FILE="${{ env.ENV_FILE }}"
-            DEPLOY_OK=false
-
-            step() { echo ""; echo "=== $* ==="; }
-            log()  { echo "    $*"; }
-
-            step "1/6 Capturar la versión en servicio (artefacto de rollback)"
-            PREV_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)
-            PREV_VERSION=""
-            if [ -z "$PREV_IMAGE" ]; then
-              log "No hay contenedor en servicio: primer despliegue, sin rollback posible"
-            else
-              log "En servicio: $PREV_IMAGE"
-              CANDIDATE="${PREV_IMAGE##*:}"
-              # Exige tag de nuestro repo y presente en local; si no, no hay rollback.
-              if [ "$PREV_IMAGE" = "$IMAGE_BASE:$CANDIDATE" ] && docker image inspect "$PREV_IMAGE" >/dev/null 2>&1; then
-                PREV_VERSION="$CANDIDATE"
-                log "Rollback disponible con VERSION=$PREV_VERSION"
-              else
-                log "AVISO: $PREV_IMAGE no es una imagen local etiquetada de $IMAGE_BASE -> sin rollback"
-              fi
-            fi
-
-            step "2/6 Retirar el contenedor en servicio (la imagen se conserva)"
-            if [ -n "$PREV_IMAGE" ]; then
-              docker rm -f "$CONTAINER_NAME"
-              log "Contenedor eliminado; imagen $PREV_IMAGE intacta"
-            else
-              log "Nada que retirar"
-            fi
-
-            step "3/6 Levantar la nueva versión"
-            cd "$DEPLOY_DIR"
-
-            log "Imagen:  $NEW_IMAGE"
-            log "Comando: sudo -n env VERSION=$VERSION PROD_ENV_FILE=$ENV_FILE make prod-up"
-            # sudo solo aquí: es el único comando de la cadena que lee el fichero de secretos.
-            if sudo -n env VERSION="$VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-up; then
-
-              log "compose up completado"
-              log "Contenedor: $(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}} | {{.Image}} | {{.Status}}')"
-
-              step "4/6 Verificar arranque (espera inicial 5s + 10 intentos x 5s)"
-              sleep 5
-              for i in $(seq 1 10); do
-                STATUS=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo missing)
-                HEALTH=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo none)
-                RESTARTS=$(docker inspect -f '{{.RestartCount}}' "$CONTAINER_NAME" 2>/dev/null || echo "?")
-                log "intento $i/10 -> estado=$STATUS salud=$HEALTH reinicios=$RESTARTS"
-                if [ "$HEALTH" = "healthy" ]; then
-                  log "Health check OK -> nueva versión operativa"
-                  DEPLOY_OK=true
-                  break
-                fi
-                if [ "$HEALTH" = "unhealthy" ]; then
-                  log "Docker ha declarado el contenedor unhealthy -> no se sigue esperando"
-                  break
-                fi
-                sleep 5
-              done
-            else
-              log "ERROR: 'make prod-up' ha fallado"
-            fi
-
-            if [ "$DEPLOY_OK" != true ]; then
-              step "FALLO: $NEW_IMAGE no ha arrancado -> rollback"
-              docker logs "$CONTAINER_NAME" --tail 50 2>/dev/null || log "(sin logs: el contenedor no llegó a crearse)"
-              docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-              docker rmi "$NEW_IMAGE" || true
-              log "Contenedor e imagen nuevos eliminados"
-              if [ -z "$PREV_VERSION" ]; then
-                log "ERROR: no hay versión anterior que restaurar. El servicio queda caído."
-                exit 1
-              fi
-              log "Restaurando $IMAGE_BASE:$PREV_VERSION"
-              if sudo -n env VERSION="$PREV_VERSION" PROD_ENV_FILE="$ENV_FILE" make prod-up; then
-                log "ROLLBACK OK: $IMAGE_BASE:$PREV_VERSION de nuevo en servicio"
-              else
-                log "ERROR CRÍTICO: el rollback también ha fallado. Servicio caído."
-              fi
-              exit 1
-            fi
-
-            step "5/6 Limpiar contenedores huérfanos de '$CONTAINER_NAME'"
-            NEW_ID=$(docker inspect -f '{{.Id}}' "$CONTAINER_NAME")
-            log "Contenedor en servicio: ${NEW_ID%${NEW_ID#????????????}}"
-            ORPHANS=$(docker ps -a --filter "name=^${CONTAINER_NAME}" --format '{{.ID}}|{{.Names}}|{{.Image}}' \
-              | grep -v "^${NEW_ID%${NEW_ID#????????????}}|" || true)
-            if [ -z "$ORPHANS" ]; then
-              log "Sin huérfanos: ningún otro contenedor con ese nombre"
-            else
-              echo "$ORPHANS" | while IFS='|' read -r id name image; do
-                log "Eliminando huérfano: $name ($image, $id)"
-                docker rm -f "$id" || true
-              done
-            fi
-
-            step "6/6 Limpiar imágenes antiguas"
-            log "Criterio: repositorio de la app + tag semver X.Y.Z + distinto de $VERSION"
-            CANDIDATES=""
-            for img in $(docker images --format '{{.Repository}}:{{.Tag}}'); do
-              case "$img" in "$IMAGE_BASE":*) ;; *) continue ;; esac
-              if [ "$img" = "$NEW_IMAGE" ]; then
-                log "conservada (recién desplegada): $img"
-                continue
-              fi
-              if echo "${img##*:}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-                CANDIDATES="$CANDIDATES $img"
-              else
-                log "conservada (tag no semver):     $img"
-              fi
-            done
-            if [ -z "$CANDIDATES" ]; then
-              log "No hay imágenes antiguas que eliminar"
-            else
-              log "Marcadas para eliminar:$CANDIDATES"
-              for img in $CANDIDATES; do
-                if docker rmi "$img" >/dev/null 2>&1; then
-                  log "eliminada:     $img"
-                else
-                  log "NO eliminada (en uso u otro error): $img"
-                fi
-              done
-            fi
-
-            step "Resultado"
-            log "Contenedor $CONTAINER_NAME operativo con $NEW_IMAGE"
-            log "Imágenes restantes de la aplicación:"
-            docker images --format '      {{.Repository}}:{{.Tag}}  {{.Size}}' | grep "$IMAGE_BASE" || true
-            log "Espacio libre en /: $(df -h / | awk 'NR==2 {print $4}')"
+          echo "Estado final: $status"
+          [ "$status" = "Success" ]

@@ -24,7 +24,7 @@ El documento tiene tres partes:
 ### 1.1 Qué cambia respecto al servidor actual
 
 | Pieza | Hoy (servidor actual) | En AWS | ¿Cambia algo en el repo? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Máquina | Servidor propio | EC2 `t3.large` (2 vCPU, 8 GB, x86_64), Ubuntu 24.04 LTS | No |
 | Infraestructura | Manual | Plantilla CloudFormation | Fichero nuevo |
 | Contenedores | `docker-compose.yml` + Compose de pgVector | Los mismos | No |
@@ -134,7 +134,7 @@ interna del stack de observabilidad.
 ### 1.3 Qué crea la plantilla
 
 | Recurso | Para qué |
-|---|---|
+| --- | --- |
 | Security group | 443 y 80 desde internet (IPv4 e IPv6); 22 desde `SshIngressCidr` (para `deploy.yml`) |
 | Instancia EC2 | Ubuntu 24.04, `t3.large` por defecto, crédito *unlimited*, IMDSv2 obligatorio, protección contra terminación, disco gp3 cifrado de 60 GB que **no** se borra si se termina la instancia |
 | Elastic IP | IP fija para el DNS y para el secreto `SERVER_HOST`; se reasocia sola si la instancia se sustituye |
@@ -171,7 +171,7 @@ Todos los pasos de la puesta en marcha, en orden. Los que dependen de otra perso
 para pedirlos con tiempo.
 
 | # | Paso | Quién | Dónde | Sección |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 1 | Preparar el equipo: AWS CLI, plugin de Session Manager, perfil SSO | Cada integrante | Su equipo | [3](#3-preparar-el-equipo) |
 | 2 | Generar la clave de despliegue y crear la pila | Administrador de AWS | Su equipo | [4](#4-crear-la-pila) |
 | 3 | Crear el registro DNS de `fitcoach.sergiosoriano.es` | **Quien gestiona `sergiosoriano.es`** | Su proveedor de DNS | [5](#5-pedir-el-dns) |
@@ -371,7 +371,7 @@ en cuanto exista la pila, porque Nginx Proxy Manager lo necesita para sacar el c
 ([sección 8](#8-reglas-del-proxy-en-nginx-proxy-manager)).
 
 | Nombre | Tipo | Valor | TTL | Cuándo |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `fitcoach` | `A` | Elastic IP (`PublicIp`) | 300 | En cuanto exista la pila |
 | `grafana.fitcoach` | `A` | Elastic IP (`PublicIp`) | 60 | Al final ([sección 10](#10-cerrar-la-puesta-en-marcha)) |
 | `dev.fitcoach` | — | Sin cambios | — | — |
@@ -494,7 +494,7 @@ aws ssm start-session --profile fitcoach --region eu-west-1 --target <instance-i
 ```
 
 | Panel | `portNumber` | Ejemplo de `localPortNumber` |
-|---|---|---|
+| --- | --- | --- |
 | Nginx Proxy Manager | `81` | `8081` |
 | pgAdmin de pgVector | `PGADMIN_PORT` de `infra/vector-db/.env.prod` | `8010` |
 
@@ -597,7 +597,7 @@ Son tres ficheros con secretos, distintos entre sí. Salen del gestor de secreto
 del repositorio, y se instalan con permisos `600` de `root`:
 
 | Fichero local (ejemplo) | Destino en la instancia | Plantilla |
-|---|---|---|
+| --- | --- | --- |
 | `app.env.prod` | `/etc/fitcoachia/prod/.env.prod` | [`.env.example`](../.env.example) |
 | `vector-db.env.prod` | `/opt/fitcoachia/infra/vector-db/.env.prod` | [`.env.vector-db.example`](../infra/vector-db/.env.vector-db.example) |
 | `observability.env` | `/opt/fitcoachia/infra/observability/.env` | [`.env.example`](../infra/observability/.env.example) |
@@ -618,7 +618,7 @@ del repositorio, y se instalan con permisos `600` de `root`:
 - `.env` de observabilidad: `GF_ADMIN_PASSWORD` (contraseña del usuario `admin` de Grafana),
   `DEPLOYMENT_ENVIRONMENT=prod` y `FITCOACH_POSTGRES_PROD_*` con las credenciales del Postgres de
   producción. `FITCOACH_POSTGRES_DEV_PASSWORD` es obligatoria para el Compose; como dev no corre en
-  esta instancia, cualquier valor sirve y el datasource «PostgreSQL Dev» quedará en error.
+  esta instancia, cualquier valor sirve y el datasource «PostgreSQL» quedará en error.
 
 **Opción A: `scp`.** Necesita el alias `fitcoach-ec2` de la [sección 6.4](#64-ssh-por-encima-de-session-manager-opcional).
 Desde la carpeta local donde estén los ficheros, enviar la clave y lanzar `scp` en menos de 60
@@ -700,7 +700,7 @@ de contraseñas del equipo.
 **3. Regla de la API y del bot.** *Hosts* → *Proxy Hosts* → *Add Proxy Host*.
 
 | Pestaña | Campo | Valor |
-|---|---|---|
+| --- | --- | --- |
 | Details | Domain Names | `fitcoach.sergiosoriano.es` |
 | Details | Scheme | `http` |
 | Details | Forward Hostname / IP | `fitcoach-ia-prod` (servicio de `docker-compose.yml`) |
@@ -720,7 +720,7 @@ configuración avanzada, y no debe llevar *Access List*, porque Telegram no env�
 **4. Regla de Grafana.** Igual, con estos valores:
 
 | Pestaña | Campo | Valor |
-|---|---|---|
+| --- | --- | --- |
 | Details | Domain Names | `grafana.fitcoach.sergiosoriano.es` |
 | Details | Scheme | `http` |
 | Details | Forward Hostname / IP | `fitcoach-grafana` |
@@ -889,7 +889,7 @@ observabilidad no los toca `deploy.yml`: se actualizan a mano desde `/opt/fitcoa
 [AWS Pricing Calculator](https://calculator.aws/)). No incluye el LLM.
 
 | Concepto | Prod + observabilidad (`t3.large`, 8 GB) | Prod + dev + observabilidad (`t3.xlarge`, 16 GB) |
-|---|---|---|
+| --- | --- | --- |
 | Instancia | 66,60 | 133,20 |
 | EBS gp3 (60 / 80 GB) | 5,30 | 7,05 |
 | Elastic IP | 3,65 | 3,65 |

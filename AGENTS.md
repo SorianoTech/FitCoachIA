@@ -107,7 +107,7 @@ Key facts per layer:
 ## 2. External services
 
 | Service | Role | Adapter / location | Config prefix |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Telegram | Only entry point (webhook) and output channel | `infrastructure/bot`, `api/webhook.py` | `bot_telegram_*` |
 | PostgreSQL (conversational) | Messages, interview profiles, training plans, token usage, model prices | `infrastructure/database`, **Alembic** | `database_*` |
 | PostgreSQL + pgVector (exercise catalogue) | Read-only RAG corpus, separate server and role | `infrastructure/vectordb`, DDL in `infra/vector-db/ddl` | `vector_database_*` |
@@ -140,7 +140,7 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 
 ## 4. Configuration
 
-- Precedence: OS env vars > `.env.<APP_ENV>` > `.env` > defaults (`APP_ENV` defaults to `dev`).
+- Precedence: OS env vars > `.env.<DEPLOYMENT_ENVIRONMENT>` > `.env` > defaults (`DEPLOYMENT_ENVIRONMENT` defaults to `dev`).
 - One `BaseSettings` class per prefix in `infrastructure/config/settings.py`; `main.py` lifespan instantiates all of them
   so a missing/malformed value aborts startup (fail fast).
 - `bot_telegram_commands` is `name:description` pairs joined by commas; validate through `to_bot_command`.
@@ -174,10 +174,12 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 1. **Ask the user** what the new library is for: runtime (app), `test`, `lint`, `ci` or `dev` (local only).
 2. Add it to the right place in `pyproject.toml` (`[project].dependencies` for runtime, otherwise the matching `[dependency-groups]`).
 3. Regenerate both files from the TOML:
+
    ```bash
    uv pip compile pyproject.toml --universal --python-version 3.11 --no-annotate -o src/requirements.txt
    uv pip compile pyproject.toml --group dev --group ci --universal --python-version 3.11 --no-annotate -o .github/requirements-ci.txt
    ```
+
 4. Update `docs/toml.md`.
 
 Out of scope of this flow (independent images with their own pins): `infra/embedder/requirements.txt`,
@@ -205,7 +207,7 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 ## 8. Containers and environments
 
 | File | Purpose | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `docker-compose.dev.yml` | Development stack (`build:`) | Reference one: change here first |
 | `docker-compose.local.yml` | Local all-in-one stack, used to **try changes locally** | Reads root `.env` |
 | `docker-compose.yml` | Production (`image:` published, no `build:`) | Adapt, do not copy, from dev |
@@ -264,7 +266,7 @@ Always try to run, when available, what the repo enforces (report anything you c
 Update every item that the change touches, in the same change:
 
 | If you change... | Also update |
-|---|---|
+| --- | --- |
 | Any behaviour, flow or design | the matching file in `docs/` (Spanish), chosen as in golden rule 7 — **mandatory** |
 | Code | unit + IT tests (OK and KO cases) — **mandatory** |
 | Services, ports, env vars | `docker-compose.dev.yml`, `docker-compose.local.yml`, `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |

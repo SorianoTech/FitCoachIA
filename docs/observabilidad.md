@@ -46,7 +46,7 @@ flowchart LR
 ## 2. Componentes
 
 | Componente | Imagen | Puerto interno | Rol |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Grafana** | `grafana/grafana:11.3.0` | 3000 | Visualización: dashboards, datasources, alertas. Único servicio expuesto (vía `proxy-network` a nginx proxy manager, sin publicar el puerto al host). |
 | **Prometheus** | `prom/prometheus:v3.0.1` | 9090 | Almacena métricas. Tres orígenes: scrape del propio stack, remote-write de Tempo (`traces_spanmetrics_*`) y remote-write del Collector (métricas OTLP de la app). Retención 30 días. Arranca con `--enable-feature=exemplar-storage`: sin ese flag aceptaría el write y descartaría los exemplars en silencio. |
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
@@ -152,7 +152,7 @@ reparación de JSON cuando la primera respuesta es inválida) se normaliza a un
 se persiste como una fila en `token_usage`:
 
 | Columna | Contenido |
-|---|---|
+| --- | --- |
 | `chat_id` | Identificador de chat de Telegram (hoy equivale al usuario: solo hay chats privados 1:1). |
 | `agent` | Valor de `AgentType` (`interviewer`, ...). |
 | `model` | Modelo LLM usado en esa llamada concreta. |
@@ -213,7 +213,7 @@ con variables de filtro dinámicas y paneles organizados en capas de complejidad
 
 ### 4.1 Variables de filtro
 
-- **`$datasource`** — elige entre `PostgreSQL Dev` y `PostgreSQL Prod`.
+- **`$datasource`** — elige entre `PostgreSQL` y `PostgreSQL Prod`.
 - **`$agent`** — filtra por `interviewer`, `trainer`, `nutritionist`, `coach` (multiselecta).
 - **`$telegram_user_id`** — filtra por usuario de Telegram (multiselecta).
 - **`$log_level`** — filtra por nivel de log: `ERROR`, `WARNING`, `INFO`, `DEBUG` (multiselecta).
@@ -221,32 +221,36 @@ con variables de filtro dinámicas y paneles organizados en capas de complejidad
 ### 4.2 Paneles
 
 #### Fila 1: Métricas de tokens LLM (desacopladas de logs)
+
 1. **Tokens consumidos por agente** — serie temporal, `sum(total_tokens)` agrupado por hora y `agent`.
 2. **Top usuarios por tokens consumidos** — tabla: `chat_id` (= telegram_user_id), `agent`, tokens totales, nº de llamadas, latencia media.
 3. **Latencia media del LLM por agente** — serie temporal de `avg(latency_ms)`.
 4. **Llamadas al LLM por estado** — serie temporal de recuento por `status`.
 
 #### Fila 2: Estado de los logs en tiempo real (paneles Stat)
-5. **Contadores de logs por nivel** — tres paneles Stat con colores code:
+
+1. **Contadores de logs por nivel** — tres paneles Stat con colores code:
    - 🔴 **Errores** — fondo rojo; visible instantáneamente si hay problemas.
    - 🟠 **Warnings** — fondo naranja.
    - 🔵 **Infos** — fondo azul.
 
 #### Fila 3: Actividad y throughput
-6. **Throughput de logs (líneas/seg)** — serie temporal de `rate()` por nivel, permite ver picos de actividad y volumen relativo. Ignora las líneas no JSON de Uvicorn mediante `__error__=""`.
-7. **Actividad por logger** — gráfico de barras agregado por módulo (`conversation_service.py`, `webhook.py`, etc.), útil para identificar fuentes ruidosas. También ignora las líneas no JSON de Uvicorn.
+
+1. **Throughput de logs (líneas/seg)** — serie temporal de `rate()` por nivel, permite ver picos de actividad y volumen relativo. Ignora las líneas no JSON de Uvicorn mediante `__error__=""`.
+2. **Actividad por logger** — gráfico de barras agregado por módulo (`conversation_service.py`, `webhook.py`, etc.), útil para identificar fuentes ruidosas. También ignora las líneas no JSON de Uvicorn.
 
 #### Fila 4: Debugging rápido (Últimos N eventos)
-8. **Últimos 5 errores** — panel Logs nativo, maxLines=5, ordenado descendente (más nuevos primero).
-9. **Últimos 5 warnings** — igual, para detectar problemas inminentes sin scrollear.
+
+1. **Últimos 5 errores** — panel Logs nativo, maxLines=5, ordenado descendente (más nuevos primero).
+2. **Últimos 5 warnings** — igual, para detectar problemas inminentes sin scrollear.
 
 #### Fila 5: Stream de logs completo
-10. **Stream de logs en vivo** — panel Logs nativo con 100 líneas máximo. Consulta el stream bruto para mostrar tanto logs JSON de la aplicación como access logs de Uvicorn; el parseo JSON se reserva para los paneles agregados.
 
+ 1. **Stream de logs en vivo** — panel Logs nativo con 100 líneas máximo. Consulta el stream bruto para mostrar tanto logs JSON de la aplicación como access logs de Uvicorn; el parseo JSON se reserva para los paneles agregados.
 
 Datasources disponibles para explorar libremente además del dashboard:
 **Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`),
-**PostgreSQL Dev** y **PostgreSQL Prod** (consultas SQL ad-hoc sobre
+**PostgreSQL** y **PostgreSQL Prod** (consultas SQL ad-hoc sobre
 `token_usage` u otras tablas de cada base, ver sección 10).
 
 ### Alertas provisionadas
@@ -259,7 +263,7 @@ distinguir un incidente en dev de uno en prod:
 - **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
 
 Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada
-grupo consulta su propio datasource (`fitcoach-postgres-dev` /
+grupo consulta su propio datasource (`fitcoach-postgres` /
 `fitcoach-postgres-prod`).
 
 ## 5. Cómo levantar el stack
@@ -289,6 +293,7 @@ docker compose up -d
 ```
 
 Grafana quedará accesible:
+
 - En producción, vía nginx proxy manager en `https://grafana.fitcoach.sergiosoriano.es` (Forward Hostname/IP `fitcoach-grafana`, puerto `3000`).
 - En local, si se quiere acceder directo sin NPM, añadir temporalmente `ports: ["3000:3000"]` al servicio `grafana` en `compose.yml` (no comitear ese cambio) o usar `docker compose port grafana 3000` / `docker exec` para depurar.
 
@@ -342,7 +347,7 @@ El stack de observabilidad es único y compartido, pero cada canal de
 telemetría separa dev de prod de una forma distinta:
 
 - **Trazas**: se distinguen por la etiqueta `deployment.environment.name`,
-  que sale de `APP_ENV` (`dev` en `docker-compose.dev.yml`, `prod` en
+  que sale de `DEPLOYMENT_ENVIRONMENT` (`dev` en `docker-compose.dev.yml`, `prod` en
   `docker-compose.yml`). Basta con activar `otel_exporter_otlp_endpoint` en
   ambos `.env.<entorno>` para que las dos lleguen a la vez al mismo Collector.
 - **Logs**: Alloy ingiere `fitcoach-ia` y `dev-fitcoach-ia` simultáneamente
@@ -352,7 +357,7 @@ telemetría separa dev de prod de una forma distinta:
   (`postgres-dev` en `docker-compose.dev.yml`, `postgres-prod` en
   `docker-compose.yml`) y su propia red backend. Cada app solo puede resolver su base de datos.
   Grafana se conecta a las dos redes y mantiene **dos datasources separados**
-  (`PostgreSQL Dev` → `postgres-dev:5432`, `PostgreSQL Prod` →
+  (`PostgreSQL` → `postgres-dev:5432`, `PostgreSQL Prod` →
   `postgres-prod:5432`), seleccionables en el dashboard con la variable
   `$datasource`.
 - **La API mantiene nombres distintos por entorno** (`fitcoach-ia-dev` /
@@ -363,10 +368,12 @@ telemetría separa dev de prod de una forma distinta:
 > **Regla general**: `proxy-network` solo admite interfaces que deban recibir tráfico de nginx.
 > Sus nombres de servicio deben ser únicos. PostgreSQL, embedder, pgVector, jobs y Collector no se
 > conectan a esa red.
+
 - **Alertas**: duplicadas por entorno (`[dev]`/`[prod]` en el título), cada
   una apuntando a su propio datasource Postgres.
 
 Si vas a desplegar producción por primera vez en este host, solo hace falta:
+
 1. Añadir `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317` a `.env.prod`.
 2. Rellenar `FITCOACH_POSTGRES_PROD_DB/USER/PASSWORD` en `infra/observability/.env` con las credenciales reales de `docker-compose.yml`.
 3. `docker compose -f infra/observability/compose.yml up -d --force-recreate grafana` para que recargue las credenciales.
@@ -374,7 +381,7 @@ Si vas a desplegar producción por primera vez en este host, solo hace falta:
 ## 9. Cómo configurar cada componente
 
 | Quiero cambiar... | Archivo |
-|---|---|
+| --- | --- |
 | Retención de logs / límites de ingesta | `infra/observability/config/loki/loki.yml` |
 | Retención de trazas / generación de métricas RED | `infra/observability/config/tempo/tempo.yml` |
 | Scrape jobs / retención de métricas | `infra/observability/config/prometheus/prometheus.yml` |

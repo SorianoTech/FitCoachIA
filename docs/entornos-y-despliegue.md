@@ -10,7 +10,7 @@ Para replicar este mismo esquema en una instancia EC2 de AWS, ver
 ## 1. Las tres piezas
 
 | Pieza | Responsabilidad |
-|---|---|
+| --- | --- |
 | **`deploy.yml`** | Copia ficheros al servidor por SSH y orquesta el cutover con rollback |
 | **`Makefile`** | Resuelve **qué fichero de entorno** usar y lanza `docker compose` |
 | **Compose** | Define los servicios; recibe el fichero ya resuelto |
@@ -26,7 +26,7 @@ funciona igual lanzado a mano en el servidor que invocado por el despliegue.
 Dos ubicaciones, con reglas distintas por entorno:
 
 | Entorno | Ubicación preferida | Si no existe |
-|---|---|---|
+| --- | --- | --- |
 | **dev** | `/etc/fitcoachia/dev/.env.dev` | usa `.env.dev` del repositorio |
 | **prod** | `/etc/fitcoachia/prod/.env.prod` | **falla**; no hay alternativa |
 
@@ -73,7 +73,7 @@ avisos masivos.
 Todas las variables son opcionales (plantilla en `.env.example`):
 
 | Variable | Defecto | Uso |
-|---|---|---|
+| --- | --- | --- |
 | `scheduler_enabled` | `false` | Arranca la tarea con la app |
 | `scheduler_interval_seconds` | `300` (mín. 10) | Espera entre ticks, común a los dos tipos |
 | `training_reminder_max_attempts` / `evaluation_max_attempts` | `5` (1-10) | Intentos antes de marcar `failed` |
@@ -113,7 +113,7 @@ sudo make prod-up VERSION=0.3.0
 fichero de entorno es de root.
 
 | | dev | prod |
-|---|---|---|
+| --- | --- | --- |
 | Imagen | se construye en local | se descarga del registro |
 | Compose | `docker-compose.dev.yml` | `docker-compose.yml` |
 | Proyecto | `fitcoach-dev` | `fitcoach-prod` |
@@ -185,22 +185,22 @@ Telegram reintenta los updates, así que no se pierden mensajes.
 Ninguna se comparte entre dev y prod:
 
 | Variable | Por qué difiere |
-|---|---|
+| --- | --- |
 | `bot_telegram_token` | un bot distinto por entorno |
 | `bot_telegram_secret_token` | un secreto por bot; compartirlo permitiría falsificar updates de prod desde dev |
 | `bot_telegram_webhook_base_url` | cada entorno tiene su dominio público |
 | `POSTGRES_PASSWORD` | bases de datos independientes |
 | `ia_skill` | dev usa `interviewer-dev`, con tres preguntas |
 
-`APP_ENV` no se configura: lo fija cada Compose (`dev` / `prod`) y de él salen la etiqueta
-`deployment.environment.name` de las trazas y el sufijo del fichero `.env.<APP_ENV>` que carga la app.
+`DEPLOYMENT_ENVIRONMENT` no se configura: lo fija cada Compose (`dev` / `prod`) y de él salen la etiqueta
+`deployment.environment.name` de las trazas y el sufijo del fichero `.env.<DEPLOYMENT_ENVIRONMENT>` que carga la app.
 
 ---
 
 ## 6. Problemas frecuentes
 
 | Síntoma | Causa |
-|---|---|
+| --- | --- |
 | `no existe o no tiene permisos de acceso` al hacer `prod-up` | falta `sudo`, o la regla `sudoers` |
 | `POSTGRES_PASSWORD is required` en `dev-down` | el target no pasaba `--env-file`; ya corregido |
 | `password authentication failed` con Postgres sano | `POSTGRES_PASSWORD` solo se aplica al **inicializar** el volumen; cambiarlo después no altera la contraseña guardada |

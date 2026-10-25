@@ -7,7 +7,7 @@ webhook activo por bot**: compartir token haría que las pruebas de desarrollo d
 destinados a producción.
 
 | Entorno | Bot | Webhook |
-|---|---|---|
+| --- | --- | --- |
 | Desarrollo | de pruebas | dominio de dev tras el proxy, o túnel HTTPS temporal |
 | Producción | público | dominio HTTPS público tras Nginx Proxy Manager |
 
@@ -15,7 +15,7 @@ destinados a producción.
 
 ## Variables por entorno
 
-La app carga `.env.<APP_ENV>` y después `.env`; `APP_ENV` lo fija cada Compose. Dónde vive cada
+La app carga `.env.<DEPLOYMENT_ENVIRONMENT>` y después `.env`; `DEPLOYMENT_ENVIRONMENT` lo fija cada Compose. Dónde vive cada
 fichero está en [entornos-y-despliegue.md](entornos-y-despliegue.md#2-los-ficheros-de-entorno).
 
 ```dotenv

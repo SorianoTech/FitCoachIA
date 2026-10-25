@@ -17,8 +17,8 @@ El dashboard **FitCoachIA - Conversaciones** fue rediseñado para ofrecer una vi
 Todos los paneles responden a estos filtros:
 
 | Filtro | Tipo | Valor | Uso |
-|--------|------|-------|-----|
-| `$datasource` | Dropdown | PostgreSQL Dev / Prod | Aislar entorno |
+| -------- | ------ | ------- | ----- |
+| `$datasource` | Dropdown | PostgreSQL / Prod | Aislar entorno |
 | `$agent` | Multiselecta | interviewer, trainer, ... | Filtrar por agente LLM |
 | `$telegram_user_id` | Multiselecta | IDs de chat | Seguimiento de usuario |
 | `$log_level` | Multiselecta | ERROR, WARNING, INFO, DEBUG | Severidad de eventos |
@@ -30,24 +30,28 @@ Todos los paneles responden a estos filtros:
 ### Fila 1: Métricas de Tokens (PostgreSQL)
 
 **Panel 1: Tokens consumidos por agente**
+
 - Tipo: Serie temporal
 - Métrica: `sum(total_tokens)` agrupado por hora
 - Uso: Detectar agentes que consumen más
 - Correlación: Con latencia para identificar modelos lentos
 
 **Panel 2: Top usuarios por tokens**
+
 - Tipo: Tabla
 - Columnas: telegram_user_id, agent, total_tokens, llamadas, latencia_ms
 - Uso: Identificar "power users" del sistema
 - Riesgo: Altos costos si cierto usuario hace muchas peticiones
 
 **Panel 3: Latencia media del LLM**
+
 - Tipo: Serie temporal
 - Métrica: `avg(latency_ms)` por agente por hora
 - Alerta: Si > 30s por 10 min → problema con el modelo
 - Acción: Revisar estado del proveedor LLM (ej: OpenRoute)
 
 **Panel 4: Llamadas por estado**
+
 - Tipo: Serie temporal
 - Métrica: `count()` agrupado por status
 - Estado: Solo "success" se persiste hoy; futuros: "error", "timeout"
@@ -56,6 +60,7 @@ Todos los paneles responden a estos filtros:
 ### Fila 2: Estado de Logs en Tiempo Real (Loki)
 
 **Panels 6, 7, 8: Contadores por Nivel (Stat)**
+
 - 🔴 **Errores** (rojo)
 - 🟠 **Warnings** (naranja)
 - 🔵 **Infos** (azul)
@@ -63,10 +68,12 @@ Todos los paneles responden a estos filtros:
 Cada panel muestra el **recuento en el intervalo actual** (`$__interval`, típicamente 1 minuto).
 
 **Cuándo usar**:
+
 - Product Manager: "¿Hay errores activos?" → Mira los stat counters
 - On-call: "¿Tasa de error elevada?" → Compara contra baseline histórico
 
 **Queries**:
+
 ```logql
 # Errores
 sum(count_over_time({service_name="fitcoach-ia"} | json | level="ERROR" [$__interval]))
@@ -81,6 +88,7 @@ sum(count_over_time({service_name="fitcoach-ia"} | json | level="INFO" [$__inter
 ### Fila 3: Throughput y Actividad (Loki)
 
 **Panel 9: Throughput (líneas/seg)**
+
 - Tipo: Serie temporal
 - Métrica: `rate({...} [1m])` por level
 - Eje Y: Líneas por segundo
@@ -91,6 +99,7 @@ rate({service_name="fitcoach-ia"} [1m])
 ```
 
 **Panel 10: Actividad por Logger**
+
 - Tipo: Gráfico de barras
 - Métrica: `count()` agrupado por logger
 - Eje X: Módulos (conversation_service, webhook, etc.)
@@ -101,6 +110,7 @@ sum by (logger) (count_over_time({service_name="fitcoach-ia"} [$__range]))
 ```
 
 **Cuando usarlo**:
+
 - "conversation_service genera muchos INFO" → Reducir verbosidad en ese módulo
 - "webhook apenas tiene logs" → ¿Falta instrumentación?
 
@@ -120,6 +130,7 @@ sum by (logger) (count_over_time({service_name="fitcoach-ia"} [$__range]))
 ```
 
 **Workflow de debugging**:
+
 1. Ves "Contadores de logs" mostrar `🔴 Errores: 3`
 2. Haz clic en panel "Últimos 5 errores"
 3. Lees el más reciente
@@ -129,6 +140,7 @@ sum by (logger) (count_over_time({service_name="fitcoach-ia"} [$__range]))
 ### Fila 5: Stream de Logs Completo
 
 **Panel 5: Stream de logs en vivo**
+
 - Tipo: Panel Logs nativo
 - MaxLines: 100
 - Incluye logs JSON de la aplicación y access logs de Uvicorn
@@ -139,6 +151,7 @@ sum by (logger) (count_over_time({service_name="fitcoach-ia"} [$__range]))
 ```
 
 **Características**:
+
 - ✅ Collapsible JSON (haz clic en `{...}` para expandir)
 - ✅ Highlighting automático (rojo para ERROR, amarillo para WARNING)
 - ✅ Copy-to-clipboard en cada log
@@ -146,8 +159,9 @@ sum by (logger) (count_over_time({service_name="fitcoach-ia"} [$__range]))
 - ✅ Búsqueda inline con regex
 
 **Cambio respecto a versión anterior**:
+
 | Antes (tabla) | Ahora (Logs nativo) |
-|---|---|
+| --- | --- |
 | Extrae JSON en columnas | Mantiene JSON collapsible |
 | Lento con 10k+ logs | Rápido con streaming |
 | No highlighting de nivel | Color automático por level |
@@ -198,18 +212,21 @@ Ve que "conversation_service" domina "Actividad por logger"
 ## Configuración recomendada
 
 ### Intervalo de refresco
+
 - **Producción**: 1 minuto (por defecto)
 - **Desarrollo local**: 30 segundos (más responsivo)
 
 ### Rango de tiempo
+
 - **Alert triage**: Last 6 hours (contexto histórico)
 - **Post-mortem**: Last 24 hours (timeline completa)
 - **Trend analysis**: Last 7 days (patrones)
 
 ### Variables predefinidas
+
 ```
 Desarrollo local:
-  datasource = PostgreSQL Dev
+  datasource = PostgreSQL
   agent = All
   telegram_user_id = All
   log_level = All
@@ -229,6 +246,7 @@ Producción:
 **Problema**: `telegram_user_id` va en el mensaje JSON, no como label de Loki.
 
 **Solución**: Usamos `regexp` para extraerlo:
+
 ```logql
 {service_name="fitcoach-ia"} | regexp `telegram_user_id=(?P<telegram_user_id>-?\d+)`
 ```
@@ -238,6 +256,7 @@ Producción:
 **Problema**: Loki no garantiza que todos los logs tengan label `level`.
 
 **Solución**: `$log_level` es tipo `custom` con opciones fijas:
+
 ```json
 ["error", "warning", "info", "debug"]
 ```
@@ -264,6 +283,7 @@ Accede a ellas vía: Grafana → Alerting → Alert rules → "FitCoachIA"
 ## Próximos pasos
 
 **v3 del dashboard (futuro)**:
+
 - [ ] Panel "Estado del LLM" (últimas 10 respuestas + coste acumulado)
 - [ ] Heatmap de usuarios activos por hora
 - [ ] Correlación automática log↔traza (click log → Tempo)
@@ -271,6 +291,7 @@ Accede a ellas vía: Grafana → Alerting → Alert rules → "FitCoachIA"
 - [ ] Panel de alertas activas en tiempo real
 
 **Mejoras en Alloy/Loki**:
+
 - [ ] Agregar label `flow` (start, interview, doubts, progress) en los logs
 - [ ] Normalizar `deployment.environment.name` como label (hoy está en metadata)
 

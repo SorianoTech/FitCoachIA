@@ -23,8 +23,8 @@ Alloy, el workflow de despliegue y los Proxy Hosts de Nginx Proxy Manager. Ambos
 además en ese nombre fijo para que sea imposible tener dos contenedores del mismo rol conviviendo:
 un duplicado choca de nombre y falla en alto.
 
-`APP_ENV` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
-`.env.<APP_ENV>` si existe y después `.env`; las variables del sistema tienen prioridad.
+`DEPLOYMENT_ENVIRONMENT` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
+`.env.<DEPLOYMENT_ENVIRONMENT>` si existe y después `.env`; las variables del sistema tienen prioridad.
 
 Los `make dev-up` / `make prod-up` (ver más abajo) leen el fichero de entorno de fuera del
 repositorio, en `/etc/fitcoachia/<entorno>/`:
@@ -236,7 +236,7 @@ sudo make prod-up VERSION=0.3.0
 
 Desarrollo y producción pueden convivir en el mismo servidor. Usa `make dev-up` para el entorno
 de desarrollo y `make prod-up VERSION=<version>` para producción; cada uno mantiene sus propios
-contenedores, volumen PostgreSQL y configuración `APP_ENV`.
+contenedores, volumen PostgreSQL y configuración `DEPLOYMENT_ENVIRONMENT`.
 
 ### Health check del contenedor
 

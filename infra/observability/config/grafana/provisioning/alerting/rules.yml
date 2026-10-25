@@ -26,7 +26,7 @@ groups:
           environment: dev
         data:
           - refId: A
-            datasourceUid: fitcoach-postgres-dev
+            datasourceUid: fitcoach-postgres
             relativeTimeRange: { from: 900, to: 0 }
             model:
               rawSql: "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS latencia_p95_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
@@ -53,7 +53,7 @@ groups:
           environment: dev
         data:
           - refId: A
-            datasourceUid: fitcoach-postgres-dev
+            datasourceUid: fitcoach-postgres
             relativeTimeRange: { from: 900, to: 0 }
             model:
               rawSql: "SELECT 100.0 * count(*) FILTER (WHERE status <> 'success') / greatest(count(*), 1) AS failure_rate_pct FROM token_usage WHERE created_at > now() - interval '15 minutes'"

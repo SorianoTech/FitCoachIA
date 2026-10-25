@@ -208,17 +208,15 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 
 | File | Purpose | Notes |
 | --- | --- | --- |
-| `docker-compose.dev.yml` | Development stack (`build:`) | Reference one: change here first |
-| `docker-compose.local.yml` | Local all-in-one stack, used to **try changes locally** | Reads root `.env` |
-| `docker-compose.yml` | Production (`image:` published, no `build:`) | Adapt, do not copy, from dev |
+| `docker-compose.yml` | Whole system of one environment (`build:`): app, embedder, Postgres, pgVector, pgAdmin, observability, Nginx Proxy Manager | One environment per host, chosen by `DEPLOYMENT_ENVIRONMENT` in the root `.env` |
 | `tests/docker-compose-test.yml` | Integration tests (app + Postgres + pgVector + stub server) | Must always work with `make tests` |
-| `infra/vector-db/docker-compose.vector-db*.yml` | pgVector catalogue (independent lifecycle) | Not part of app compose |
-| `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |
+| `infra/vector-db/` | pgVector image (`Dockerfile-pgVector`) and DDL | Built by `docker-compose.yml` |
+| `infra/observability/config/<component>/` | One image per observability component, with its config copied in | Built by `docker-compose.yml`; config changes need `--build` |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
 | `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template and Postgres backup to S3 | Runs `docker-compose.yml` unchanged; see `docs/despliegue-aws-ec2.md` |
 
-Workflow for a compose-affecting change: edit **dev** -> try it with **local** -> if it works, replicate in **prod**
-(keep prod-specific things: `image:`, `restart`, healthchecks, networks, env files) -> keep the **test** compose runnable.
+Workflow for a compose-affecting change: edit `docker-compose.yml`, add any new variable to `.env.example`, try it locally
+with `docker compose up -d --build` -> keep the **test** compose runnable.
 Dockerfile (`src/Dockerfile`): multi-stage, non-root user, context = repo root (`docker build -f src/Dockerfile .`);
 it only copies `src/requirements.txt`, `src/fitcoach`, `alembic` and `alembic.ini`.
 
@@ -269,7 +267,7 @@ Update every item that the change touches, in the same change:
 | --- | --- |
 | Any behaviour, flow or design | the matching file in `docs/` (Spanish), chosen as in golden rule 7 — **mandatory** |
 | Code | unit + IT tests (OK and KO cases) — **mandatory** |
-| Services, ports, env vars | `docker-compose.dev.yml`, `docker-compose.local.yml`, `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
+| Services, ports, env vars | `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
 | Env vars | the matching `.env.example` (+ `docs/how-to.md`) |
 | DB models | Alembic revision (conversational DB) or `infra/vector-db/ddl` script (vector DB) |
 | Dependencies | `pyproject.toml` -> regenerate both requirements files -> `docs/toml.md` |

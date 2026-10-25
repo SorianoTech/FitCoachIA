@@ -652,7 +652,7 @@ embedder_timeout_seconds=10
 
 El arranque falla rápido si falta `vector_db_url` o `embedder_url`.
 
-En desarrollo, `docker-compose.dev.yml` fija `ia_trainer_skill=trainer-dev`. Esa variante desarrolla
+En desarrollo se configura `ia_trainer_skill=trainer-dev` en el `.env`. Esa variante desarrolla
 bien la semana 1 y deriva las otras tres, con un máximo de 3 ejercicios por día. Sirve para probar
 el flujo y la persistencia sin gastar 4096 tokens por iteración; no debe usarse en producción.
 

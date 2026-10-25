@@ -212,7 +212,7 @@ ia_exercise_curator_max_tokens=1200
 ia_exercise_curator_timeout=30
 ia_exercise_duplicate_similarity_threshold=0.92
 
-vector_database_writer_url=postgresql+asyncpg://fitcoach_writer:CONTRASEÑA@pgvector-prod:5432/fitcoach
+vector_database_writer_url=postgresql+asyncpg://fitcoach_writer:CONTRASEÑA@pgvector:5432/fitcoach
 ```
 
 El modelo del curator reutiliza `ia_base_url` e `ia_token`; solo cambia el identificador, la
@@ -243,7 +243,7 @@ pgVector no está gestionado por Alembic. En instalaciones con un volumen existe
 `docker-entrypoint-initdb.d` no vuelven a ejecutarse y debe aplicarse manualmente:
 
 ```bash
-docker exec -i pgvector-prod \
+docker exec -i pgvector \
   psql -v ON_ERROR_STOP=1 -U fitcoach -d fitcoach \
   < infra/vector-db/ddl/003_2026-10-04_exercise-writer.sql
 ```
@@ -273,11 +273,11 @@ docker exec fitcoach-postgres \
 Comprueba la infraestructura de publicación:
 
 ```bash
-docker exec pgvector-prod \
+docker exec pgvector \
   psql -U fitcoach -d fitcoach \
   -c "\d exercise_publications"
 
-docker exec pgvector-prod \
+docker exec pgvector \
   psql -U fitcoach -d fitcoach \
   -c "\du fitcoach_writer"
 ```
@@ -285,7 +285,7 @@ docker exec pgvector-prod \
 Después realiza el flujo desde Telegram, aprueba la solicitud y verifica:
 
 ```bash
-docker exec pgvector-prod \
+docker exec pgvector \
   psql -U fitcoach -d fitcoach \
   -c "SELECT p.submission_id, e.id, e.name, e.target
       FROM exercise_publications p

@@ -26,7 +26,7 @@ _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 TaskTemperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | Literal["default"]
 ReasoningEffort = Literal["minimal", "low", "medium", "high", "default"]
 
-_APP_ENV = os.getenv("DEPLOYMENT_ENVIRONMENT")
+_APP_ENV = os.getenv("DEPLOYMENT_ENVIRONMENT", "dev")
 _ENV_FILE = os.getenv("FITCOACH_ENV_FILE") or (".env", f".env.{_APP_ENV}")
 
 

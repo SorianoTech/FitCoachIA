@@ -143,6 +143,15 @@ services:
     volumes:
       #- ./infra/observability/config/grafana/provisioning:/etc/grafana/provisioning:ro
       - fitcoach-observability-grafana:/var/lib/grafana
+    healthcheck:
+      # /api/health devuelve 200 solo si Grafana responde y su base de datos interna está accesible.
+      test: [ "CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:3000/api/health" ]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      # La primera vez que arranca hace migraciones y carga los dashboards.
+      start_period: 60s
+      start_interval: 5s
     depends_on:
       - prometheus
       - loki

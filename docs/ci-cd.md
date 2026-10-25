@@ -102,9 +102,9 @@ resto son públicas.
 | Job / paso | Objetivo |
 |---|---|
 | `Prepare`: validar formato semver | Evita releases ambiguos. |
-| `Prepare`: listar imágenes | Lee el compose con `docker compose config --no-interpolate` (sin resolver variables de entorno) y obtiene imagen, contexto y Dockerfile de cada servicio construible. Falla si alguna imagen no tiene tag fijo. |
+| `Prepare`: listar imágenes | Lee el compose con `docker compose config --no-interpolate` (sin resolver variables de entorno) y, con [`compose-images.jq`](../.github/scripts/compose-images.jq), obtiene imagen, contexto y Dockerfile de cada servicio construible. Falla si alguna imagen no tiene tag fijo. |
 | `Prepare`: comprobar Docker Hub | Si la imagen de la app ya existe con esa versión, aborta (no se sobrescribe una release). Si una imagen de componente ya existe con su tag, se omite: no se reconstruye ni se republica. El resumen del job lista qué se publica y qué se omite. |
-| `Build` (una ejecución por imagen pendiente, en paralelo) | Construye sin publicar (`push: false`, caché de buildx en GitHub Actions por imagen), escanea y publica. Un fallo en una imagen no cancela las demás. |
+| `Build` (una ejecución por imagen pendiente, en paralelo) | Vuelve a leer del compose la imagen de su servicio, construye sin publicar (`push: false`, caché de buildx en GitHub Actions por imagen), escanea y publica. Un fallo en una imagen no cancela las demás. |
 | **Trivy** (escaneo de cada imagen) | Equivalente a Semgrep pero sobre el artefacto construido (paquetes de SO + librerías del contenedor), no sobre el código fuente. Informativo, no bloquea el release; sube un SARIF por imagen (categoría `trivy-<servicio>`) a la misma pestaña **Security** de GitHub que Semgrep. |
 | `docker push` | Cada imagen llega al registro después de escanearse. |
 | `Release`: **GitHub Release** (tag + notas autogeneradas) | Solo se crea cuando todas las imágenes están publicadas, así una release nunca apunta a imágenes que no existen. |
@@ -113,6 +113,10 @@ resto son públicas.
 Para cambiar un componente (por ejemplo, una regla de alerta, que va dentro de la imagen de
 Grafana), hay que **subir su tag en `docker-compose.yml`** en el mismo cambio. Si no, la siguiente
 release ve el tag ya publicado, lo omite y el cambio no llega a producción.
+
+`Prepare` solo pasa a `Build` los **nombres de servicio**, no los de imagen: GitHub descarta el output
+de un job que contenga el valor de un secreto, y el namespace `fitcoachia` de las imágenes coincide
+con `DOCKER_USER`. Por lo mismo, en los logs las imágenes aparecen como `***/<nombre>:<tag>`.
 
 Si una imagen falla en `Build`, se relanza con **Re-run failed jobs**: repite solo las imágenes que
 fallaron y luego crea la release. Relanzar el workflow entero con la misma versión no sirve si la
@@ -131,7 +135,7 @@ producción ([despliegue-aws-ec2.md](despliegue-aws-ec2.md)) **sin SSH y sin clo
 1. Hace checkout del **tag de la versión**, así el compose y el `Makefile` que se despliegan son los
    de esa release, con sus tags de imagen.
 2. Asume por **OIDC** el rol de AWS que crea la plantilla. Ese rol solo acepta tokens del
-   environment `production` de este repositorio, así que el job declara `environment: production`
+   environment `prod-aws` de este repositorio, así que el job declara `environment: prod-aws`
    y no hay claves de AWS guardadas en GitHub.
 3. Lee de la pila de CloudFormation el id de la instancia y el bucket.
 4. Sube `docker-compose.yml`, `Makefile`, `backup-postgres.sh` y `deploy-release.sh` a
@@ -218,7 +222,7 @@ flowchart TD
     end
 
     subgraph CD2["Continuous Deployment — deploy.yml"]
-        H4 -->|ok| I[OIDC: rol de AWS\nenvironment production]
+        H4 -->|ok| I[OIDC: rol de AWS\nenvironment prod-aws]
         I --> I1[Sube compose, Makefile y scripts\na S3 deploy/versión/]
         I1 --> J[SSM: deploy-release.sh\nguarda el compose previo]
         J --> K[make prod-up\npull + up --wait]
@@ -237,7 +241,7 @@ sequenceDiagram
     participant S as Instancia (SSM, root)
 
     Note over R,S: Continuous Deployment — deploy.yml
-    R->>A: AssumeRoleWithWebIdentity (OIDC, environment production)
+    R->>A: AssumeRoleWithWebIdentity (OIDC, environment prod-aws)
     R->>A: DescribeStacks: InstanceId y BackupBucketName
     R->>A: s3 cp compose, Makefile, backup-postgres.sh, deploy-release.sh
     R->>S: ssm send-command (AWS-RunShellScript)
@@ -300,7 +304,7 @@ El detalle del despliegue y de los targets del `Makefile` está en
 | `AWS_STACK_NAME` | `deploy.yml` (nombre de la pila de CloudFormation) |
 
 `release.yml` pasa los secretos a `deploy.yml` con `secrets: inherit`, y el job de despliegue
-también puede leerlos del environment `production`. Ningún workflow expone sus valores en logs.
+también puede leerlos del environment `prod-aws`. Ningún workflow expone sus valores en logs.
 Ya no se usan `SERVER_HOST`, `SERVER_USER`, `SERVER_PKEY`, `ENV_FILE_PATH` ni `DOCKER_IMAGE_NAME`, y
 se pueden borrar.
 

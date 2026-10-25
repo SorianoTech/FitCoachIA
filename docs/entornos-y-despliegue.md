@@ -132,7 +132,7 @@ instancia EC2 de producción sin SSH y sin repositorio clonado en ella.
 ```
 ┌─ GitHub Actions (deploy.yml) ────────────────────────────────┐
 │  1. Valida la versión (X.Y.Z) y hace checkout de su tag      │
-│  2. Asume el rol de AWS por OIDC (environment production)    │
+│  2. Asume el rol de AWS por OIDC (environment prod-aws)      │
 │  3. Lee instancia y bucket de la pila de CloudFormation      │
 │  4. Sube compose, Makefile, backup-postgres.sh y             │
 │     deploy-release.sh a s3://<bucket>/deploy/<versión>/      │

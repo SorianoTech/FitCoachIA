@@ -144,7 +144,7 @@ observabilidad.
 | Instancia EC2 | Ubuntu 24.04, `t3.large` por defecto, crédito *unlimited*, IMDSv2 obligatorio, protección contra terminación, disco gp3 cifrado de 60 GB que **no** se borra si se termina la instancia |
 | Elastic IP | IP fija para el DNS; se reasocia sola si la instancia se sustituye |
 | Rol de instancia | Session Manager (shell, túneles y comandos de `deploy.yml` sin abrir puertos), escritura en `postgres/` del bucket y lectura de `deploy/` |
-| Rol de despliegue de GitHub | Lo asume `deploy.yml` por OIDC, solo desde el environment `production` de `GitHubRepository`. Puede leer la pila, subir ficheros a `deploy/` y lanzar comandos SSM en esta instancia |
+| Rol de despliegue de GitHub | Lo asume `deploy.yml` por OIDC, solo desde el environment `GitHubEnvironment` (`prod-aws`) de `GitHubRepository`. Puede leer la pila, subir ficheros a `deploy/` y lanzar comandos SSM en esta instancia |
 | Proveedor OIDC de GitHub | Solo si `GitHubOidcProviderArn` va vacío: una cuenta admite un único proveedor para `token.actions.githubusercontent.com` |
 | Bucket S3 | Backups de Postgres (`postgres/`) y ficheros de cada release (`deploy/`). Cifrado, sin acceso público, borra los volcados a los `BackupRetentionDays` días. Se conserva si se borra la pila |
 | Política DLM | Snapshot diario de la instancia a las 03:00 UTC, conserva `SnapshotRetentionCount` |
@@ -180,7 +180,7 @@ para pedirlos con tiempo.
 | 3 | Crear el registro DNS de `fitcoach.sergiosoriano.es` | **Quien gestiona `sergiosoriano.es`** | Su proveedor de DNS | [5](#5-pedir-el-dns) |
 | 4 | Dar acceso al resto del equipo | Administrador de AWS | IAM Identity Center | [6](#6-acceso-del-equipo) |
 | 5 | Crear el `.env` y hacer login en Docker Hub | Quien despliega | Instancia | [7](#7-configurar-la-instancia) |
-| 6 | Crear el environment `production` y los secretos de GitHub | **Administrador del repositorio** | GitHub | [8.1](#81-configurar-github) |
+| 6 | Crear el environment `prod-aws` y los secretos de GitHub | **Administrador del repositorio** | GitHub | [8.1](#81-configurar-github) |
 | 7 | Primer despliegue | Quien despliega | GitHub Actions o instancia | [8](#8-arrancar-el-sistema) |
 | 8 | Crear las dos reglas del proxy y su certificado | Quien despliega | Panel de NPM | [9](#9-reglas-del-proxy-en-nginx-proxy-manager) |
 | 9 | Mover `grafana.fitcoach` y revisar BotFather | **Quien gestiona `sergiosoriano.es`** | DNS, BotFather | [10](#10-cerrar-la-puesta-en-marcha) |
@@ -303,8 +303,9 @@ sustituye la instancia por sorpresa ([sección 12.2](#122-actualizar-la-pila)).
 ### 4.3 Crear el change set, revisarlo y ejecutarlo
 
 `GitHubRepository` (por defecto `SorianoTech/FitCoachIA`) debe coincidir, mayúsculas incluidas,
-con el nombre del repositorio en GitHub: el rol solo acepta tokens de ese repositorio y de su
-environment `production`.
+con el nombre del repositorio en GitHub, y `GitHubEnvironment` (por defecto `prod-aws`) con el
+`environment` que declara `deploy.yml`: el rol solo acepta tokens de ese repositorio y de ese
+environment.
 
 `--no-execute-changeset` prepara los cambios sin aplicarlos, para revisarlos antes:
 
@@ -746,11 +747,11 @@ Hub por `release.yml`, que incluya `deploy-release.sh`.
 
 Lo hace un administrador del repositorio, en *Settings*:
 
-1. *Environments* → *New environment* → `production`. En *Deployment branches and tags*, elegir
+1. *Environments* → *New environment* → `prod-aws`. En *Deployment branches and tags*, elegir
    *Selected branches and tags* y añadir `develop` y `release/*`, las ramas desde las que se
    publican versiones. Opcionalmente, *Required reviewers* para aprobar cada despliegue.
 2. *Secrets and variables* → *Actions*, como secretos del repositorio o del environment
-   `production`:
+   `prod-aws`:
 
 | Secreto | Valor |
 | --- | --- |
@@ -762,7 +763,7 @@ Lo hace un administrador del repositorio, en *Settings*:
    `ENV_FILE_PATH` y `DOCKER_IMAGE_NAME`.
 
 El rol de despliegue puede ejecutar cualquier comando como root en la instancia, así que quien pueda
-lanzar un workflow en `production` controla la máquina. Por eso conviene limitar el environment a
+lanzar un workflow en `prod-aws` controla la máquina. Por eso conviene limitar el environment a
 `develop` y `release/*`, ramas protegidas.
 
 ### 8.2 Primer despliegue con el workflow
@@ -927,7 +928,7 @@ Un `502 Bad Gateway` indica que la regla funciona pero la API no responde: revis
    servidor actual deja de tener nombre público; se puede seguir usando por túnel o con otro nombre.
 2. **BotFather.** Si el bot de producción tiene la Mini App configurada también en BotFather
    (*Main Mini App*), cambiar allí la URL a `https://fitcoach.sergiosoriano.es/miniapp/`.
-3. **Servidor actual.** Desde que existe el environment `production` con los secretos nuevos, las
+3. **Servidor actual.** Desde que existe el environment `prod-aws` con los secretos nuevos, las
    releases despliegan en la instancia, no en el servidor actual.
 
 ---

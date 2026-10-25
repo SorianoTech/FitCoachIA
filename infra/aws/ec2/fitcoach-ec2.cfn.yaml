@@ -12,7 +12,7 @@ Metadata:
       - Label: { default: Instance }
         Parameters: [ImageId, InstanceType, RootVolumeSize, SwapSize]
       - Label: { default: Deployment }
-        Parameters: [GitHubRepository, GitHubOidcProviderArn]
+        Parameters: [GitHubRepository, GitHubEnvironment, GitHubOidcProviderArn]
       - Label: { default: Backups }
         Parameters: [BackupRetentionDays, SnapshotRetentionCount]
 
@@ -48,6 +48,11 @@ Parameters:
     Default: SorianoTech/FitCoachIA
     AllowedPattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
     Description: owner/repo whose deploy.yml may deploy, with the exact case shown by GitHub.
+  GitHubEnvironment:
+    Type: String
+    Default: prod-aws
+    AllowedPattern: ^[A-Za-z0-9_.-]+$
+    Description: GitHub environment of the deploy job (environment in deploy.yml).
   GitHubOidcProviderArn:
     Type: String
     Default: ""
@@ -225,7 +230,7 @@ Resources:
       Url: https://token.actions.githubusercontent.com
       ClientIdList: [sts.amazonaws.com]
 
-  # deploy.yml: only from the production environment of the repository, through SSM (root on the instance).
+  # deploy.yml: only from the GitHubEnvironment environment of the repository, through SSM (root on the instance).
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -241,7 +246,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:environment:production
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:environment:${GitHubEnvironment}
       Policies:
         - PolicyName: deploy
           PolicyDocument:

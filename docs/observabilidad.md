@@ -264,7 +264,8 @@ En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
 Grafana sustituye `${DEPLOYMENT_ENVIRONMENT}` al cargar el fichero, así que cada stack crea sus reglas
 con el entorno en el título, en el `uid` (`fitcoach-<entorno>-llm-…`) y en la etiqueta `environment`, y
 las consulta contra el datasource de su entorno (`fitcoach-postgres-<entorno>`). Las dos llevan
-`severity: critical`. `deleteRules` borra las variantes anteriores `[dev]`/`[prod]` de los Grafana que
+la etiqueta `severity` de `GF_ALERT_SEVERITY` (`warning` si no está definida; en producción,
+`critical`). `deleteRules` borra las variantes anteriores `[dev]`/`[prod]` de los Grafana que
 ya las tuvieran.
 
 ## 5. Cómo levantar el stack
@@ -283,8 +284,8 @@ docker compose up -d --build grafana prometheus loki tempo otel-collector alloy
 ```
 
 Variables del `.env` que usa el stack: `DEPLOYMENT_ENVIRONMENT` (`dev` o `prod`),
-`GF_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL` y las credenciales `POSTGRES_*` de la base de la
-aplicación, que Grafana usa para su datasource.
+`GF_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_ALERT_SEVERITY` (severidad de las alertas) y las
+credenciales `POSTGRES_*` de la base de la aplicación, que Grafana usa para su datasource.
 
 Grafana quedará accesible:
 

@@ -605,6 +605,7 @@ secretos del equipo, nunca del repositorio (está en `.gitignore`), y se instala
 | `miniapp_url` | `https://fitcoach.sergiosoriano.es/miniapp/` |
 | `GF_SERVER_ROOT_URL` | `https://grafana.fitcoach.sergiosoriano.es` |
 | `GF_ADMIN_PASSWORD` | Contraseña del usuario `admin` de Grafana |
+| `GF_ALERT_SEVERITY` | `critical` (por defecto es `warning`, el valor de desarrollo) |
 | `POSTGRES_PASSWORD` | La misma que en `database_url` |
 | `VECTOR_PASSWORD` | Contraseña del superusuario de pgVector |
 | `VECTOR_DB_RO_PASSWORD`, `VECTOR_DB_WRITER_PASSWORD` | Las mismas que en `vector_database_url` y `vector_database_writer_url` |

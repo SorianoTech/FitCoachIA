@@ -30,7 +30,7 @@ groups:
         annotations:
           summary: "Latencia p95 del LLM > 30s en los ultimos 15 minutos"
         labels:
-          severity: critical
+          severity: ${ALERT_SEVERITY}
           environment: ${DEPLOYMENT_ENVIRONMENT}
         data:
           - refId: A
@@ -57,7 +57,7 @@ groups:
         annotations:
           summary: "Mas del 20% de las llamadas al LLM fallaron en los ultimos 15 minutos"
         labels:
-          severity: critical
+          severity: ${ALERT_SEVERITY}
           environment: ${DEPLOYMENT_ENVIRONMENT}
         data:
           - refId: A

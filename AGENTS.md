@@ -198,7 +198,8 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 - `make prod-up` is what `deploy.yml` runs on the server. The deploy copies **only** `docker-compose.yml` and `Makefile`,
   so the prod compose cannot depend on other repo files.
 - Workflows: `build.yml` (quality + security + semgrep + tests on `feat/**`, `feature/**`, `fix/**`, `bugfix/**`),
-  `release.yml` (image build, Trivy, GitHub release, then `deploy.yml`), `validate-*-merge.yml`.
+  `release.yml` (builds every compose image whose tag is not on Docker Hub yet: app = release version,
+  others = tag pinned in the compose; Trivy, push, GitHub release, then `deploy.yml`), `validate-*-merge.yml`.
   Composite actions: `.github/actions/python-setup` and `quality-check` (ruff, mypy, gitleaks, pip-audit, bandit).
 - Branch flow: `feat|feature|fix|bugfix/*` -> `develop` -> `main`. Direct commits to `main`/`develop` are blocked.
 - A change to targets, workflows or actions => update `docs/Makefile.md` / `docs/ci-cd.md`.

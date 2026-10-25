@@ -167,7 +167,7 @@ El proyecto tiene estos workflows en `.github/workflows/`:
 | `build.yml` | Push y PRs en ramas `feat/**`, `feature/**`, `fix/**`, `bugfix/**` (ignora cambios solo de docs y `.md`) y ejecución manual | Calidad y seguridad (Ruff, Mypy, Gitleaks, pip-audit, Bandit, Semgrep) → `make tests` (unitarios e integración, cobertura >= 80%) |
 | `validate-develop-merge.yml` | PRs a `develop` | Bloquea merges que no provengan de ramas `feat/`, `feature/` o `fix/` |
 | `validate-main-merge.yml` | PRs a `main` | Bloquea merges que no provengan de `develop` |
-| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye la imagen Docker, la escanea con Trivy, publica en el registry, crea la GitHub Release y lanza `deploy.yml` |
+| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye las imágenes de `docker-compose.yml` cuyo tag aún no está en Docker Hub (la app con la versión de la release, el resto con su tag fijo), las escanea con Trivy, las publica, crea la GitHub Release y lanza `deploy.yml` |
 | `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en el servidor por SSH con `make prod-up`, verifica el arranque y hace rollback si falla |
 
 Las actions reutilizables están en `.github/actions/`: `python-setup` instala Python y `uv` con caché y audita `requirements-ci.txt` antes de instalar; `quality-check` agrupa Ruff, Mypy, Gitleaks, pip-audit y Bandit. El detalle está en [docs/ci-cd.md](docs/ci-cd.md).

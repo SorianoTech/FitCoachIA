@@ -89,20 +89,37 @@ usa en local. Gate: cobertura mínima del 80 % como proxy de calidad.
 **Dispara**: `workflow_dispatch` manual con input `version` (`X.Y.Z`) — publicar una versión es una
 decisión humana explícita. **Guardia**: solo se ejecuta si la rama es `develop` o `release/**`.
 
-Objetivo general: convertir un commit en un artefacto versionado, escaneado y trazable, publicando
-únicamente cuando lo anterior ya existe. El orden es deliberado — **se escanea la imagen antes de
-publicarla, y solo se publica después de crear el tag/release**:
+Objetivo general: convertir un commit en imágenes versionadas, escaneadas y trazables, y crear la
+release solo cuando todas están publicadas.
 
-| Paso | Objetivo |
+Las imágenes que publica son las que `docker-compose.yml` construye (servicios con `build:`), todas
+en el namespace `fitcoachia` de Docker Hub. Hoy son nueve: la app, el embedder, `pgvector` y las seis
+de observabilidad. La app (`fitcoachia/fitcoach-app`) toma la versión de la release; el resto
+llevan un **tag por componente fijado en el compose** (`fitcoachia/embedder:1.0.0`...), porque casi
+nunca cambian y no tiene sentido republicarlas en cada release. Solo `fitcoach-app` es privada; el
+resto son públicas.
+
+| Job / paso | Objetivo |
 |---|---|
-| Validar formato semver + que la versión no exista ya en el registro | Evita releases ambiguos o sobrescribir un tag ya publicado. |
-| Build de la imagen sin publicarla (`push: false`) | Permite escanearla antes de que sea pública. |
-| **Trivy** (escaneo de la imagen) | Equivalente a Semgrep pero sobre el artefacto construido (paquetes de SO + librerías del contenedor), no sobre el código fuente. Informativo, no bloquea el release; sube SARIF a la misma pestaña **Security** de GitHub que Semgrep, como un hallazgo distinto. |
-| **GitHub Release** (tag + notas autogeneradas) | El artefacto final y trazable que queda publicado en GitHub (pestaña *Releases*, no *Security*): la versión pasa a existir oficialmente aquí, antes incluso de publicarse la imagen. |
-| `docker push` | Último paso: la imagen solo llega al registro una vez que el release ya existe y fue escaneada. |
+| `Prepare`: validar formato semver | Evita releases ambiguos. |
+| `Prepare`: listar imágenes | Lee el compose con `docker compose config --no-interpolate` (sin resolver variables de entorno) y obtiene imagen, contexto y Dockerfile de cada servicio construible. Falla si alguna imagen no tiene tag fijo. |
+| `Prepare`: comprobar Docker Hub | Si la imagen de la app ya existe con esa versión, aborta (no se sobrescribe una release). Si una imagen de componente ya existe con su tag, se omite: no se reconstruye ni se republica. El resumen del job lista qué se publica y qué se omite. |
+| `Build` (una ejecución por imagen pendiente, en paralelo) | Construye sin publicar (`push: false`, caché de buildx en GitHub Actions por imagen), escanea y publica. Un fallo en una imagen no cancela las demás. |
+| **Trivy** (escaneo de cada imagen) | Equivalente a Semgrep pero sobre el artefacto construido (paquetes de SO + librerías del contenedor), no sobre el código fuente. Informativo, no bloquea el release; sube un SARIF por imagen (categoría `trivy-<servicio>`) a la misma pestaña **Security** de GitHub que Semgrep. |
+| `docker push` | Cada imagen llega al registro después de escanearse. |
+| `Release`: **GitHub Release** (tag + notas autogeneradas) | Solo se crea cuando todas las imágenes están publicadas, así una release nunca apunta a imágenes que no existen. |
+| `Deploy` | Llama a `deploy.yml` con la versión. |
+
+Para cambiar un componente (por ejemplo, una regla de alerta, que va dentro de la imagen de
+Grafana), hay que **subir su tag en `docker-compose.yml`** en el mismo cambio. Si no, la siguiente
+release ve el tag ya publicado, lo omite y el cambio no llega a producción.
+
+Si una imagen falla en `Build`, se relanza con **Re-run failed jobs**: repite solo las imágenes que
+fallaron y luego crea la release. Relanzar el workflow entero con la misma versión no sirve si la
+imagen de la app ya se publicó (`Prepare` aborta); en ese caso hay que usar otra versión.
 
 > Semgrep y Trivy son dos escáneres distintos en dos momentos distintos del ciclo — código fuente
-> en CI, imagen construida en el release — pero ambos convergen en la misma pestaña Security de
+> en CI, imágenes construidas en el release — pero ambos convergen en la misma pestaña Security de
 > GitHub. El único fichero que se publica fuera de esa pestaña es la propia **GitHub Release**.
 
 ### 2.5 Continuous Deployment — `deploy.yml`
@@ -134,7 +151,7 @@ anteriores:
 - **`healthcheck` del contenedor** sobre `/health` — decide el resultado del despliegue (y su
   rollback), y después sigue sondeando cada 5 min como señal de salud continua en producción.
 - **Pestaña Security de GitHub** — acumula los SARIF de Semgrep (CI, código fuente) y Trivy
-  (release, imagen construida) como registro continuo de hallazgos, independiente de si bloquearon
+  (release, imágenes construidas) como registro continuo de hallazgos, independiente de si bloquearon
   o no el pipeline que los generó.
 
 ## 3. Diagramas
@@ -164,12 +181,13 @@ flowchart TD
     E -->|ok| F[PR a develop] --> G[Merge en develop]
 
     subgraph CD1["Continuous Delivery — release.yml"]
-        G -.->|workflow_dispatch manual\ninput: version X.Y.Z| H[Release: checks + build imagen]
-        H -->|falla algún check| X3[❌ release abortado]
-        H --> H1[Trivy scan]
+        G -.->|workflow_dispatch manual\ninput: version X.Y.Z| H[Prepare: semver +\nimágenes del compose]
+        H -->|app ya publicada\no imagen sin tag| X3[❌ release abortado]
+        H -->|omite tags ya publicados| B[Build por imagen:\nbuild sin push]
+        B --> H1[Trivy scan]
         H1 --> H2[[SARIF Trivy]]
-        H1 --> H3[GitHub Release\ntag + notas]
-        H3 --> H4[docker push]
+        H1 --> H3[docker push]
+        H3 --> H4[GitHub Release\ntag + notas]
     end
 
     subgraph MON["Continuous Monitoring"]
@@ -240,8 +258,9 @@ sequenceDiagram
 | Semgrep (`p/python`, `p/owasp-top-ten`) | `build.yml` → `semgrep-analysis` | Informa (SARIF) |
 | Cobertura de tests ≥ 80 % | `build.yml` → `test-gate` | Bloquea |
 | Formato semver de la versión | `release.yml`, `deploy.yml` | Bloquea |
-| Versión no debe existir ya en el registro | `release.yml` | Bloquea |
-| Trivy (imagen, HIGH/CRITICAL) | `release.yml` | Informa (SARIF) |
+| La imagen de la app no debe existir ya en el registro con esa versión | `release.yml` → `Prepare` | Bloquea |
+| Toda imagen construible del compose tiene tag fijo | `release.yml` → `Prepare` | Bloquea |
+| Trivy (cada imagen, HIGH/CRITICAL) | `release.yml` → `Build` | Informa (SARIF) |
 | Origen de release: `develop` o `release/*` | `release.yml` (`if:`) | Bloquea |
 | Estado `healthy` del contenedor tras el despliegue | `deploy.yml` | Bloquea **y revierte** a la versión anterior |
 
@@ -250,16 +269,16 @@ sequenceDiagram
 | Artefacto | Generado por | Dónde se ve |
 |---|---|---|
 | SARIF Semgrep | `build.yml` → `semgrep-analysis` | Pestaña *Security* (code scanning) |
-| SARIF Trivy | `release.yml` | Pestaña *Security* (code scanning) |
+| SARIF Trivy (uno por imagen) | `release.yml` → `Build` | Pestaña *Security* (code scanning) |
 | GitHub Release (tag + notas) | `release.yml` | Pestaña *Releases* |
-| Imagen Docker versionada | `release.yml` (`docker push`) | Registro Docker Hub |
+| Imágenes Docker versionadas (`fitcoachia/*`) | `release.yml` → `Build` (`docker push`) | Registro Docker Hub |
 
 ### Secretos
 
 | Secreto | Usado en |
 |---|---|
 | `DOCKER_USER`, `DOCKER_PASSWORD` | `release.yml` (login en Docker Hub) |
-| `DOCKER_IMAGE_NAME` | `release.yml`, `deploy.yml` (nombre base de la imagen) |
+| `DOCKER_IMAGE_NAME` | `deploy.yml` (nombre base de la imagen); `release.yml` solo se lo pasa. Ya no define las imágenes: el namespace `fitcoachia` sale del compose |
 | `SERVER_HOST`, `SERVER_USER`, `SERVER_PKEY` | `deploy.yml` (conexión SSH al servidor) |
 
 Ningún workflow expone valores de estos secretos en logs; `deploy.yml` los declara como `secrets`

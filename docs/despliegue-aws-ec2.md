@@ -954,9 +954,9 @@ Decisiones tomadas:
 
 Puntos abiertos:
 
-1. **`deploy.yml` y `release.yml`.** `make prod-up` ya descarga las imágenes y arranca sin
-   construir, pero `release.yml` aún solo publica la imagen de la app y `deploy.yml` sigue con el
-   esquema anterior (SSH, `/home/<DEPLOY_USER>`, `.env.prod`). Hasta adaptarlos, se actualiza a mano
+1. **`deploy.yml`.** `make prod-up` ya descarga las imágenes y arranca sin construir, y
+   `release.yml` ya publica todas las imágenes del compose, pero `deploy.yml` sigue con el esquema
+   anterior (SSH, `/home/<DEPLOY_USER>`, `.env.prod`). Hasta adaptarlo, se actualiza a mano
    ([sección 12.3](#123-actualizar-la-aplicación)).
 2. **Puertos publicados en todas las interfaces** (`APP_PORT`, `VECTOR_PORT`, `PGADMIN_PORT`): hoy
    solo los protege el security group. Publicarlos en `127.0.0.1` añadiría una segunda barrera.

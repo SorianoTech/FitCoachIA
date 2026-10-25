@@ -27,7 +27,8 @@ El documento tiene tres partes:
 | Máquina | EC2 `t3.large` (2 vCPU, 8 GB, x86_64), Ubuntu 24.04 LTS, disco gp3 de 60 GB |
 | Infraestructura | Plantilla CloudFormation: instancia, Elastic IP, security group, rol, bucket de backups y snapshots |
 | Contenedores | Un único `docker-compose.yml` (proyecto `fitcoach`) con todos los servicios, incluido Nginx Proxy Manager |
-| Imágenes | Se construyen en la instancia desde el repositorio (`docker compose up -d --build`) |
+| Imágenes | Se descargan de Docker Hub (`fitcoachia/*`): en la instancia no se construye nada ni se clona el repositorio |
+| Despliegue | `deploy.yml` por Session Manager (SSM) con un rol de AWS por OIDC; sin SSH ni puerto 22 |
 | Configuración | Un único `/opt/fitcoachia/.env`, propiedad de root con permisos `600` |
 | Dominio | `fitcoach.sergiosoriano.es` (API, bot y Mini App) y `grafana.fitcoach.sergiosoriano.es` |
 | HTTPS | Nginx Proxy Manager con certificados de Let's Encrypt |
@@ -50,13 +51,14 @@ flowchart LR
         TG["Telegram<br/>webhook del bot"]
         USR["Usuarios<br/>bot y Mini App"]
         TEAM["Equipo<br/>Grafana y AWS CLI"]
+        GH["GitHub Actions<br/>deploy.yml"]
     end
 
     DNS["DNS sergiosoriano.es<br/>fitcoach · grafana.fitcoach<br/>A → Elastic IP"]
 
     subgraph AWS["AWS · eu-west-1"]
         direction LR
-        SG{{"Elastic IP<br/>security group<br/>80 · 443 · 22"}}
+        SG{{"Elastic IP<br/>security group<br/>80 · 443"}}
         SSM["Session Manager<br/>shell y túneles"]
 
         subgraph EC2["EC2 t3.large · Ubuntu 24.04 · gp3 60 GB"]
@@ -83,10 +85,10 @@ flowchart LR
                 end
             end
 
-            CRON["cron 03:30<br/>fitcoach-backup"]
+            CRON["cron 03:30<br/>backup-postgres.sh"]
         end
 
-        S3[("S3<br/>pg_dump diarios")]
+        S3[("S3<br/>pg_dump diarios<br/>ficheros de cada release")]
         DLM["DLM<br/>snapshot diario"]
     end
 
@@ -97,6 +99,7 @@ flowchart LR
     TEAM --> DNS
     DNS --> SG
     TEAM -. "aws ssm" .-> SSM
+    GH -. "OIDC · S3 · SSM" .-> SSM
     SSM -. "túneles" .-> NPM
     SSM -.-> PGA
     SG --> NPM
@@ -119,7 +122,7 @@ flowchart LR
     classDef data fill:#e0f2fe,stroke:#0284c7,color:#082f49
     classDef obs fill:#fce7f3,stroke:#db2777,color:#500724
     classDef ops fill:#f1f5f9,stroke:#64748b,color:#0f172a
-    class TG,USR,TEAM,EXT ext
+    class TG,USR,TEAM,GH,EXT ext
     class DNS,SG,NPM,SSM edge
     class API,EMB,PGA app
     class PG,VEC,S3 data
@@ -127,7 +130,7 @@ flowchart LR
     class CRON,DLM ops
 ```
 
-Las líneas discontinuas son acceso de administración o tareas de AWS. Grafana lee además
+Las líneas discontinuas son acceso de administración, despliegues o tareas de AWS. Grafana lee además
 `fitcoach-postgres` para los dashboards de negocio. El Compose crea tres redes: `proxy-network` une
 Nginx Proxy Manager con la API, Grafana y pgAdmin; `fitcoach-internal` une la aplicación con sus
 bases de datos, el embedder, el collector y Grafana; `observability` es la red interna del stack de
@@ -137,26 +140,27 @@ observabilidad.
 
 | Recurso | Para qué |
 | --- | --- |
-| Security group | 443 y 80 desde internet (IPv4 e IPv6); 22 desde `SshIngressCidr` (para `deploy.yml`) |
+| Security group | 443 y 80 desde internet (IPv4 e IPv6); ningún otro puerto, tampoco el 22 |
 | Instancia EC2 | Ubuntu 24.04, `t3.large` por defecto, crédito *unlimited*, IMDSv2 obligatorio, protección contra terminación, disco gp3 cifrado de 60 GB que **no** se borra si se termina la instancia |
-| Elastic IP | IP fija para el DNS y para el secreto `SERVER_HOST`; se reasocia sola si la instancia se sustituye |
-| Rol de instancia | Session Manager (shell y túneles sin abrir puertos) y escritura en `postgres/` del bucket de backups |
-| Bucket S3 | Backups de Postgres, cifrado, sin acceso público, borra los volcados a los `BackupRetentionDays` días. Se conserva si se borra la pila |
+| Elastic IP | IP fija para el DNS; se reasocia sola si la instancia se sustituye |
+| Rol de instancia | Session Manager (shell, túneles y comandos de `deploy.yml` sin abrir puertos), escritura en `postgres/` del bucket y lectura de `deploy/` |
+| Rol de despliegue de GitHub | Lo asume `deploy.yml` por OIDC, solo desde el environment `production` de `GitHubRepository`. Puede leer la pila, subir ficheros a `deploy/` y lanzar comandos SSM en esta instancia |
+| Proveedor OIDC de GitHub | Solo si `GitHubOidcProviderArn` va vacío: una cuenta admite un único proveedor para `token.actions.githubusercontent.com` |
+| Bucket S3 | Backups de Postgres (`postgres/`) y ficheros de cada release (`deploy/`). Cifrado, sin acceso público, borra los volcados a los `BackupRetentionDays` días. Se conserva si se borra la pila |
 | Política DLM | Snapshot diario de la instancia a las 03:00 UTC, conserva `SnapshotRetentionCount` |
 
 En el primer arranque, el *user data* prepara la instancia:
 
 1. Docker Engine (≥ 25, necesario por `start_interval` de los healthchecks), el plugin Compose,
-   `make`, `git` y la AWS CLI.
+   `make` y la AWS CLI.
 2. Rotación de logs de Docker (`json-file`, 3 × 10 MB por contenedor). Alloy los sigue leyendo por
    la API de Docker.
 3. 2 GB de swap.
-4. Usuario de despliegue en el grupo `docker`, con la clave pública de GitHub Actions y la regla
-   `sudoers` que exige `deploy.yml` ([how-to.md](how-to.md#desplegar-producción)).
-5. El repositorio en `/opt/fitcoachia` (rama o tag `RepositoryRef`), que es el contexto de
-   construcción de todas las imágenes, y una copia de `docker-compose.yml` y `Makefile` en el *home*
-   del usuario de despliegue, para `deploy.yml`.
-6. El backup nocturno (`/etc/cron.d/fitcoach-backup`).
+4. El directorio `/opt/fitcoachia`, de root, vacío. El `.env` se crea a mano
+   ([sección 7.2](#72-el-fichero-env)); `docker-compose.yml`, `Makefile` y `backup-postgres.sh` llegan
+   con cada despliegue.
+5. El backup nocturno (`/etc/cron.d/fitcoach-backup`), que no hace nada hasta que el primer
+   despliegue instala `backup-postgres.sh`.
 
 No arranca ningún contenedor: el Compose necesita el `.env` con los secretos, que no debe pasar por
 CloudFormation (quedaría visible en el *user data*). Las redes y los volúmenes los crea el propio
@@ -172,14 +176,15 @@ para pedirlos con tiempo.
 | # | Paso | Quién | Dónde | Sección |
 | --- | --- | --- | --- | --- |
 | 1 | Preparar el equipo: AWS CLI, plugin de Session Manager, perfil SSO | Cada integrante | Su equipo | [3](#3-preparar-el-equipo) |
-| 2 | Generar la clave de despliegue y crear la pila | Administrador de AWS | Su equipo | [4](#4-crear-la-pila) |
+| 2 | Crear la pila | Administrador de AWS | Su equipo | [4](#4-crear-la-pila) |
 | 3 | Crear el registro DNS de `fitcoach.sergiosoriano.es` | **Quien gestiona `sergiosoriano.es`** | Su proveedor de DNS | [5](#5-pedir-el-dns) |
 | 4 | Dar acceso al resto del equipo | Administrador de AWS | IAM Identity Center | [6](#6-acceso-del-equipo) |
-| 5 | Actualizar el repositorio y crear el `.env` | Quien despliega | Instancia | [7](#7-configurar-la-instancia) |
-| 6 | Arrancar todo con un solo comando | Quien despliega | Instancia | [8](#8-arrancar-el-sistema) |
-| 7 | Crear las dos reglas del proxy y su certificado | Quien despliega | Panel de NPM | [9](#9-reglas-del-proxy-en-nginx-proxy-manager) |
-| 8 | Mover `grafana.fitcoach` y revisar BotFather | **Quien gestiona `sergiosoriano.es`** | DNS, BotFather | [10](#10-cerrar-la-puesta-en-marcha) |
-| 9 | Comprobar que todo funciona | Quien despliega | Telegram, Grafana, S3 | [11](#11-comprobar) |
+| 5 | Crear el `.env` y hacer login en Docker Hub | Quien despliega | Instancia | [7](#7-configurar-la-instancia) |
+| 6 | Crear el environment `production` y los secretos de GitHub | **Administrador del repositorio** | GitHub | [8.1](#81-configurar-github) |
+| 7 | Primer despliegue | Quien despliega | GitHub Actions o instancia | [8](#8-arrancar-el-sistema) |
+| 8 | Crear las dos reglas del proxy y su certificado | Quien despliega | Panel de NPM | [9](#9-reglas-del-proxy-en-nginx-proxy-manager) |
+| 9 | Mover `grafana.fitcoach` y revisar BotFather | **Quien gestiona `sergiosoriano.es`** | DNS, BotFather | [10](#10-cerrar-la-puesta-en-marcha) |
+| 10 | Comprobar que todo funciona | Quien despliega | Telegram, Grafana, S3 | [11](#11-comprobar) |
 
 ---
 
@@ -225,7 +230,7 @@ aws sso login --profile "$AWS_PROFILE_NAME"
 aws sts get-caller-identity --profile "$AWS_PROFILE_NAME"
 ```
 
-Las variables de PowerShell (`$AwsProfile`, `$Region`, `$PubKey`, `$Ami`...) son variables normales de
+Las variables de PowerShell (`$AwsProfile`, `$Region`, `$OidcArn`, `$Ami`...) son variables normales de
 la sesión: no llevan `$env:`, que solo se usa para variables de entorno
 ([about_Variables](https://learn.microsoft.com/es-es/powershell/module/microsoft.powershell.core/about/about_variables),
 [about_Environment_Variables](https://learn.microsoft.com/es-es/powershell/module/microsoft.powershell.core/about/about_environment_variables)).
@@ -238,34 +243,31 @@ dura la ventana, así que los bloques se ejecutan en orden en la misma.
 
 Lo hace una vez un administrador de AWS, desde la raíz del repositorio.
 
-### 4.1 Clave SSH de despliegue
+### 4.1 Proveedor OIDC de GitHub
 
-La instancia se crea con la clave pública que se le pase en `DeploySshPublicKey`, y la escribe en el
-`authorized_keys` del usuario de despliegue al arrancar. Es la clave que usará `deploy.yml`: su parte
-privada acabará en el secreto `SERVER_PKEY` de GitHub. Se genera una pareja nueva, sin contraseña
-(GitHub Actions no puede teclearla):
+`deploy.yml` entra en AWS con un token OIDC de GitHub, sin claves guardadas. Para eso la cuenta
+necesita un proveedor de identidad para `token.actions.githubusercontent.com`, y solo puede haber
+uno por cuenta. Si ya existe (por ejemplo, porque se creó para otro rol), se le pasa su ARN a la
+pila; si no, se deja vacío y la pila lo crea:
 
 **PowerShell (Windows):**
 
 ```powershell
-New-Item -ItemType Directory -Force $HOME\.ssh | Out-Null
-ssh-keygen -t ed25519 -f $HOME\.ssh\fitcoach-deploy -C github-actions-deploy   # Enter dos veces
-$PubKey = (Get-Content $HOME\.ssh\fitcoach-deploy.pub -Raw).Trim()
+$OidcArn = aws iam list-open-id-connect-providers --profile $AwsProfile `
+  --query "OpenIDConnectProviderList[?ends_with(Arn, 'token.actions.githubusercontent.com')].Arn" --output text
+$OidcArn   # vacío si no existe
 ```
 
 **bash (Linux, macOS, WSL):**
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/fitcoach-deploy -C github-actions-deploy -N ''
-PUBKEY=$(cat ~/.ssh/fitcoach-deploy.pub)
+OIDC_ARN=$(aws iam list-open-id-connect-providers --profile "$AWS_PROFILE_NAME" \
+  --query "OpenIDConnectProviderList[?ends_with(Arn, 'token.actions.githubusercontent.com')].Arn" --output text)
+echo "$OIDC_ARN"   # vacío si no existe
 ```
 
-- La clave privada (`fitcoach-deploy`, sin `.pub`) se entrega al administrador del repositorio por un
-  canal seguro, nunca por chat o correo sin cifrar, y la guarda en `SERVER_PKEY` al final de la
-  puesta en marcha ([sección 10](#10-cerrar-la-puesta-en-marcha)). Hasta entonces `deploy.yml` sigue
-  desplegando en el servidor actual con la clave de siempre.
-- Esta clave es solo para `deploy.yml`: las personas entran con su propio usuario
-  ([sección 6](#6-acceso-del-equipo)).
+La pila crea su propio rol de despliegue con los permisos justos. Un rol que ya exista para GitHub
+con permisos amplios no se usa, y se puede borrar si nada más lo necesita.
 
 ### 4.2 AMI, VPC y subred
 
@@ -300,9 +302,9 @@ sustituye la instancia por sorpresa ([sección 12.2](#122-actualizar-la-pila)).
 
 ### 4.3 Crear el change set, revisarlo y ejecutarlo
 
-`RepositoryRef` es la rama o el tag que la instancia clona en `/opt/fitcoachia`. Debe contener
-`infra/aws/ec2/`: si no, el arranque falla al no encontrar el script de backup. Mientras esta carpeta
-no esté en `develop` (el valor por defecto), usar `feat/cloud-architecture`.
+`GitHubRepository` (por defecto `SorianoTech/FitCoachIA`) debe coincidir, mayúsculas incluidas,
+con el nombre del repositorio en GitHub: el rol solo acepta tokens de ese repositorio y de su
+environment `production`.
 
 `--no-execute-changeset` prepara los cambios sin aplicarlos, para revisarlos antes:
 
@@ -315,7 +317,7 @@ aws cloudformation deploy --profile $AwsProfile --region $Region `
   --capabilities CAPABILITY_IAM `
   --no-execute-changeset `
   --parameter-overrides "VpcId=$VpcId" "SubnetId=$SubnetId" "ImageId=$Ami" `
-    "DeploySshPublicKey=$PubKey" "RepositoryRef=feat/cloud-architecture"
+    "GitHubOidcProviderArn=$OidcArn"
 ```
 
 **bash (Linux, macOS, WSL):**
@@ -327,7 +329,7 @@ aws cloudformation deploy --profile "$AWS_PROFILE_NAME" --region "$REGION" \
   --capabilities CAPABILITY_IAM \
   --no-execute-changeset \
   --parameter-overrides "VpcId=$VPC_ID" "SubnetId=$SUBNET_ID" "ImageId=$AMI" \
-    "DeploySshPublicKey=$PUBKEY" "RepositoryRef=feat/cloud-architecture"
+    "GitHubOidcProviderArn=$OIDC_ARN"
 ```
 
 El comando termina imprimiendo el ARN del change set. Para revisarlo, ejecutarlo y esperar a que
@@ -354,10 +356,12 @@ aws cloudformation update-termination-protection --profile fitcoach --region eu-
 aws cloudformation describe-stacks --profile fitcoach --region eu-west-1 --stack-name fitcoach-prod --query "Stacks[0].Outputs" --output table
 ```
 
-Apuntar dos salidas, que se usan en el resto del documento:
+Apuntar estas salidas, que se usan en el resto del documento:
 
 - `InstanceId`: el valor de `$InstanceId` / `INSTANCE_ID` ([sección 3](#3-preparar-el-equipo)).
-- `PublicIp`: la Elastic IP, para el DNS ([sección 5](#5-pedir-el-dns)) y `SERVER_HOST`.
+- `PublicIp`: la Elastic IP, para el DNS ([sección 5](#5-pedir-el-dns)).
+- `DeployRoleArn`: el secreto `AWS_DEPLOY_ROLE_ARN` de GitHub ([sección 8.1](#81-configurar-github)).
+- `BackupBucketName`: el bucket de backups y de los ficheros de cada release.
 
 ---
 
@@ -400,15 +404,15 @@ dig +short fitcoach.sergiosoriano.es A
 ## 6. Acceso del equipo
 
 Cada integrante entra en la instancia **con su propio usuario de AWS a través de Session Manager**,
-sin claves SSH compartidas y sin usar el puerto 22 (que queda solo para `deploy.yml`). La plantilla ya
-da a la instancia el permiso de Session Manager.
+sin claves SSH compartidas y con el puerto 22 cerrado. La plantilla ya da a la instancia el permiso
+de Session Manager, el mismo canal que usa `deploy.yml`.
 
 - Cada sesión queda registrada a nombre de quien la abre.
 - No hay claves de equipo que guardar ni rotar.
 - Quitar el acceso a alguien es desactivar su usuario en IAM Identity Center.
 
-No se debe repartir una clave común ni la clave de `deploy.yml`: no se sabría quién hace qué y, si
-alguien deja el proyecto, habría que cambiarla para todos.
+No se debe repartir una clave común: no se sabría quién hace qué y, si alguien deja el proyecto,
+habría que cambiarla para todos.
 
 ### 6.1 Usuarios en IAM Identity Center (un administrador, una vez)
 
@@ -478,8 +482,7 @@ aws ssm start-session --profile "$AWS_PROFILE_NAME" --region eu-west-1 --target 
 ```
 
 Se entra como `ssm-user`, que tiene `sudo`. Para trabajar con más comodidad: `sudo -iu ubuntu` o
-`bash -l`. Ojo: el usuario de despliegue (`fitcoach` por defecto) es otro, y su *home* es
-`/home/fitcoach`.
+`bash -l`.
 
 ### 6.3 Túneles a paneles internos
 
@@ -568,21 +571,17 @@ conexión viaja por Session Manager. Ubuntu 24.04 ya trae EC2 Instance Connect i
 ## 7. Configurar la instancia
 
 Una sola vez. Producción no llegó a funcionar en el servidor actual, así que **no se migran datos**:
-lo único que hay que llevar a la instancia es el `.env`.
+lo único que hay que llevar a la instancia es el `.env`. El resto llega con cada despliegue.
 
-### 7.1 Comprobar el arranque y actualizar el repositorio
+### 7.1 Comprobar el arranque
 
-Entrar en la instancia ([sección 6.2](#62-entrar-en-la-instancia)) y:
+Entrar en la instancia ([sección 6.2](#62-entrar-en-la-instancia)) y esperar a que termine el *user
+data*. Debe acabar en `status: done`:
 
 **bash (en la instancia):**
 
 ```bash
-# Esperar a que termine el user data: debe acabar en "status: done"
 cloud-init status --wait
-
-# Traer el repositorio a la última versión de la rama y reinstalar el script de backup
-sudo git -C /opt/fitcoachia pull
-sudo install -m 755 /opt/fitcoachia/infra/aws/ec2/backup-postgres.sh /usr/local/bin/fitcoach-backup
 ```
 
 Si `cloud-init` termina en error, el detalle está en `/var/log/cloud-init-output.log`.
@@ -653,18 +652,23 @@ sudo nano /opt/fitcoachia/.env
 ```
 
 No usar S3 como paso intermedio: los secretos quedarían guardados en el bucket (y en sus versiones),
-y el rol de la instancia solo puede leer `postgres/`.
+y el rol de la instancia solo puede leer `postgres/` y `deploy/`.
 
-### 7.3 Login de Docker Hub (solo si hace falta)
+### 7.3 Login de Docker Hub
 
-Las imágenes base (Postgres, pgAdmin, Grafana, Nginx Proxy Manager...) se descargan de Docker Hub sin
-cuenta. Si el límite de descargas anónimas diera problemas, hacer login:
+La imagen de la aplicación, `fitcoachia/fitcoach-app`, es **privada**: sin login, el despliegue falla
+al descargarla. El resto de imágenes son públicas. El login se hace como root, que es quien ejecuta
+los despliegues, con un *Personal Access Token* de Docker Hub de solo lectura (*Account settings* →
+*Personal access tokens*, permiso *Read-only*), nunca con la contraseña de la cuenta:
 
 **bash (en la instancia):**
 
 ```bash
-sudo docker login
+sudo docker login -u <usuario-de-docker-hub>   # pide el token como contraseña
 ```
+
+Docker guarda el token en `/root/.docker/config.json`, codificado pero no cifrado; solo root puede
+leerlo. Si se revoca el token, hay que repetir el login.
 
 ### 7.4 Si la instancia ya tenía la instalación anterior
 
@@ -693,7 +697,21 @@ sudo docker network rm proxy-network fitcoach-prod-internal fitcoach-dev-interna
 # 4. Pasar los valores de los .env anteriores al .env único (7.2) y borrar los antiguos
 sudo shred -u /etc/fitcoachia/prod/.env.prod /opt/fitcoachia/infra/vector-db/.env.prod \
   /opt/fitcoachia/infra/observability/.env
+
+# 5. Sacar el repositorio clonado de /opt/fitcoachia, conservando el .env único si ya existe
+sudo mv /opt/fitcoachia /opt/fitcoachia.repo
+sudo install -d -m 755 -o root -g root /opt/fitcoachia
+[ -f /opt/fitcoachia.repo/.env ] && sudo mv /opt/fitcoachia.repo/.env /opt/fitcoachia/.env
+sudo rm -rf /opt/fitcoachia.repo /etc/fitcoachia
+
+# 6. Quitar el usuario de despliegue por SSH y apuntar el backup al script que instala cada despliegue
+sudo rm -f /etc/sudoers.d/fitcoach-deploy /usr/local/bin/fitcoach-backup
+sudo userdel -r fitcoach
+sudo sed -i 's#/usr/local/bin/fitcoach-backup#/opt/fitcoachia/backup-postgres.sh#' /etc/cron.d/fitcoach-backup
 ```
+
+Los pasos 5 y 6 son los que haría el *user data* actual, que no se vuelve a ejecutar al actualizar la
+pila ([sección 12.2](#122-actualizar-la-pila)).
 
 Compose avisará de que `fitcoach_npm-data` y `fitcoach_npm-letsencrypt` «ya existen pero no los creó
 Compose»: es esperado y los usa igualmente. Las bases de datos y el histórico de observabilidad
@@ -717,31 +735,107 @@ docker ps --filter name=fitcoach-ia --format '{{.Names}}'
 sudo make prod-down
 ```
 
-Después, en la instancia, un solo comando arranca todo:
+El sistema se arranca con el mismo script que usan todos los despliegues,
+[`deploy-release.sh`](../infra/aws/ec2/deploy-release.sh): instala en `/opt/fitcoachia` el
+`docker-compose.yml`, el `Makefile` y `backup-postgres.sh` de una versión publicada y lanza
+`make prod-up`. Se puede lanzar desde GitHub Actions ([8.2](#82-primer-despliegue-con-el-workflow))
+o a mano ([8.3](#83-despliegue-a-mano)). En los dos casos hace falta una versión publicada en Docker
+Hub por `release.yml`, que incluya `deploy-release.sh`.
+
+### 8.1 Configurar GitHub
+
+Lo hace un administrador del repositorio, en *Settings*:
+
+1. *Environments* → *New environment* → `production`. En *Deployment branches and tags*, elegir
+   *Selected branches and tags* y añadir `develop` y `release/*`, las ramas desde las que se
+   publican versiones. Opcionalmente, *Required reviewers* para aprobar cada despliegue.
+2. *Secrets and variables* → *Actions*, como secretos del repositorio o del environment
+   `production`:
+
+| Secreto | Valor |
+| --- | --- |
+| `AWS_DEPLOY_ROLE_ARN` | Salida `DeployRoleArn` de la pila |
+| `AWS_REGION` | `eu-west-1` |
+| `AWS_STACK_NAME` | `fitcoach-prod` |
+
+3. Borrar los secretos que ya no se usan: `SERVER_HOST`, `SERVER_USER`, `SERVER_PKEY`,
+   `ENV_FILE_PATH` y `DOCKER_IMAGE_NAME`.
+
+El rol de despliegue puede ejecutar cualquier comando como root en la instancia, así que quien pueda
+lanzar un workflow en `production` controla la máquina. Por eso conviene limitar el environment a
+`develop` y `release/*`, ramas protegidas.
+
+### 8.2 Primer despliegue con el workflow
+
+- Si aún no hay ninguna versión publicada, lanzar **Generate and deploy release** (`release.yml`)
+  desde `develop` con la versión nueva: publica las imágenes, crea la release y despliega.
+- Si la versión ya está publicada, lanzar **Deploy release** (`deploy.yml`) con esa versión.
+
+La salida de `deploy-release.sh` aparece en el log del job *Deploy-to-server*. Detalle del flujo en
+[ci-cd.md](ci-cd.md#25-continuous-deployment--deployyml).
+
+### 8.3 Despliegue a mano
+
+Sin GitHub Actions, con los mismos pasos. Desde la raíz del repositorio, en el tag de la versión
+(`git checkout <versión>`), subir los cuatro ficheros a S3 con un usuario que pueda escribir en el
+bucket (el administrador):
+
+**PowerShell (Windows):**
+
+```powershell
+$Version = "X.Y.Z"
+$Bucket = aws cloudformation describe-stacks --profile $AwsProfile --region $Region --stack-name fitcoach-prod `
+  --query "Stacks[0].Outputs[?OutputKey=='BackupBucketName'].OutputValue" --output text
+foreach ($f in "docker-compose.yml", "Makefile", "infra/aws/ec2/backup-postgres.sh", "infra/aws/ec2/deploy-release.sh") {
+  aws s3 cp --profile $AwsProfile --region $Region $f "s3://$Bucket/deploy/$Version/"
+}
+```
+
+**bash (Linux, macOS, WSL):**
+
+```bash
+VERSION=X.Y.Z
+BUCKET=$(aws cloudformation describe-stacks --profile "$AWS_PROFILE_NAME" --region "$REGION" --stack-name fitcoach-prod \
+  --query "Stacks[0].Outputs[?OutputKey=='BackupBucketName'].OutputValue" --output text)
+for f in docker-compose.yml Makefile infra/aws/ec2/backup-postgres.sh infra/aws/ec2/deploy-release.sh; do
+  aws s3 cp --profile "$AWS_PROFILE_NAME" --region "$REGION" "$f" "s3://$BUCKET/deploy/$VERSION/"
+done
+```
+
+Después, en la instancia, descargarlos y lanzar el script:
 
 **bash (en la instancia):**
 
 ```bash
-cd /opt/fitcoachia
-sudo docker compose up -d --build
-sudo docker compose ps
+VERSION=X.Y.Z
+BUCKET=<bucket>
+WORK=$(mktemp -d)
+aws s3 cp --recursive "s3://$BUCKET/deploy/$VERSION/" "$WORK/"
+sudo bash "$WORK/deploy-release.sh" "$VERSION" "$WORK"
+rm -rf "$WORK"
 ```
 
-Qué ocurre, en orden:
+### 8.4 Qué ocurre en el arranque
 
-1. **Construcción de imágenes**: la aplicación, el embedder, pgVector y las seis piezas de
-   observabilidad, con su configuración ya dentro de la imagen. La primera vez tarda varios minutos.
+En orden:
+
+1. **Descarga de imágenes** (`docker compose pull`): la aplicación con la versión desplegada, y el
+   embedder, pgVector y las seis piezas de observabilidad con el tag fijado en el compose, con su
+   configuración ya dentro de la imagen. Si falta alguna en Docker Hub, no se arranca nada.
 2. **Redes y volúmenes**: `proxy-network`, `fitcoach-internal` y `observability`, y un volumen por
    base de datos y por componente de observabilidad.
 3. **pgVector**: con el volumen vacío, ejecuta los scripts de `infra/vector-db/ddl/` (catálogo de
    ejercicios y roles `fitcoach_ro` y `fitcoach_writer`). Solo ocurre la primera vez y puede tardar
-   varios minutos; la API espera a que esté sano. Se sigue con `sudo docker compose logs -f pgvector`.
+   varios minutos; la API espera a que esté sano. Se sigue con `sudo docker compose logs -f pgvector`
+   desde `/opt/fitcoachia`.
 4. **API**: ejecuta las migraciones de Alembic, que crean las tablas en `fitcoach-postgres`, registra
    el webhook del bot con `https://fitcoach.sergiosoriano.es` y el botón de menú con la `miniapp_url`.
 5. **Nginx Proxy Manager**: arranca el último, cuando la API, Grafana y pgAdmin están sanos.
+6. `make prod-up` espera hasta 900 s a que todos los servicios estén sanos. Si no lo consiguen, el
+   despliegue termina en error (en el primero no hay versión anterior a la que volver).
 
 `APP_PORT`, `VECTOR_PORT` y `PGADMIN_PORT` quedan publicados en la instancia, pero el security group
-solo deja pasar 80, 443 y 22: desde fuera solo se llega por Nginx Proxy Manager, y a pgAdmin por
+solo deja pasar 80 y 443: desde fuera solo se llega por Nginx Proxy Manager, y a pgAdmin por
 túnel ([sección 6.3](#63-túneles-a-paneles-internos)).
 
 ---
@@ -833,16 +927,15 @@ Un `502 Bad Gateway` indica que la regla funciona pero la API no responde: revis
    servidor actual deja de tener nombre público; se puede seguir usando por túnel o con otro nombre.
 2. **BotFather.** Si el bot de producción tiene la Mini App configurada también en BotFather
    (*Main Mini App*), cambiar allí la URL a `https://fitcoach.sergiosoriano.es/miniapp/`.
-3. **Secretos de GitHub** (`SERVER_PKEY` con la clave de la [sección 4.1](#41-clave-ssh-de-despliegue),
-   `SERVER_HOST` y `SERVER_USER`): se cambian cuando `deploy.yml` esté adaptado al Compose único
-   ([sección 14](#14-decisiones-y-puntos-abiertos)). Hasta entonces, las actualizaciones se hacen a
-   mano ([sección 12.3](#123-actualizar-la-aplicación)).
+3. **Servidor actual.** Desde que existe el environment `production` con los secretos nuevos, las
+   releases despliegan en la instancia, no en el servidor actual.
 
 ---
 
 ## 11. Comprobar
 
-- `sudo docker compose ps`: todos los servicios `running` y, los que tienen healthcheck, `healthy`.
+- `sudo docker compose ps` en `/opt/fitcoachia`: todos los servicios `running` y, los que tienen
+  healthcheck, `healthy`.
 - `https://api.telegram.org/bot<TOKEN>/getWebhookInfo` (con el token del bot de producción): `url`
   es `https://fitcoach.sergiosoriano.es/webhook/response` y no hay `last_error_message`.
 - `/start` al bot de producción responde, y la Mini App abre desde el botón de menú.
@@ -862,8 +955,8 @@ Si algo falla y hay que dar marcha atrás, basta con `sudo docker compose down` 
 [`infra/aws/ec2/backup-postgres.sh`](../infra/aws/ec2/backup-postgres.sh) hace un `pg_dump` en
 formato custom de cada base (`fitcoach-postgres` y `pgvector`) **dentro de su contenedor**, con las
 credenciales que ya tiene el propio contenedor, y lo sube a `s3://<bucket>/postgres/<fecha>/` con el
-rol de la instancia. La plantilla lo instala en `/usr/local/bin/fitcoach-backup` y lo programa a las
-03:30 UTC; el bucket es la salida `BackupBucketName` de la pila.
+rol de la instancia. Cada despliegue lo deja en `/opt/fitcoachia/backup-postgres.sh` y la plantilla lo
+programa a las 03:30 UTC; el bucket es la salida `BackupBucketName` de la pila.
 
 Restaurar una base:
 
@@ -886,9 +979,10 @@ Se repite el `deploy` de la [sección 4.3](#43-crear-el-change-set-revisarlo-y-e
 - Comprobar que `Instance` no aparece con `Replacement` a `True`. Cambiar `ImageId` o `SubnetId`
   **sustituye la instancia**: el disco antiguo no se borra, pero la nueva arranca vacía.
 - Cambiar `InstanceType` solo para y arranca la instancia.
-- El *user data* y sus parámetros (`DeploySshPublicKey`, `DeployUser`, `RepositoryRef`...) solo se
-  aplican en el primer arranque. Cambiarlos en una pila existente para y arranca la instancia sin
-  volver a ejecutarlos; lo que cambie ahí se aplica a mano desde Session Manager.
+- El *user data* solo se aplica en el primer arranque. Cambiarlo en una pila existente para y arranca
+  la instancia sin volver a ejecutarlo; lo que cambie ahí se aplica a mano desde Session Manager
+  (para el paso al despliegue por SSM, los pasos 5 y 6 de la
+  [sección 7.4](#74-si-la-instancia-ya-tenía-la-instalación-anterior)).
 
 La plantilla se valida con `cfn-lint`, el validador de AWS para CloudFormation. Corre como hook de
 pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-lint --all-files`, o
@@ -896,18 +990,34 @@ pre-commit al cambiar la plantilla; para lanzarlo a mano: `pre-commit run cfn-li
 
 ### 12.3 Actualizar la aplicación
 
-Mientras `deploy.yml` no esté adaptado al Compose único, se actualiza a mano en la instancia:
+Lo normal es publicar una versión con **Generate and deploy release** (`release.yml`), que despliega
+al terminar. Para volver a desplegar una versión ya publicada, por ejemplo para volver atrás, se
+lanza **Deploy release** (`deploy.yml`) con esa versión, o se hace a mano como en la
+[sección 8.3](#83-despliegue-a-mano).
+
+Si un despliegue falla, `deploy-release.sh` vuelve solo a la versión anterior. Para volver atrás a mano
+en la instancia:
 
 **bash (en la instancia):**
 
 ```bash
 cd /opt/fitcoachia
-sudo git pull
-sudo docker compose up -d --build
+sudo cp docker-compose.prev.yml docker-compose.yml
+sudo VERSION=<versión-anterior> make prod-up
 ```
 
-Compose reconstruye las imágenes que hayan cambiado y recrea solo los contenedores afectados; los
-volúmenes se conservan. Si cambia el `.env`, basta con `sudo docker compose up -d`.
+Si solo cambia el `.env`, se relanza `make prod-up` con la versión en servicio: sin `VERSION`, Compose
+usaría la imagen `latest` de la aplicación.
+
+**bash (en la instancia):**
+
+```bash
+cd /opt/fitcoachia
+sudo docker inspect -f '{{.Config.Image}}' fitcoach-ia   # fitcoachia/fitcoach-app:<versión>
+sudo VERSION=<versión> make prod-up
+```
+
+Compose recrea solo los contenedores afectados; los volúmenes se conservan.
 
 ---
 
@@ -929,8 +1039,7 @@ volúmenes se conservan. Si cambia el `.env`, basta con `sudo docker compose up 
 - Memoria estimada con `t3.large`: aplicación 3–4,3 GB (embedder 1,5–2 GB, API, dos Postgres,
   pgAdmin) más 1,2–1,6 GB del stack de observabilidad y ~0,4 GB del sistema: **≈ 4,6–6,3 GB de 8**,
   más 2 GB de swap. Cabe, pero sin mucho margen. Medir con `sudo docker stats --no-stream` una vez
-  arrancado y, si pasa de 6 GB, usar `t3.xlarge`. Construir las imágenes también consume CPU y
-  memoria durante unos minutos.
+  arrancado y, si pasa de 6 GB, usar `t3.xlarge`.
 - Disco: Prometheus guarda 30 días, Loki 14 y Tempo 7. Con el tráfico actual son pocos GB.
 - El stack no incluye métricas del host (CPU, RAM, disco de la instancia). Si se quieren en
   Grafana, el paso natural es añadir `node-exporter` al Compose.
@@ -942,8 +1051,11 @@ volúmenes se conservan. Si cambia el `.env`, basta con `sudo docker compose up 
 Decisiones tomadas:
 
 - **Todo en un único Compose y un único `.env`**: un comando arranca o actualiza el sistema entero.
-- **Imágenes construidas en la instancia**: no hace falta publicar en un registro las del embedder,
-  pgVector ni la observabilidad.
+- **Imágenes desde Docker Hub, sin construir en la instancia**: la aplicación con la versión de la
+  release y el resto con un tag por componente fijado en el compose. Solo `fitcoachia/fitcoach-app`
+  es privada (el plan gratuito admite un repositorio privado).
+- **Despliegue por SSM con un rol OIDC propio de la pila**: sin SSH, puerto 22, usuario de
+  despliegue, `sudo` ni repositorio clonado en la instancia.
 - **Migraciones en el `ENTRYPOINT`** (`src/Dockerfile`): con una sola réplica de la API no hay
   carreras.
 - **Dos Postgres en contenedor**: la base de la aplicación y la vectorial siguen separadas.
@@ -954,10 +1066,8 @@ Decisiones tomadas:
 
 Puntos abiertos:
 
-1. **`deploy.yml`.** `make prod-up` ya descarga las imágenes y arranca sin construir, y
-   `release.yml` ya publica todas las imágenes del compose, pero `deploy.yml` sigue con el esquema
-   anterior (SSH, `/home/<DEPLOY_USER>`, `.env.prod`). Hasta adaptarlo, se actualiza a mano
-   ([sección 12.3](#123-actualizar-la-aplicación)).
+1. **`up --wait` y `otel-collector-init`**: falta comprobar en la instancia que `make prod-up` no da
+   por fallido el arranque por este contenedor, que termina a propósito con código 0.
 2. **Puertos publicados en todas las interfaces** (`APP_PORT`, `VECTOR_PORT`, `PGADMIN_PORT`): hoy
    solo los protege el security group. Publicarlos en `127.0.0.1` añadiría una segunda barrera.
 3. **Entorno de desarrollo**: dejarlo en el servidor actual (por defecto en este documento) o

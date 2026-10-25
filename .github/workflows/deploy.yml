@@ -56,6 +56,8 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
+          # Mas que la espera del comando SSM; el rol admite hasta 7200 s (MaxSessionDuration).
+          role-duration-seconds: 7200
 
       - name: Leer instancia y bucket de la pila
         id: stack

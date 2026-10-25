@@ -1,18 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   FitCoachIA on a single EC2 instance: the same Docker Compose stack as the current server
-  (app, embedder, PostgreSQL, pgVector, Nginx Proxy Manager and the project observability stack).
-  See docs/despliegue-aws-ec2.md.
+  (app, embedder, PostgreSQL, pgVector, Nginx Proxy Manager and the project observability stack),
+  deployed by GitHub Actions through SSM. See docs/despliegue-aws-ec2.md.
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label: { default: Network }
-        Parameters: [VpcId, SubnetId, SshIngressCidr]
+        Parameters: [VpcId, SubnetId]
       - Label: { default: Instance }
         Parameters: [ImageId, InstanceType, RootVolumeSize, SwapSize]
       - Label: { default: Deployment }
-        Parameters: [DeployUser, DeploySshPublicKey, RepositoryUrl, RepositoryRef]
+        Parameters: [GitHubRepository, GitHubOidcProviderArn]
       - Label: { default: Backups }
         Parameters: [BackupRetentionDays, SnapshotRetentionCount]
 
@@ -23,12 +23,6 @@ Parameters:
   SubnetId:
     Type: AWS::EC2::Subnet::Id
     Description: Public subnet of that VPC. Changing it replaces the instance.
-  SshIngressCidr:
-    Type: String
-    Default: 0.0.0.0/0
-    AllowedPattern: ^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$
-    Description: >-
-      Source allowed on port 22. deploy.yml connects from GitHub-hosted runners, whose IPs vary.
   ImageId:
     Type: AWS::EC2::Image::Id
     Description: >-
@@ -49,22 +43,17 @@ Parameters:
     Type: String
     Default: 2G
     AllowedPattern: ^\d+G$
-  DeployUser:
+  GitHubRepository:
     Type: String
-    Default: fitcoach
-    AllowedPattern: ^[a-z][a-z0-9_-]{0,30}$
-    Description: SSH user of deploy.yml (GitHub secret SERVER_USER).
-  DeploySshPublicKey:
+    Default: SorianoTech/FitCoachIA
+    AllowedPattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+    Description: owner/repo whose deploy.yml may deploy, with the exact case shown by GitHub.
+  GitHubOidcProviderArn:
     Type: String
-    AllowedPattern: ^ssh-(ed25519|rsa) .+$
-    Description: Public key whose private half is the GitHub secret SERVER_PKEY.
-  RepositoryUrl:
-    Type: String
-    Default: https://github.com/SorianoTech/FitCoachIA.git
-  RepositoryRef:
-    Type: String
-    Default: develop
-    Description: Branch or tag cloned to /opt/fitcoachia (pgVector build context, observability, scripts).
+    Default: ""
+    Description: >-
+      ARN of the account's existing token.actions.githubusercontent.com OIDC provider (only one per
+      account). Empty: the stack creates it.
   BackupRetentionDays:
     Type: Number
     Default: 30
@@ -74,18 +63,20 @@ Parameters:
     Default: 7
     MinValue: 1
 
+Conditions:
+  CreateGitHubOidcProvider: !Equals [!Ref GitHubOidcProviderArn, ""]
+
 Resources:
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: FitCoachIA EC2 - HTTPS for Telegram and the Mini App, SSH for deploy.yml
+      GroupDescription: FitCoachIA EC2 - HTTPS for Telegram and the Mini App
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: Telegram webhook and Mini App }
         - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIpv6: "::/0", Description: Telegram webhook and Mini App }
         - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTPS redirect and Lets Encrypt HTTP-01 }
         - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIpv6: "::/0", Description: HTTPS redirect and Lets Encrypt HTTP-01 }
-        - { IpProtocol: tcp, FromPort: 22, ToPort: 22, CidrIp: !Ref SshIngressCidr, Description: deploy.yml over SSH }
       Tags:
         - { Key: Name, Value: !Sub "${AWS::StackName}-sg" }
 
@@ -135,6 +126,14 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt BackupBucket.Arn
+        - PolicyName: release-files
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Files of each release, uploaded by deploy.yml.
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ${BackupBucket.Arn}/deploy/*
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -166,19 +165,15 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Leaves the host like the current server. Output: /var/log/cloud-init-output.log
+          # Prepares the host; each deploy brings the compose and scripts. Output: /var/log/cloud-init-output.log
           set -euxo pipefail
-          DEPLOY_USER="${DeployUser}"
-          DEPLOY_SSH_PUBKEY="${DeploySshPublicKey}"
-          REPO_URL="${RepositoryUrl}"
-          REPO_REF="${RepositoryRef}"
           BACKUP_BUCKET="${BackupBucket}"
           SWAP_SIZE="${SwapSize}"
           export DEBIAN_FRONTEND=noninteractive
 
           # Docker Engine >= 25 (healthcheck start_interval) and the Compose plugin.
           apt-get update
-          apt-get install -y ca-certificates curl git make
+          apt-get install -y ca-certificates curl make
           install -m 0755 -d /etc/apt/keyrings
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
           chmod a+r /etc/apt/keyrings/docker.asc
@@ -206,37 +201,14 @@ Resources:
             echo '/swapfile none swap sw 0 0' >> /etc/fstab
           fi
 
-          # Deploy user: docker without sudo, sudo only for what reads the root-owned .env.prod.
-          id "$DEPLOY_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$DEPLOY_USER"
-          usermod -aG docker "$DEPLOY_USER"
-          install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
-          echo "$DEPLOY_SSH_PUBKEY" > "/home/$DEPLOY_USER/.ssh/authorized_keys"
-          chown "$DEPLOY_USER:$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh/authorized_keys"
-          chmod 600 "/home/$DEPLOY_USER/.ssh/authorized_keys"
-          echo "$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/make, /usr/bin/test, /bin/ls" > /etc/sudoers.d/fitcoach-deploy
-          chmod 0440 /etc/sudoers.d/fitcoach-deploy
-          visudo -c
-          install -d -m 700 -o root -g root /etc/fitcoachia/prod /etc/fitcoachia/dev
+          # Deploy directory: the .env (600 root) is created by hand, the rest comes with each deploy.
+          install -d -m 755 -o root -g root /opt/fitcoachia
 
-          # External networks of the app, pgVector and observability composes.
-          for network in proxy-network fitcoach-prod-internal fitcoach-dev-internal; do
-            docker network inspect "$network" >/dev/null 2>&1 || docker network create "$network"
-          done
-
-          # Repository: pgVector build context, observability configs and these scripts.
-          [ -d /opt/fitcoachia/.git ] || git clone --branch "$REPO_REF" "$REPO_URL" /opt/fitcoachia
-          install -m 644 -o "$DEPLOY_USER" -g "$DEPLOY_USER" \
-            /opt/fitcoachia/docker-compose.yml /opt/fitcoachia/Makefile "/home/$DEPLOY_USER/"
-
-          # Nightly pg_dump to S3; cron's PATH lacks /snap/bin, where the AWS CLI lives.
-          install -m 750 /opt/fitcoachia/infra/aws/ec2/backup-postgres.sh /usr/local/bin/fitcoach-backup
+          # Nightly pg_dump to S3 once the first deploy installs the script; cron's PATH lacks /snap/bin (AWS CLI).
           cat > /etc/cron.d/fitcoach-backup <<CRON
           PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
-          30 3 * * * root BACKUP_BUCKET=$BACKUP_BUCKET /usr/local/bin/fitcoach-backup >> /var/log/fitcoach-backup.log 2>&1
+          30 3 * * * root [ -x /opt/fitcoachia/backup-postgres.sh ] && BACKUP_BUCKET=$BACKUP_BUCKET /opt/fitcoachia/backup-postgres.sh >> /var/log/fitcoach-backup.log 2>&1
           CRON
-
-          # Reverse proxy: needs no secrets, so it can start now.
-          docker compose -f /opt/fitcoachia/infra/aws/ec2/nginx-proxy-manager.compose.yml up -d
 
   ElasticIp:
     Type: AWS::EC2::EIP
@@ -245,6 +217,51 @@ Resources:
       InstanceId: !Ref Instance
       Tags:
         - { Key: Name, Value: !Ref AWS::StackName }
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateGitHubOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  # deploy.yml: only from the production environment of the repository, through SSM (root on the instance).
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub deploy.yml of ${GitHubRepository} on ${AWS::StackName}
+      MaxSessionDuration: 7200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If [CreateGitHubOidcProvider, !Ref GitHubOidcProvider, !Ref GitHubOidcProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:environment:production
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Ref AWS::StackId
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${BackupBucket.Arn}/deploy/*
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instance}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript
+              # GetCommandInvocation has no resource-level permissions.
+              - Effect: Allow
+                Action: ssm:GetCommandInvocation
+                Resource: "*"
 
   SnapshotRole:
     Type: AWS::IAM::Role
@@ -279,10 +296,13 @@ Outputs:
   InstanceId:
     Value: !Ref Instance
   PublicIp:
-    Description: DNS A record of the API and Grafana domains, and the GitHub secret SERVER_HOST.
+    Description: DNS A record of the API and Grafana domains.
     Value: !Ref ElasticIp
   BackupBucketName:
     Value: !Ref BackupBucket
+  DeployRoleArn:
+    Description: GitHub secret AWS_DEPLOY_ROLE_ARN.
+    Value: !GetAtt GitHubDeployRole.Arn
   SessionCommand:
     Description: Shell on the instance through Session Manager.
     Value: !Sub aws ssm start-session --region ${AWS::Region} --target ${Instance}

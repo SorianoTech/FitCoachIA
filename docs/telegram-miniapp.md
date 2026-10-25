@@ -28,9 +28,8 @@ para acceder; la autorización se comprueba en cada endpoint del servidor.
 ### Nginx Proxy Manager
 
 Usar el mismo **Proxy Host** que ya publica el webhook; no crear otro puerto
-ni otro servicio. En desarrollo, si Nginx Proxy Manager comparte `proxy-network`,
-el destino es `http://fitcoach-ia-dev:8000` (nombre de servicio de Compose).
-En otros entornos, usar el nombre del servicio API correspondiente.
+ni otro servicio. Si Nginx Proxy Manager comparte `proxy-network`, el destino es
+`http://fitcoach-ia:8000` (nombre del contenedor de la API), en cualquier entorno.
 Si el proxy está en otro servidor, usar la dirección y puerto publicados de la
 API, limitando su acceso al proxy.
 

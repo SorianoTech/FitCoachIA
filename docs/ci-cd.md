@@ -89,42 +89,80 @@ usa en local. Gate: cobertura mínima del 80 % como proxy de calidad.
 **Dispara**: `workflow_dispatch` manual con input `version` (`X.Y.Z`) — publicar una versión es una
 decisión humana explícita. **Guardia**: solo se ejecuta si la rama es `develop` o `release/**`.
 
-Objetivo general: convertir un commit en un artefacto versionado, escaneado y trazable, publicando
-únicamente cuando lo anterior ya existe. El orden es deliberado — **se escanea la imagen antes de
-publicarla, y solo se publica después de crear el tag/release**:
+Objetivo general: convertir un commit en imágenes versionadas, escaneadas y trazables, y crear la
+release solo cuando todas están publicadas.
 
-| Paso | Objetivo |
+Las imágenes que publica son las que `docker-compose.yml` construye (servicios con `build:`), todas
+en el namespace `fitcoachia` de Docker Hub. Hoy son nueve: la app, el embedder, `pgvector` y las seis
+de observabilidad. La app (`fitcoachia/fitcoach-app`) toma la versión de la release; el resto
+llevan un **tag por componente fijado en el compose** (`fitcoachia/embedder:1.0.0`...), porque casi
+nunca cambian y no tiene sentido republicarlas en cada release. Solo `fitcoach-app` es privada; el
+resto son públicas.
+
+| Job / paso | Objetivo |
 |---|---|
-| Validar formato semver + que la versión no exista ya en el registro | Evita releases ambiguos o sobrescribir un tag ya publicado. |
-| Build de la imagen sin publicarla (`push: false`) | Permite escanearla antes de que sea pública. |
-| **Trivy** (escaneo de la imagen) | Equivalente a Semgrep pero sobre el artefacto construido (paquetes de SO + librerías del contenedor), no sobre el código fuente. Informativo, no bloquea el release; sube SARIF a la misma pestaña **Security** de GitHub que Semgrep, como un hallazgo distinto. |
-| **GitHub Release** (tag + notas autogeneradas) | El artefacto final y trazable que queda publicado en GitHub (pestaña *Releases*, no *Security*): la versión pasa a existir oficialmente aquí, antes incluso de publicarse la imagen. |
-| `docker push` | Último paso: la imagen solo llega al registro una vez que el release ya existe y fue escaneada. |
+| `Prepare`: validar formato semver | Evita releases ambiguos. |
+| `Prepare`: listar imágenes | Lee el compose con `docker compose config --no-interpolate` (sin resolver variables de entorno) y obtiene imagen, contexto y Dockerfile de cada servicio construible. Falla si alguna imagen no tiene tag fijo. |
+| `Prepare`: comprobar Docker Hub | Si la imagen de la app ya existe con esa versión, aborta (no se sobrescribe una release). Si una imagen de componente ya existe con su tag, se omite: no se reconstruye ni se republica. El resumen del job lista qué se publica y qué se omite. |
+| `Build` (una ejecución por imagen pendiente, en paralelo) | Construye sin publicar (`push: false`, caché de buildx en GitHub Actions por imagen), escanea y publica. Un fallo en una imagen no cancela las demás. |
+| **Trivy** (escaneo de cada imagen) | Equivalente a Semgrep pero sobre el artefacto construido (paquetes de SO + librerías del contenedor), no sobre el código fuente. Informativo, no bloquea el release; sube un SARIF por imagen (categoría `trivy-<servicio>`) a la misma pestaña **Security** de GitHub que Semgrep. |
+| `docker push` | Cada imagen llega al registro después de escanearse. |
+| `Release`: **GitHub Release** (tag + notas autogeneradas) | Solo se crea cuando todas las imágenes están publicadas, así una release nunca apunta a imágenes que no existen. |
+| `Deploy` | Llama a `deploy.yml` con la versión. |
+
+Para cambiar un componente (por ejemplo, una regla de alerta, que va dentro de la imagen de
+Grafana), hay que **subir su tag en `docker-compose.yml`** en el mismo cambio. Si no, la siguiente
+release ve el tag ya publicado, lo omite y el cambio no llega a producción.
+
+Si una imagen falla en `Build`, se relanza con **Re-run failed jobs**: repite solo las imágenes que
+fallaron y luego crea la release. Relanzar el workflow entero con la misma versión no sirve si la
+imagen de la app ya se publicó (`Prepare` aborta); en ese caso hay que usar otra versión.
 
 > Semgrep y Trivy son dos escáneres distintos en dos momentos distintos del ciclo — código fuente
-> en CI, imagen construida en el release — pero ambos convergen en la misma pestaña Security de
+> en CI, imágenes construidas en el release — pero ambos convergen en la misma pestaña Security de
 > GitHub. El único fichero que se publica fuera de esa pestaña es la propia **GitHub Release**.
 
 ### 2.5 Continuous Deployment — `deploy.yml`
 
 **Dispara**: automáticamente al terminar `Release`, o de forma independiente vía
-`workflow_dispatch` para redesplegar una versión ya publicada. Los datos de conexión SSH viajan
-como `secrets` (no `inputs`) para que GitHub los enmascare en los logs.
+`workflow_dispatch` para redesplegar una versión ya publicada. Despliega en la instancia EC2 de
+producción ([despliegue-aws-ec2.md](despliegue-aws-ec2.md)) **sin SSH y sin clonar el repositorio**:
 
-Patrón: **recreate verificado con rollback**. Se retira el contenedor en servicio conservando su
-imagen (el artefacto de rollback), se levanta la nueva versión con `make prod-up` y se espera a que
-Docker la marque `healthy` (`healthcheck` de `docker-compose.yml`, sondeado hasta 10 intentos); si
-no lo consigue, se descartan contenedor e imagen nuevos y se restaura la versión anterior —también
-con `make prod-up`— desde la imagen retenida. La
-imagen previa solo se conserva hasta que la nueva demuestra estar sana. Esto implica una ventana
-breve sin servicio en cada despliegue (~10-40 s, más si hay que revertir): el proxy devuelve 502 y
-Telegram reintenta los updates, así que no se pierden mensajes.
+1. Hace checkout del **tag de la versión**, así el compose y el `Makefile` que se despliegan son los
+   de esa release, con sus tags de imagen.
+2. Asume por **OIDC** el rol de AWS que crea la plantilla. Ese rol solo acepta tokens del
+   environment `production` de este repositorio, así que el job declara `environment: production`
+   y no hay claves de AWS guardadas en GitHub.
+3. Lee de la pila de CloudFormation el id de la instancia y el bucket.
+4. Sube `docker-compose.yml`, `Makefile`, `backup-postgres.sh` y `deploy-release.sh` a
+   `s3://<bucket>/deploy/<versión>/`.
+5. Lanza por **SSM** (`AWS-RunShellScript`, como root) un comando que los descarga y ejecuta
+   [`deploy-release.sh`](../infra/aws/ec2/deploy-release.sh), y espera el resultado con un bucle
+   propio (`aws ssm wait command-executed` se rinde a los ~100 s). La salida del script aparece en
+   el log del job.
 
-**Prerrequisitos que CI nunca provee**, deben existir ya en el servidor: el fichero
-`/etc/fitcoachia/prod/.env.prod` con permisos restringidos (no legible por el usuario de
-despliegue), una regla `sudoers` NOPASSWD para ese usuario (ver [`docs/how-to.md`](how-to.md)) y la
-capacidad de crear las redes Docker externas `fitcoach-prod-internal` y `proxy-network`.
-`make prod-up` las crea de forma idempotente si todavía no existen.
+`deploy-release.sh`, en `/opt/fitcoachia`:
+
+1. Anota la versión en servicio (tag de la imagen de `fitcoach-ia`) y guarda el compose actual como
+   `docker-compose.prev.yml`.
+2. Instala los tres ficheros de la release.
+3. `make prod-up` con `VERSION=<versión>`: `pull` de todas las imágenes y `up --wait`, que espera a
+   que todos los servicios estén sanos (hasta 900 s).
+4. Si falla, restaura `docker-compose.prev.yml` y lanza `make prod-up` con la versión anterior, y el
+   workflow termina en rojo. Si no había versión anterior, el servicio queda como esté.
+5. Si va bien, borra las imágenes `fitcoachia/*` que no usan ni el compose nuevo ni el anterior.
+
+Patrón: **recreate verificado con rollback**. Compose solo recrea los servicios cuya imagen o
+configuración cambian; los demás siguen en marcha. Mientras se recrea la app hay una ventana breve
+sin servicio: el proxy devuelve 502 y Telegram reintenta los updates, así que no se pierden mensajes.
+Solo se puede desplegar una versión publicada con este esquema: las anteriores no tienen
+`deploy-release.sh` en su tag.
+
+Un despliegue no se cancela por otro: `concurrency` los pone en cola.
+
+**Prerrequisitos que CI nunca provee**, deben existir ya en la instancia: `/opt/fitcoachia/.env`
+(`600 root`) y el login en Docker Hub de root, porque `fitcoachia/fitcoach-app` es privada. Ver
+[despliegue-aws-ec2.md](despliegue-aws-ec2.md).
 
 ### 2.6 Continuous Monitoring
 
@@ -134,7 +172,7 @@ anteriores:
 - **`healthcheck` del contenedor** sobre `/health` — decide el resultado del despliegue (y su
   rollback), y después sigue sondeando cada 5 min como señal de salud continua en producción.
 - **Pestaña Security de GitHub** — acumula los SARIF de Semgrep (CI, código fuente) y Trivy
-  (release, imagen construida) como registro continuo de hallazgos, independiente de si bloquearon
+  (release, imágenes construidas) como registro continuo de hallazgos, independiente de si bloquearon
   o no el pipeline que los generó.
 
 ## 3. Diagramas
@@ -164,12 +202,13 @@ flowchart TD
     E -->|ok| F[PR a develop] --> G[Merge en develop]
 
     subgraph CD1["Continuous Delivery — release.yml"]
-        G -.->|workflow_dispatch manual\ninput: version X.Y.Z| H[Release: checks + build imagen]
-        H -->|falla algún check| X3[❌ release abortado]
-        H --> H1[Trivy scan]
+        G -.->|workflow_dispatch manual\ninput: version X.Y.Z| H[Prepare: semver +\nimágenes del compose]
+        H -->|app ya publicada\no imagen sin tag| X3[❌ release abortado]
+        H -->|omite tags ya publicados| B[Build por imagen:\nbuild sin push]
+        B --> H1[Trivy scan]
         H1 --> H2[[SARIF Trivy]]
-        H1 --> H3[GitHub Release\ntag + notas]
-        H3 --> H4[docker push]
+        H1 --> H3[docker push]
+        H3 --> H4[GitHub Release\ntag + notas]
     end
 
     subgraph MON["Continuous Monitoring"]
@@ -179,13 +218,13 @@ flowchart TD
     end
 
     subgraph CD2["Continuous Deployment — deploy.yml"]
-        H4 -->|ok| I[ssh-deploy: rsync\ndocker-compose.yml + Makefile]
-        I --> J[docker pull nueva imagen\ncontenedor anterior aún en servicio]
-        J --> J1[Retirar contenedor en servicio\nsu imagen se conserva: artefacto de rollback]
-        J1 --> K[make prod-up]
-        K --> L{Docker lo marca healthy\n·Continuous Monitoring·}
-        L -->|sí| M[✅ poda de huérfanos\ne imágenes antiguas]
-        L -->|no| N[↩️ descarta contenedor e imagen nuevos\ny restaura la versión anterior]
+        H4 -->|ok| I[OIDC: rol de AWS\nenvironment production]
+        I --> I1[Sube compose, Makefile y scripts\na S3 deploy/versión/]
+        I1 --> J[SSM: deploy-release.sh\nguarda el compose previo]
+        J --> K[make prod-up\npull + up --wait]
+        K --> L{Todos los servicios sanos\n·Continuous Monitoring·}
+        L -->|sí| M[✅ poda de imágenes fitcoachia/*\nque no usa ni esta release ni la anterior]
+        L -->|no| N[↩️ restaura el compose previo\ny la versión anterior]
     end
 ```
 
@@ -194,40 +233,36 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant R as Runner (GitHub Actions)
-    participant S as Servidor (SSH)
+    participant A as AWS (STS, CloudFormation, S3)
+    participant S as Instancia (SSM, root)
 
     Note over R,S: Continuous Deployment — deploy.yml
-    R->>S: rsync docker-compose.yml + Makefile
-    R->>S: SCRIPT_BEFORE (sesión SSH 1)
+    R->>A: AssumeRoleWithWebIdentity (OIDC, environment production)
+    R->>A: DescribeStacks: InstanceId y BackupBucketName
+    R->>A: s3 cp compose, Makefile, backup-postgres.sh, deploy-release.sh
+    R->>S: ssm send-command (AWS-RunShellScript)
     activate S
-    S->>S: 1/4 Verificar acceso al fichero de entorno (sudo -n)
-    S->>S: 2/4 Estado del contenedor actual (informativo)
-    S->>S: 3/4 Imágenes locales antes del pull
-    S->>S: 4/4 docker pull nueva imagen\n(contenedor anterior sigue vivo)
-    deactivate S
-    R->>S: SCRIPT_AFTER (sesión SSH 2)
-    activate S
-    S->>S: 1/6 Capturar la versión en servicio\n(artefacto de rollback)
-    S->>S: 2/6 Retirar el contenedor\n(su imagen se conserva)
-    S->>S: 3/6 sudo -n env VERSION=… PROD_ENV_FILE=… make prod-up
+    S->>A: s3 cp deploy/<versión>/
+    S->>S: 1/5 Contexto y .env
+    S->>S: 2/5 Versión en servicio y docker-compose.prev.yml
+    S->>S: 3/5 Instalar los ficheros en /opt/fitcoachia
+    S->>S: 4/5 make prod-up (pull + up --wait)
     Note right of S: Continuous Monitoring
-    S->>S: 4/6 Esperar 5s + 10 intentos x 5s\ndocker inspect .State.Health.Status
-    alt healthy
-        S->>S: 5/6 Eliminar contenedores huérfanos
-        S->>S: 6/6 Podar imágenes semver antiguas\n(conserva la desplegada y tags no-semver)
-    else unhealthy o se agotan los intentos
-        S->>S: Volcar últimas 50 líneas de log
-        S->>S: docker rm -f + docker rmi de lo recién desplegado
-        S->>S: make prod-up con la versión anterior
-        S-->>R: exit 1 (workflow en rojo)
+    alt todos los servicios sanos
+        S->>S: 5/5 Podar imágenes fitcoachia/* sin uso
+    else falla
+        S->>S: Volcar estado y últimas 50 líneas de log
+        S->>S: Restaurar docker-compose.prev.yml\nmake prod-up con la versión anterior
     end
     deactivate S
+    loop cada 15 s
+        R->>S: get-command-invocation
+    end
+    S-->>R: salida del script; Success o fallo (workflow en rojo)
 ```
 
-> `SCRIPT_BEFORE` y `SCRIPT_AFTER` son **sesiones SSH distintas**: las variables no cruzan entre
-> ellas, y por eso la versión anterior se captura en el paso `1/6` y no antes. Detalle completo del
-> despliegue y de los targets del `Makefile` en
-> [entornos-y-despliegue.md](entornos-y-despliegue.md).
+El detalle del despliegue y de los targets del `Makefile` está en
+[entornos-y-despliegue.md](entornos-y-despliegue.md).
 
 ## 4. Gates, secretos y artefactos
 
@@ -240,30 +275,34 @@ sequenceDiagram
 | Semgrep (`p/python`, `p/owasp-top-ten`) | `build.yml` → `semgrep-analysis` | Informa (SARIF) |
 | Cobertura de tests ≥ 80 % | `build.yml` → `test-gate` | Bloquea |
 | Formato semver de la versión | `release.yml`, `deploy.yml` | Bloquea |
-| Versión no debe existir ya en el registro | `release.yml` | Bloquea |
-| Trivy (imagen, HIGH/CRITICAL) | `release.yml` | Informa (SARIF) |
+| La imagen de la app no debe existir ya en el registro con esa versión | `release.yml` → `Prepare` | Bloquea |
+| Toda imagen construible del compose tiene tag fijo | `release.yml` → `Prepare` | Bloquea |
+| Trivy (cada imagen, HIGH/CRITICAL) | `release.yml` → `Build` | Informa (SARIF) |
 | Origen de release: `develop` o `release/*` | `release.yml` (`if:`) | Bloquea |
-| Estado `healthy` del contenedor tras el despliegue | `deploy.yml` | Bloquea **y revierte** a la versión anterior |
+| Todos los servicios sanos tras `make prod-up` (`up --wait`) | `deploy.yml` → `deploy-release.sh` | Bloquea **y revierte** a la versión anterior |
 
 ### Artefactos publicados
 
 | Artefacto | Generado por | Dónde se ve |
 |---|---|---|
 | SARIF Semgrep | `build.yml` → `semgrep-analysis` | Pestaña *Security* (code scanning) |
-| SARIF Trivy | `release.yml` | Pestaña *Security* (code scanning) |
+| SARIF Trivy (uno por imagen) | `release.yml` → `Build` | Pestaña *Security* (code scanning) |
 | GitHub Release (tag + notas) | `release.yml` | Pestaña *Releases* |
-| Imagen Docker versionada | `release.yml` (`docker push`) | Registro Docker Hub |
+| Imágenes Docker versionadas (`fitcoachia/*`) | `release.yml` → `Build` (`docker push`) | Registro Docker Hub |
 
 ### Secretos
 
 | Secreto | Usado en |
 |---|---|
 | `DOCKER_USER`, `DOCKER_PASSWORD` | `release.yml` (login en Docker Hub) |
-| `DOCKER_IMAGE_NAME` | `release.yml`, `deploy.yml` (nombre base de la imagen) |
-| `SERVER_HOST`, `SERVER_USER`, `SERVER_PKEY` | `deploy.yml` (conexión SSH al servidor) |
+| `AWS_DEPLOY_ROLE_ARN` | `deploy.yml` (rol de AWS que asume por OIDC; salida de la plantilla de EC2) |
+| `AWS_REGION` | `deploy.yml` (región de la pila) |
+| `AWS_STACK_NAME` | `deploy.yml` (nombre de la pila de CloudFormation) |
 
-Ningún workflow expone valores de estos secretos en logs; `deploy.yml` los declara como `secrets`
-del `workflow_call` precisamente para garantizar el enmascarado.
+`release.yml` pasa los secretos a `deploy.yml` con `secrets: inherit`, y el job de despliegue
+también puede leerlos del environment `production`. Ningún workflow expone sus valores en logs.
+Ya no se usan `SERVER_HOST`, `SERVER_USER`, `SERVER_PKEY`, `ENV_FILE_PATH` ni `DOCKER_IMAGE_NAME`, y
+se pueden borrar.
 
 ---
 
@@ -302,4 +341,3 @@ ejecución o al modificar los workflows:
 | PR a `develop` no re-ejecuta `build.yml` | El filtro `pull_request.branches` evalúa la rama **base**, no la de origen; la validación de esos commits ya ocurrió en el `push` a la rama de trabajo. |
 | `bugfix/**` se valida pero no se puede fusionar | `build.yml` dispara sobre `bugfix/**`, pero `validate-develop-merge.yml` solo admite `feature/`, `feat/` y `fix/`: un PR desde `bugfix/**` a `develop` queda bloqueado pese a haber pasado CI. |
 | Versión del proyecto desincronizada | `pyproject.toml` declara `0.1.0` mientras los tags Git ya están en `0.4.2`; no hay bump automático de versión. |
-| `README.md` desactualizado | La sección `## CI/CD` describe workflows que ya no existen (`validate-merge-source.yml`) y afirma que `release.yml` se dispara con push a `main`, cuando en realidad es manual (`workflow_dispatch`) desde `develop`/`release/*`. |

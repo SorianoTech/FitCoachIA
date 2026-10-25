@@ -522,7 +522,7 @@ ejecución, de modo que los cambios en disco se aplican sin reiniciar nada.
 Los casos del *golden set* viven en [`evals/trainer/cases`](../evals/trainer/README.md): cada uno es
 un `profile.json` y el `catalogue.json` congelado que devolvió la recuperación real para ese perfil.
 Los targets `trainer-debug`, `trainer-compare` y `trainer-refresh-catalogues` usan el entorno de
-desarrollo del Makefile (`/etc/fitcoachia/dev/.env.dev`, o `.env.dev` del repositorio como fallback).
+desarrollo del Makefile (`.env` de la raíz del repositorio, o el que indique `DEV_ENV_FILE`).
 
 ```bash
 # Solo renderiza el prompt que se enviaría (sin llamar al LLM, sin coste)
@@ -652,7 +652,7 @@ embedder_timeout_seconds=10
 
 El arranque falla rápido si falta `vector_db_url` o `embedder_url`.
 
-En desarrollo, `docker-compose.dev.yml` fija `ia_trainer_skill=trainer-dev`. Esa variante desarrolla
+En desarrollo se configura `ia_trainer_skill=trainer-dev` en el `.env`. Esa variante desarrolla
 bien la semana 1 y deriva las otras tres, con un máximo de 3 ejercicios por día. Sirve para probar
 el flujo y la persistencia sin gastar 4096 tokens por iteración; no debe usarse en producción.
 

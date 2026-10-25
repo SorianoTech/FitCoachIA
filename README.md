@@ -55,7 +55,7 @@ FitCoachIA/
 │   └── requirements.txt          # Dependencias de runtime (generado desde pyproject.toml)
 ├── alembic/                      # Migraciones de la base de datos conversacional
 ├── infra/
-│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation, backup a S3 y Nginx Proxy Manager
+│   ├── aws/ec2/                  # Despliegue en una EC2: CloudFormation, backup a S3 y script de despliegue
 │   ├── embedder/                 # Servicio de embeddings (all-MiniLM-L6-v2, 384 dim)
 │   ├── observability/            # Grafana, Loki, Tempo, Prometheus, OTel Collector
 │   └── vector-db/                # pgVector: DDL del catálogo de ejercicios y cargador
@@ -76,9 +76,7 @@ FitCoachIA/
 ├── .dockerignore                 # Contexto de build de la imagen (lista de permitidos)
 ├── .pre-commit-config.yaml       # Hooks de pre-commit (ruff, gitleaks, bandit, cfn-lint)
 ├── alembic.ini                   # Configuración de alembic
-├── docker-compose.dev.yml        # Entorno de desarrollo
-├── docker-compose.local.yml      # Entorno local para probar cambios
-├── docker-compose.yml            # Entorno de producción
+├── docker-compose.yml            # Sistema completo de un entorno (app, BDs, observabilidad, NPM); se configura con .env
 ├── pyproject.toml                # Dependencias (fuente de verdad) + config de ruff, mypy y pytest
 ├── AGENTS.md                     # Mapa del proyecto e instrucciones para asistentes de IA
 ├── CLAUDE.md                     # Importa AGENTS.md
@@ -103,9 +101,9 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tests` | Levanta el entorno de tests, ejecuta unitarios e integración con cobertura (falla si < 80%) y lo detiene |
-| `make dev-up` / `dev-down` / `dev-logs` | Entorno de desarrollo (`docker-compose.dev.yml`) |
-| `make prod-up [VERSION=x.y.z]` / `prod-down` / `prod-logs` | Entorno de producción (`docker-compose.yml`) |
-| `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
+| `make dev-up` / `dev-app` / `dev-down` / `dev-logs` | Desarrollo: construye y levanta todo el sistema (`docker-compose.yml`, `.env`) |
+| `make prod-up [VERSION=x.y.z]` / `prod-down` / `prod-logs` | Producción: descarga las imágenes y levanta todo sin construir (`docker-compose.yml`, `/opt/fitcoachia/.env`) |
+| `make vector-up` / `vector-down` / `vector-logs` | Solo el servicio `pgvector` del Compose (catálogo de ejercicios) |
 
 El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md).
 
@@ -169,8 +167,8 @@ El proyecto tiene estos workflows en `.github/workflows/`:
 | `build.yml` | Push y PRs en ramas `feat/**`, `feature/**`, `fix/**`, `bugfix/**` (ignora cambios solo de docs y `.md`) y ejecución manual | Calidad y seguridad (Ruff, Mypy, Gitleaks, pip-audit, Bandit, Semgrep) → `make tests` (unitarios e integración, cobertura >= 80%) |
 | `validate-develop-merge.yml` | PRs a `develop` | Bloquea merges que no provengan de ramas `feat/`, `feature/` o `fix/` |
 | `validate-main-merge.yml` | PRs a `main` | Bloquea merges que no provengan de `develop` |
-| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye la imagen Docker, la escanea con Trivy, publica en el registry, crea la GitHub Release y lanza `deploy.yml` |
-| `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en el servidor por SSH con `make prod-up`, verifica el arranque y hace rollback si falla |
+| `release.yml` | Ejecución manual con versión `X.Y.Z` desde `develop` o `release/**` | Construye las imágenes de `docker-compose.yml` cuyo tag aún no está en Docker Hub (la app con la versión de la release, el resto con su tag fijo), las escanea con Trivy, las publica, crea la GitHub Release y lanza `deploy.yml` |
+| `deploy.yml` | Llamado por `release.yml` o manual | Despliega la versión en la EC2 de producción por SSM (rol de AWS por OIDC, ficheros vía S3): `make prod-up`, espera a que todo esté sano y vuelve a la versión anterior si falla |
 
 Las actions reutilizables están en `.github/actions/`: `python-setup` instala Python y `uv` con caché y audita `requirements-ci.txt` antes de instalar; `quality-check` agrupa Ruff, Mypy, Gitleaks, pip-audit y Bandit. El detalle está en [docs/ci-cd.md](docs/ci-cd.md).
 

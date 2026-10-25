@@ -194,7 +194,7 @@ ia_history_window_messages=20
 ia_skill=interviewer
 ```
 
-En desarrollo, `docker-compose.dev.yml` establece automáticamente `ia_skill=interviewer-dev`.
+En desarrollo se configura `ia_skill=interviewer-dev` en el `.env`.
 Esa variante pregunta solo identidad, datos básicos y objetivo/compromiso, y después genera el
 mismo perfil estructurado y el informe final usando valores conservadores para los campos que no
 se preguntan. Sirve para probar rápidamente la persistencia y el flujo de finalización; no debe

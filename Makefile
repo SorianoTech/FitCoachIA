@@ -23,57 +23,32 @@ export IT_BASE_URL
 COMPOSE_UP=$(DOCKER) compose -f $(COMPOSE_IT) up -d --build --wait
 COMPOSE_DOWN=$(DOCKER) compose -f $(COMPOSE_IT) down -v --remove-orphans
 
-# Ficheros de entorno fuera del repositorio; dev cae al fichero local si no existen, prod no
-ENV_ROOT ?= /etc/fitcoachia
-DEV_ENV_FILE ?= $(ENV_ROOT)/dev/.env.dev
-PROD_ENV_FILE ?= $(ENV_ROOT)/prod/.env.prod
-DEV_ENV_FALLBACK=.env.dev
-
-COMPOSE_DEV=$(DOCKER) compose -f docker-compose.dev.yml
-DEV_APP_SERVICE=fitcoach-ia-dev
-COMPOSE_PROD=$(DOCKER) compose
-DEV_INTERNAL_NETWORK ?= fitcoach-dev-internal
-PROD_INTERNAL_NETWORK ?= fitcoach-prod-internal
-PROXY_NETWORK ?= proxy-network
-# La BD vectorial tiene su propio proyecto y ciclo de vida: los ejercicios se
-# cargan una sola vez y sobreviven a los despliegues de la app.
-COMPOSE_VECTOR=$(DOCKER) compose -f infra/vector-db/docker-compose.vector-db.yml
-
-define ensure_dev_networks
-for network in "$(DEV_INTERNAL_NETWORK)" "$(PROXY_NETWORK)"; do \
-	$(DOCKER) network inspect "$$network" >/dev/null 2>&1 || $(DOCKER) network create "$$network"; \
-done
-endef
-
-define ensure_prod_networks
-for network in "$(PROD_INTERNAL_NETWORK)" "$(PROXY_NETWORK)"; do \
-	$(DOCKER) network inspect "$$network" >/dev/null 2>&1 || $(DOCKER) network create "$$network"; \
-done
-endef
+# Un solo docker-compose.yml para todo el sistema; dev construye, prod descarga.
+COMPOSE=$(DOCKER) compose
+DEV_ENV_FILE ?= .env
+PROD_ENV_FILE ?= /opt/fitcoachia/.env
+DEV_APP_SERVICE=fitcoach-ia
+VECTOR_SERVICE=pgvector
+# Cubre el primer arranque de pgvector (start_period de 10 min mientras carga el catalogo).
+PROD_WAIT_TIMEOUT ?= 900
 
 define resolve_dev_env
-if [ -f "$(DEV_ENV_FILE)" ]; then \
-	ENV_FILE="$(DEV_ENV_FILE)"; \
-else \
-	ENV_FILE="$(DEV_ENV_FALLBACK)"; \
-	echo ">> $(DEV_ENV_FILE) no encontrado -> usando $(DEV_ENV_FALLBACK)"; \
-fi; \
-[ -f "$$ENV_FILE" ] || { echo "ERROR: no existe ningun fichero de entorno de desarrollo"; exit 1; }; \
-echo ">> entorno dev: $$ENV_FILE"; \
-export FITCOACH_ENV_FILE="$$ENV_FILE"
+[ -f "$(DEV_ENV_FILE)" ] || { echo "ERROR: no existe $(DEV_ENV_FILE) (crealo a partir de .env.example)"; exit 1; }; \
+echo ">> entorno dev: $(DEV_ENV_FILE)"; \
+export FITCOACH_ENV_FILE="$(DEV_ENV_FILE)"
 endef
 
 define resolve_prod_env
 if [ ! -r "$(PROD_ENV_FILE)" ]; then \
 	echo "ERROR: $(PROD_ENV_FILE) no existe o no tiene permisos de acceso"; \
-	echo "       crea el fichero, o ejecuta el target con sudo"; \
+	echo "       crea el fichero o revisa sus permisos"; \
 	exit 1; \
 fi; \
 echo ">> entorno prod: $(PROD_ENV_FILE)"; \
 export FITCOACH_ENV_FILE="$(PROD_ENV_FILE)"
 endef
 
-.PHONY: container build run stop clean all help clean-image clean-images logs tests networks dev-up dev-app dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
+.PHONY: container build run stop clean all help clean-image clean-images logs tests dev-up dev-app dev-down dev-logs prod-up prod-down prod-logs vector-up vector-down vector-logs trainer-debug trainer-compare trainer-refresh-catalogues
 # Usa siempre el pytest del venv del proyecto, evitando depender de cuál
 # pytest gane por orden del PATH del shell. En CI (sin venv, deps instaladas
 # --system) se sobreescribe con `make tests PYTEST=pytest`.
@@ -90,15 +65,14 @@ help:
 	@echo "  make clean-images                   - Elimina todas las imagenes en local"
 	@echo "  make clean-image [version=x.y.z]    - Elimina solo la imagen de la version indicada (Defecto: latest)"
 	@echo "  make tests                          - execute all tests (unit test and it tests). Analiza cobertura y falla si cobertura < 80% "
-	@echo "  make networks                       - Crea las redes Docker compartidas por dev, prod, proxy y observabilidad"
-	@echo "  make dev-up                         - Levanta el entorno de desarrollo aislado. Usa $(DEV_ENV_FILE) si existe, si no $(DEV_ENV_FALLBACK)"
-	@echo "  make dev-app                        - Reconstruye y reinicia solo la app de desarrollo (sin embedder ni postgres)"
+	@echo "  make dev-up                         - Construye y levanta todo el sistema con $(DEV_ENV_FILE) (override: DEV_ENV_FILE=ruta)"
+	@echo "  make dev-app                        - Reconstruye y reinicia solo la app (sin embedder ni bases de datos)"
 	@echo "  make dev-down                       - Detiene el entorno de desarrollo"
 	@echo "  make dev-logs                       - Muestra los logs del entorno de desarrollo"
-	@echo "  make prod-up [VERSION=x.y.z]        - Levanta el entorno de produccion. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
+	@echo "  make prod-up [VERSION=x.y.z]        - Descarga las imagenes y levanta produccion sin construir; espera a que todo este healthy. Requiere $(PROD_ENV_FILE) (override: PROD_ENV_FILE=ruta)"
 	@echo "  make prod-down                      - Detiene el entorno de produccion"
 	@echo "  make prod-logs                      - Muestra los logs del entorno de produccion"
-	@echo "  make vector-up                      - Levanta pgVector y pgAdmin con el catalogo de ejercicios"
+	@echo "  make vector-up                      - Construye y levanta solo pgVector con el catalogo de ejercicios"
 	@echo "  make vector-down                    - Detiene la base de datos vectorial (conserva el volumen)"
 	@echo "  make vector-logs                    - Muestra los logs de la base de datos vectorial"
 	@echo "  make trainer-debug ARGS=\"...\"       - Ejecuta el entrenador offline y guarda artefactos en runs/trainer (ver docs/trainer-agent.md)"
@@ -107,10 +81,6 @@ help:
 
 container:
 	@$(DOCKER) ps -a
-
-networks:
-	@$(ensure_dev_networks); \
-	$(ensure_prod_networks)
 
 build:
 	@$(DOCKER) build -t $(IMAGE_BASE):$(version) -f src/Dockerfile .
@@ -122,48 +92,50 @@ build:
 	fi
 
 dev-up:
-	@$(ensure_dev_networks); \
-	$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --remove-orphans
+	@$(resolve_dev_env); \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" up -d --build --remove-orphans
 
-# Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y postgres,
+# Reconstruye solo la app: --no-deps evita reconstruir el embedder (lento) y las bases de datos,
 # que deben estar ya levantados con `make dev-up`.
 dev-app:
-	@$(ensure_dev_networks); \
-	$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(DEV_APP_SERVICE)
+	@$(resolve_dev_env); \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" up -d --build --no-deps $(DEV_APP_SERVICE)
 
 dev-down:
 	@$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
 
 dev-logs:
 	@$(resolve_dev_env); \
-	$(COMPOSE_DEV) --env-file "$$FITCOACH_ENV_FILE" logs -f
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" logs -f
 
+# Nunca construye: si falta una imagen en el registro, falla antes de arrancar nada.
 prod-up:
-	@$(ensure_prod_networks); \
-	$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" up -d --remove-orphans
+	@$(resolve_prod_env); \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" pull && \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" up -d --no-build --remove-orphans --wait --wait-timeout $(PROD_WAIT_TIMEOUT)
 
 prod-down:
 	@$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" down --remove-orphans
 
 prod-logs:
 	@$(resolve_prod_env); \
-	$(COMPOSE_PROD) --env-file "$$FITCOACH_ENV_FILE" logs -f
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" logs -f
 
 vector-up:
-	@$(COMPOSE_VECTOR) up -d --build
+	@$(resolve_dev_env); \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" up -d --build $(VECTOR_SERVICE)
 
-# Sin -v a proposito: el volumen guarda la carga inicial de 283 MB y volver a
-# crearlo tarda varios minutos. Para borrarlo de verdad, hazlo explicitamente.
+# Sin borrar el volumen a proposito: guarda la carga inicial de 283 MB y volver a
+# crearla tarda varios minutos. Para borrarlo de verdad, hazlo explicitamente.
 vector-down:
-	@$(COMPOSE_VECTOR) down --remove-orphans
+	@$(resolve_dev_env); \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" stop $(VECTOR_SERVICE)
 
 vector-logs:
-	@$(COMPOSE_VECTOR) logs -f
+	@$(resolve_dev_env); \
+	$(COMPOSE) --env-file "$$FITCOACH_ENV_FILE" logs -f $(VECTOR_SERVICE)
 
 # Depuracion offline del entrenador: sin Telegram ni BD de conversaciones.
 trainer-debug:

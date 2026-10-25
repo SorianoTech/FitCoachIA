@@ -23,7 +23,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
-_APP_ENV = os.getenv("APP_ENV", "dev")
+_APP_ENV = os.getenv("DEPLOYMENT_ENVIRONMENT", "dev")
 SERVICE_NAME = "fitcoach-ia"
 SERVICE_VERSION = os.getenv("APP_VERSION", "unknown")
 

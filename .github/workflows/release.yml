@@ -8,20 +8,19 @@ on:
         type: string
         description: "Release version. Format: X.Y.Z"
 
+# Cada imagen lleva su tag fijado en docker-compose.yml; la app usa la version de la release.
 env:
-  PYTHON_VERSION: "3.12"
-  DOCKER_IMAGE_BASE: "${{ secrets.DOCKER_IMAGE_NAME }}"
+  APP_SERVICE: "fitcoach-ia"
 
 jobs:
-  Release:
-    name: Generate-release
+  Prepare:
+    name: Prepare-images
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
     permissions:
-      contents: write
-      security-events: write
+      contents: read
     outputs:
-      version: ${{ github.event.inputs.version }}
+      images: ${{ steps.images.outputs.images }}
     steps:
       - name: Validar formato version
         run: |
@@ -31,70 +30,115 @@ jobs:
           fi
           echo "Versión válida"
 
+      - name: Repository checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      # Login necesario para consultar la imagen privada de la app.
       - name: Log in to registry
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Validar existencia de version
+      # --no-interpolate: lee el compose tal cual, sin resolver variables de entorno.
+      - name: Listar imagenes a publicar
+        id: images
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          echo "Verificamos la version  ${{ github.event.inputs.version }} existe en el repositorio de docker"
-          if docker manifest inspect $DOCKER_IMAGE_BASE:${{ github.event.inputs.version }} > /dev/null 2>&1; then
-            echo "La imagen ya existe. Aumente la versión minor de entrada"
-            exit 1
-          else
-            echo "Imagen con version ${{ github.event.inputs.version }} no existe. Procedemos a generarla"
-          fi
-        continue-on-error: false
+          set -euo pipefail
+          docker compose -f docker-compose.yml config --no-interpolate --format json \
+            | jq -c --arg root "$PWD" --arg version "$VERSION" '
+                [.services | to_entries[] | select(.value.build)
+                 | (.value.build.context | if . == $root then "." else "./" + ltrimstr($root + "/") end) as $ctx
+                 | {service: .key,
+                    image: (.value.image | sub("\\$\\{VERSION:-latest\\}$"; $version)),
+                    context: $ctx,
+                    file: ($ctx + "/" + .value.build.dockerfile)}]' > images.json
 
+          if jq -e 'any(.[]; (.image | contains("$")) or (.image | split("/") | last | contains(":") | not))' \
+               images.json > /dev/null; then
+            echo "::error::Toda imagen construible necesita un tag fijo en docker-compose.yml"
+            jq -r '.[].image' images.json
+            exit 1
+          fi
+
+          echo "### Imagenes de la release $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          pending='[]'
+          while read -r entry; do
+            service=$(jq -r '.service' <<< "$entry")
+            image=$(jq -r '.image' <<< "$entry")
+            if docker manifest inspect "$image" > /dev/null 2>&1; then
+              if [ "$service" = "$APP_SERVICE" ]; then
+                echo "::error::$image ya existe. Aumente la versión de entrada"
+                exit 1
+              fi
+              echo "- \`$image\`: ya publicada, se omite" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- \`$image\`: se construye y publica" >> "$GITHUB_STEP_SUMMARY"
+              pending=$(jq -c --argjson entry "$entry" '. + [$entry]' <<< "$pending")
+            fi
+          done < <(jq -c '.[]' images.json)
+          echo "images=$pending" >> "$GITHUB_OUTPUT"
+
+  Build:
+    name: Build-${{ matrix.service }}
+    needs: Prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      # Las imagenes son independientes: un fallo no cancela las demas.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.Prepare.outputs.images) }}
+    steps:
       - name: Repository checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
-          fetch-depth: 0
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       # Activar runner docker buildx, mejor que el clasico runner
       - name: Set up Docker runner Buildx
         uses: docker/setup-buildx-action@v4.2.0
 
-      # metadata-action concatena images x tags: value debe ser solo el tag.
-      - name: Generate image metadata
-        id: image-metadata
-        uses: docker/metadata-action@v5
+      # Construimos la imagen docker sin pushear para validar las vulnerabilidades.
+      - name: Build image
+        uses: docker/build-push-action@v5
         with:
-          images: ${{ env.DOCKER_IMAGE_BASE }}
-          tags: |
-            type=raw,value=${{ github.event.inputs.version }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          load: true  # necesario para que trivy inspeccione localmente
+          tags: ${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           labels: |
-            org.opencontainers.image.title=FitCoachIA
-            org.opencontainers.image.description=AI fitness coach service
+            org.opencontainers.image.title=${{ matrix.service }}
             org.opencontainers.image.vendor=SorianoTech
             org.opencontainers.image.licenses=https://github.com/${{ github.repository }}/blob/main/LICENSE.md
             org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.authors=fitcoachpontia@gmail.com
             org.opencontainers.image.version=${{ github.event.inputs.version }}
-            org.opencontainers.image.base.name=python:${{ env.PYTHON_VERSION }}
-
-      # Construimos la imagen docker sin pushear para validar las vulnerabilidades.
-      - name: Build image
-        id: docker-image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./src/Dockerfile
-          push: false
-          tags: ${{ steps.image-metadata.outputs.tags }}
-          labels: ${{ steps.image-metadata.outputs.labels }}
-          load: true  # necesario para que trivy inspeccione localmente
 
       # Analiza la imagen en búsqueda de vulnerabilidades del SO, librerias y secretos expuestos en la imagen
       - name: Container scan (trivy)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ steps.image-metadata.outputs.tags }}
+          image-ref: ${{ matrix.image }}
           format: 'sarif'
-          output: 'trivy-release-results.sarif'
+          output: 'trivy-${{ matrix.service }}.sarif'
           severity: HIGH,CRITICAL
           exit-code: 0
 
@@ -103,8 +147,24 @@ jobs:
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: 'trivy-release-results.sarif'
+          sarif_file: 'trivy-${{ matrix.service }}.sarif'
+          category: trivy-${{ matrix.service }}
 
+      - name: Push image
+        env:
+          DOCKER_IMAGE: ${{ matrix.image }}
+        run: docker push "$DOCKER_IMAGE"
+
+  # Solo se crea la release cuando todas las imagenes estan publicadas.
+  Release:
+    name: Generate-release
+    needs: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ github.event.inputs.version }}
+    steps:
       - name: Generate tag and Release
         uses: softprops/action-gh-release@v3
         with:
@@ -115,20 +175,15 @@ jobs:
           prerelease: false
           preserve_order: true
 
-      - name: Push image
-        env:
-          DOCKER_IMAGE: ${{ steps.image-metadata.outputs.tags }}
-        run: docker push $DOCKER_IMAGE
-
   Deploy:
     name: Deploy
     needs: Release
+    # deploy.yml necesita id-token para asumir el rol de AWS por OIDC.
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy.yml
     with:
       version: ${{ needs.Release.outputs.version }}
-    secrets:
-      SERVER_HOST: ${{ secrets.SERVER_HOST }}
-      SERVER_PKEY: ${{ secrets.SERVER_PKEY }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
-      ENV_FILE_PATH: ${{ secrets.ENV_FILE_PATH }}
+    # AWS_DEPLOY_ROLE_ARN, AWS_REGION y AWS_STACK_NAME: los lee deploy.yml directamente.
+    secrets: inherit

@@ -278,5 +278,5 @@ Update every item that the change touches, in the same change:
 Docs index: `docs/how-to.md` (setup/run), `docs/interviewer-agent.md`, `docs/trainer-agent.md`, `docs/devtools.md` (offline trainer debugging: `trainer-debug`, `trainer-compare`), `docs/rag-doc.md` (docs Q&A web, `infra/rag-doc`),
 `docs/scheduler.md` (job scheduler), `docs/encuestas-satisfaccion.md` (weekly polls + retry properties),
 `docs/vector-db.md`, `docs/modelo-datos.md`, `docs/entornos-y-despliegue.md` (single environment, env file, Telegram bot/webhook), `docs/despliegue-aws-ec2.md` (single-EC2 AWS deployment), `docs/observabilidad.md` + `docs/OTLP.md` + `docs/queries-reference.md` + `docs/dashboard-logs-guide.md`,
-`docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`.
+`docs/ci-cd.md`, `docs/Makefile.md`, `docs/Dockerfile-guide.md`, `docs/toml.md`, `docs/memoria-proyecto.md` (TFM report; `.docx` export with diagrams in `docs/img/`).
 `docs/plan/` holds design notes and `docs/todo/` the backlog.

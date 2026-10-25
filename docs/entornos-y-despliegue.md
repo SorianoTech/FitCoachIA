@@ -1,6 +1,6 @@
 # Entornos y despliegue
 
-Cómo encajan el workflow de CI/CD, el `Makefile`, los dos Compose y los ficheros de entorno. Para el
+Cómo encajan el workflow de CI/CD, el `Makefile`, el Compose y el fichero de entorno. Para el
 detalle de las fases del pipeline, ver [ci-cd.md](ci-cd.md); para los comandos, [Makefile.md](Makefile.md).
 Para replicar este mismo esquema en una instancia EC2 de AWS, ver
 [despliegue-aws-ec2.md](despliegue-aws-ec2.md).
@@ -13,7 +13,7 @@ Para replicar este mismo esquema en una instancia EC2 de AWS, ver
 | --- | --- |
 | **`deploy.yml`** | Sube los ficheros de la release a S3 y lanza por SSM `deploy-release.sh`, que orquesta el cutover con rollback |
 | **`Makefile`** | Resuelve **qué fichero de entorno** usar y lanza `docker compose` |
-| **Compose** | Define los servicios; recibe el fichero ya resuelto |
+| **Compose** | Un único `docker-compose.yml` define todos los servicios; recibe el fichero ya resuelto |
 
 La clave está en el reparto: el workflow **no sabe** dónde vive la configuración, solo pasa una ruta.
 El `Makefile` **no sabe** desplegar, solo resolver el entorno. Por eso el mismo `make prod-up`
@@ -23,20 +23,16 @@ funciona igual lanzado a mano en el servidor que invocado por el despliegue.
 
 ## 2. Los ficheros de entorno
 
-Dos ubicaciones, con reglas distintas por entorno:
+Cada host tiene un solo entorno y un solo fichero de entorno, con reglas distintas:
 
-| Entorno | Ubicación preferida | Si no existe |
+| Entorno | Fichero | Si no existe |
 | --- | --- | --- |
-| **dev** | `/etc/fitcoachia/dev/.env.dev` | usa `.env.dev` del repositorio |
-| **prod** | `/etc/fitcoachia/prod/.env.prod` | **falla**; no hay alternativa |
+| **dev** | `.env` en la raíz del repositorio (`DEV_ENV_FILE` para usar otro) | **falla** y pide crearlo desde `.env.example` |
+| **prod** | `/opt/fitcoachia/.env`, de root con permisos `600` | **falla**; no hay alternativa |
 
-La asimetría es deliberada. En desarrollo trabajas en tu máquina y no quieres crear rutas de sistema
-para arrancar; en producción, un fichero olvidado que caiga silenciosamente a otro sería peor que un
-error.
-
-`/etc/fitcoachia/prod` tiene permisos restringidos: **el usuario de despliegue no puede leerlo**. Por
-eso el workflow ejecuta el comando con `sudo -n` y ese usuario necesita una regla `sudoers` sin
-contraseña. Ver [how-to.md](how-to.md#desplegar-producción).
+En producción el fichero solo lo lee root. El despliegue automático corre como root (por SSM), así
+que no hace falta `sudo` ni ninguna regla `sudoers`; a mano, se lanza con `sudo`. Ver
+[despliegue-aws-ec2.md](despliegue-aws-ec2.md#72-el-fichero-env).
 
 ### Cómo llega el fichero al contenedor
 
@@ -99,34 +95,32 @@ se eliminan los contenedores `training-reminders*` y `evaluation*` antiguos. La 
 make dev-up
 ```
 
-Construye la imagen desde el código local (`--build`), levanta `dev-fitcoach-ia`, su Postgres y
-Adminer. Usa `/etc/fitcoachia/dev/.env.dev` si existe; si no, `.env.dev` del repositorio y te avisa
-por consola de cuál ha elegido.
+Construye las imágenes desde el código local (`--build`) y levanta todo el sistema con el `.env` de la
+raíz, y te dice por consola qué fichero usa.
 
 ### Producción
 
 ```bash
-sudo make prod-up VERSION=0.3.0
+cd /opt/fitcoachia
+sudo VERSION=1.2.0 make prod-up
 ```
 
-**No construye nada**: descarga la imagen ya publicada con ese tag. El `sudo` hace falta porque el
-fichero de entorno es de root.
+**No construye nada**: descarga las imágenes ya publicadas (la app con ese tag, el resto con el tag
+fijado en el compose) y espera a que todos los servicios estén sanos. El `sudo` hace falta porque el
+fichero de entorno es de root. Normalmente no se lanza a mano: lo hace el despliegue
+([sección 4](#4-el-despliegue-paso-a-paso)).
 
 | | dev | prod |
 | --- | --- | --- |
-| Imagen | se construye en local | se descarga del registro |
-| Compose | `docker-compose.dev.yml` | `docker-compose.yml` |
-| Proyecto | `fitcoach-dev` | `fitcoach-prod` |
-| Servicio app | `fitcoach-ia-dev` | `fitcoach-ia-prod` |
-| Contenedor | `dev-fitcoach-ia` | `fitcoach-ia` |
-| Base de datos | `postgres-dev` | `postgres-prod` |
-| Extras | Adminer | — |
+| Imágenes | se construyen en local | se descargan de Docker Hub |
+| Compose | `docker-compose.yml` | el mismo, el del tag de la release |
+| Fichero de entorno | `.env` del repositorio | `/opt/fitcoachia/.env` |
+| Dónde | el servidor de desarrollo o tu máquina | la instancia EC2 |
 
-Ambos conviven en el mismo servidor sobre redes internas distintas:
-`fitcoach-dev-internal` y `fitcoach-prod-internal`. Los **nombres de servicio** también son distintos
-por claridad operativa y como defensa adicional frente a una conexión accidental a una red
-compartida. La separación evita repetir un incidente histórico en el que ambos entornos compartían
-alias en `proxy-network` y el bot de producción respondía desde el contenedor de desarrollo.
+Desarrollo y producción no conviven en el mismo host: los dos usan el proyecto `fitcoach` y los
+mismos nombres de contenedor, así que un segundo entorno chocaría con el primero. Esto evita además
+repetir un incidente histórico en el que ambos entornos compartían alias en `proxy-network` y el bot
+de producción respondía desde el contenedor de desarrollo.
 
 ---
 
@@ -194,9 +188,11 @@ Ninguna se comparte entre dev y prod:
 | `bot_telegram_webhook_base_url` | cada entorno tiene su dominio público |
 | `POSTGRES_PASSWORD` | bases de datos independientes |
 | `ia_skill` | dev usa `interviewer-dev`, con tres preguntas |
+| `GF_ALERT_SEVERITY` | `warning` en dev, `critical` en prod |
 
-`DEPLOYMENT_ENVIRONMENT` no se configura: lo fija cada Compose (`dev` / `prod`) y de él salen la etiqueta
-`deployment.environment.name` de las trazas y el sufijo del fichero `.env.<DEPLOYMENT_ENVIRONMENT>` que carga la app.
+`DEPLOYMENT_ENVIRONMENT` (`dev` / `prod`) se fija en el fichero de entorno. De él salen la etiqueta
+`deployment.environment.name` de las trazas, el datasource y las alertas de Grafana, y el sufijo del
+fichero `.env.<DEPLOYMENT_ENVIRONMENT>` que carga la app.
 
 ---
 

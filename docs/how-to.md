@@ -9,54 +9,41 @@
 
 ## Entornos y variables
 
-| Entorno | Compose | Proyecto | Servicio de la app | Contenedor | Base de datos |
-| --- | --- | --- | --- | --- | --- |
-| Desarrollo | `docker-compose.dev.yml` | `fitcoach-dev` | `fitcoach-ia-dev` | `dev-fitcoach-ia` | servicio `postgres-dev`, volumen `fitcoach-dev-postgres` |
-| Producción | `docker-compose.yml` | `fitcoach-prod` | `fitcoach-ia-prod` | `fitcoach-ia` | servicio `postgres-prod`, volumen `fitcoach-prod-postgres` |
+Todo el sistema está en un único [`docker-compose.yml`](../docker-compose.yml) (proyecto `fitcoach`):
+la app, el embedder, las dos bases de datos, pgAdmin, la observabilidad y Nginx Proxy Manager. Cada
+host tiene **un solo entorno**, y lo que distingue desarrollo de producción es el fichero de entorno,
+no el Compose:
 
-Servicio y contenedor se llaman distinto a propósito, y conviene no confundirlos. Cada entorno tiene
-su propia red backend externa (`fitcoach-dev-internal` / `fitcoach-prod-internal`), mientras que
-`proxy-network` contiene únicamente las interfaces publicadas mediante Nginx Proxy Manager. Los
-nombres de servicio siguen siendo distintos por claridad y como defensa adicional ante una conexión
-accidental a una red compartida. El **`container_name`** es fijo porque de él dependen el filtro de
-Alloy, el workflow de despliegue y los Proxy Hosts de Nginx Proxy Manager. Ambos Compose se apoyan
-además en ese nombre fijo para que sea imposible tener dos contenedores del mismo rol conviviendo:
+| Servicio | Contenedor | Para qué |
+| --- | --- | --- |
+| `fitcoach-ia` | `fitcoach-ia` | API, bot y scheduler |
+| `postgres` | `fitcoach-postgres` | Base de la aplicación, volumen `fitcoach-postgres` |
+| `pgvector` | `pgvector` | Catálogo de ejercicios |
+| `embedder` | `fitcoach-embedder` | Embeddings de las consultas |
+| `pgadmin` | `pgadmin` | Administración de las dos bases |
+
+El **`container_name`** es fijo porque de él dependen el filtro de Alloy, el despliegue y los Proxy
+Hosts de Nginx Proxy Manager. Además hace imposible tener dos contenedores del mismo rol en un host:
 un duplicado choca de nombre y falla en alto.
 
-`DEPLOYMENT_ENVIRONMENT` se establece automáticamente como `dev` o `prod` en cada Compose. La aplicación carga
+`DEPLOYMENT_ENVIRONMENT` (`dev` o `prod`) se fija en el fichero de entorno. La aplicación carga
 `.env.<DEPLOYMENT_ENVIRONMENT>` si existe y después `.env`; las variables del sistema tienen prioridad.
 
-Los `make dev-up` / `make prod-up` (ver más abajo) leen el fichero de entorno de fuera del
-repositorio, en `/etc/fitcoachia/<entorno>/`:
-
-| Entorno | Fichero preferido | Si no existe |
+| Entorno | Fichero que leen los `make` | Detalle |
 | --- | --- | --- |
-| Desarrollo | `/etc/fitcoachia/dev/.env.dev` | usa `.env.dev` en la raíz del repositorio |
-| Producción | `/etc/fitcoachia/prod/.env.prod` | falla: no hay fallback en producción |
+| Desarrollo | `.env` en la raíz del repositorio (`DEV_ENV_FILE` para usar otro) | [Makefile.md](Makefile.md#cómo-se-resuelve-el-fichero-de-entorno) |
+| Producción | `/opt/fitcoachia/.env`, de root con permisos `600` | [despliegue-aws-ec2.md](despliegue-aws-ec2.md#72-el-fichero-env) |
 
-Crea el fichero correspondiente a cada entorno:
-
-```bash
-# Desarrollo (opcional, si no existe se usa .env.dev del repositorio)
-sudo mkdir -p /etc/fitcoachia/dev
-sudo cp .env.example /etc/fitcoachia/dev/.env.dev
-
-# Producción (obligatorio)
-sudo mkdir -p /etc/fitcoachia/prod
-sudo cp .env.example /etc/fitcoachia/prod/.env.prod
-```
-
-En local, si prefieres no usar `/etc/fitcoachia`, basta con crear `.env.dev` en la raíz del
-repositorio:
+Para desarrollo, parte de la plantilla:
 
 ```bash
-cp .env.example .env.dev
+cp .env.example .env
 ```
 
-Completa al menos estas variables en cada fichero. Usa el bot y endpoint de desarrollo en
-`.env.dev`, y las credenciales de producción en `.env.prod`:
+Completa al menos estas variables. En desarrollo, con el bot y el endpoint de desarrollo:
 
 ```dotenv
+DEPLOYMENT_ENVIRONMENT=dev
 bot_telegram_url=https://api.telegram.org/bot
 bot_telegram_token=...
 bot_telegram_secret_token=...
@@ -88,9 +75,9 @@ arranca. `bot_telegram_webhook_base_url` es la URL pública de **tu app**, sin p
 de Telegram y vale igual en los dos entornos. Detalle en
 [telegram-environments.md](telegram-environments.md).
 
-`database_url` se utiliza cuando la API se ejecuta con Python local. Los Compose crean su propia URL interna contra el servicio `postgres-dev`/`postgres-prod`. Cada
-Postgres solo pertenece a la red backend de su entorno, por lo que desarrollo y producción conservan
-el historial del agente `interviewer` en bases de datos aisladas.
+`database_url` debe apuntar al host que ve la API: `localhost` si la ejecutas con Python local, como
+en el ejemplo, y `postgres` (el servicio del Compose) si corre en Docker, como en `.env.example`. Lo
+mismo vale para `vector_database_url` (`pgvector`) y `embedder_url` (`embedder`).
 
 ## Cuota de consumo por chat
 
@@ -152,22 +139,21 @@ curl http://localhost:8000/health
 
 Para detener PostgreSQL, ejecuta `docker stop fitcoach-postgres`.
 
-> Ese contenedor desechable comparte nombre con el Postgres de producción (`container_name:
-> fitcoach-postgres`), pero no chocan nunca: producción solo se levanta en el servidor y este
-> `docker run` solo en tu máquina. En el servidor, no uses este atajo.
+> Ese contenedor desechable comparte nombre con el Postgres del Compose (`container_name:
+> fitcoach-postgres`): no lo uses a la vez que `make dev-up`, ni en el servidor.
 
 ## Ejecutar desarrollo con Docker Compose
 
-Esta opción ejecuta PostgreSQL y la API en contenedores. El contenedor de la API aplica
-automáticamente `alembic upgrade head` antes de iniciar FastAPI.
+Esta opción construye las imágenes desde el código local y levanta todo el sistema en contenedores.
+El contenedor de la API aplica automáticamente `alembic upgrade head` antes de iniciar FastAPI.
 
 ```bash
 make dev-up
 ```
 
-El target crea automáticamente `fitcoach-dev-internal` y `proxy-network` si todavía no existen.
-PostgreSQL y el embedder solo publican sus puertos en `127.0.0.1`; desde otros equipos se accede a
-las interfaces HTTP autorizadas mediante Nginx Proxy Manager.
+Las redes las crea el propio Compose. Solo se publican en el host `APP_PORT` (la API),
+`VECTOR_PORT` (pgVector) y `PGADMIN_PORT` (pgAdmin); PostgreSQL y el embedder solo se ven dentro de
+la red del Compose. Desde otros equipos se entra por Nginx Proxy Manager.
 
 Tras cambiar el código, los prompts o las skills, reconstruye solo la API sin volver a construir el
 embedder ni reiniciar PostgreSQL (deben estar ya levantados con `make dev-up`). Al arrancar también
@@ -183,18 +169,15 @@ Consulta los logs de la API:
 make dev-logs
 ```
 
-### Consultar la base de datos con Adminer
+### Consultar las bases de datos con pgAdmin
 
-El entorno de desarrollo incluye Adminer, una interfaz web para consultar los mensajes, sesiones y
-perfiles del entrevistador. No publica ningún puerto en el host: crea un Proxy Host en Nginx Proxy
-Manager que apunte a `dev-fitcoach-adminer`, puerto `8080` y protocolo `http`.
+pgAdmin queda en `http://localhost:<PGADMIN_PORT>` (8010 en `.env.example`), con
+`PGADMIN_DEFAULT_EMAIL` y `PGADMIN_DEFAULT_PASSWORD`. En un servidor no se publica en internet: se
+usa por túnel ([despliegue-aws-ec2.md](despliegue-aws-ec2.md#63-túneles-a-paneles-internos)).
 
-Protege ese Proxy Host antes de publicarlo mediante una *Access List* de Nginx Proxy Manager y, si
-es posible, una restricción por IP. No añadas Adminer a `docker-compose.yml` de producción.
-
-En la pantalla de inicio de sesión de Adminer selecciona PostgreSQL. El campo del servidor ya estará
-rellenado con `postgres-dev`; usa los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` de
-`.env.dev`. Tras iniciar sesión, las tablas relevantes son:
+Para registrar las bases, usa los nombres de servicio y el puerto interno `5432`: `postgres` con
+`POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`, y `pgvector` con `VECTOR_USER`,
+`VECTOR_PASSWORD` y `VECTOR_DB`. En la base de la aplicación, las tablas relevantes son:
 
 - `conversation_messages`: preguntas y respuestas por chat.
 - `interview_sessions`: estado y fechas de cada entrevista.
@@ -208,43 +191,27 @@ make dev-down
 
 ## Desplegar producción
 
-Producción utiliza `docker-compose.yml`, el proyecto `fitcoach-prod`, la red backend externa
-`fitcoach-prod-internal` y `proxy-network` únicamente para publicar la API. `make prod-up` crea
-ambas redes si todavía no existen. Antes del primer despliegue, crea el fichero
-`/etc/fitcoachia/prod/.env.prod` exclusivo del servidor de producción (ver
-[Entornos y variables](#entornos-y-variables)). `make prod-up` falla si ese fichero no existe o no
-tiene permisos de acceso.
+Producción corre en una instancia EC2 de AWS y se despliega con `release.yml` y `deploy.yml`, sin
+clonar el repositorio en el servidor: las imágenes vienen de Docker Hub y `make prod-up` nunca
+construye. Puesta en marcha y operación en [despliegue-aws-ec2.md](despliegue-aws-ec2.md); el flujo
+del despliegue y su rollback, en [entornos-y-despliegue.md](entornos-y-despliegue.md#4-el-despliegue-paso-a-paso).
 
-`/etc/fitcoachia/prod` mantiene permisos restringidos: el usuario de despliegue (SSH) no puede
-leerlo directamente. El workflow `deploy.yml` accede solo durante el comando de despliegue
-mediante `sudo -n`, así que ese usuario necesita una regla `sudoers` sin contraseña:
-
-```
-# /etc/sudoers.d/fitcoach-deploy   (chmod 0440, validar con visudo -c)
-<SERVER_USER> ALL=(root) NOPASSWD: /usr/bin/make, /usr/bin/test, /bin/ls
-```
+Con los ficheros de la versión ya instalados en `/opt/fitcoachia`, se relanza a mano así (el despliegue
+completo, con su rollback, está en
+[despliegue-aws-ec2.md](despliegue-aws-ec2.md#83-despliegue-a-mano)):
 
 ```bash
-make prod-up VERSION=0.3.0
+cd /opt/fitcoachia
+sudo VERSION=1.2.0 make prod-up
 ```
-
-Para desplegar manualmente en el servidor con ese usuario restringido, antepón `sudo`:
-
-```bash
-sudo make prod-up VERSION=0.3.0
-```
-
-Desarrollo y producción pueden convivir en el mismo servidor. Usa `make dev-up` para el entorno
-de desarrollo y `make prod-up VERSION=<version>` para producción; cada uno mantiene sus propios
-contenedores, volumen PostgreSQL y configuración `DEPLOYMENT_ENVIRONMENT`.
 
 ### Health check del contenedor
 
-Ambos Compose definen un `healthcheck` sobre `/health` que Docker sondea **cada 5 minutos** en
+El Compose define un `healthcheck` sobre `/health` que Docker sondea **cada 5 minutos** en
 régimen estable, para no llenar los logs con una petición cada pocos segundos durante toda la vida
 del contenedor. Para que eso no ralentice los despliegues, lleva además `start_interval: 5s`: mientras
-el contenedor arranca se sondea cada 5 segundos, así que pasa a `healthy` en cuanto responde y el
-workflow de despliegue no espera 5 minutos para darlo por bueno.
+el contenedor arranca se sondea cada 5 segundos, así que pasa a `healthy` en cuanto responde y
+`make prod-up` (`up --wait`) no espera 5 minutos para darlo por bueno.
 
 ```yaml
     healthcheck:
@@ -270,11 +237,11 @@ completar las preguntas, valida y guarda el perfil estructurado en PostgreSQL y 
 resumen por Telegram. Los mensajes posteriores invitan a generar el plan con `/train`; envía
 `/interview` para reemplazar el perfil actual e iniciar una entrevista limpia.
 
-Para probar rápidamente la generación del informe final en desarrollo, `make dev-up` configura
-automáticamente la skill `interviewer-dev`. Esta variante solo hace tres preguntas y conserva el
-mismo contrato de perfil, persistencia e informe que producción. La skill completa se mantiene
-activa en producción con `ia_skill=interviewer`. Después de completar una prueba, consulta el
-informe en Adminer o envía `/interview` para empezar otra.
+Para probar rápidamente la generación del informe final en desarrollo, usa `ia_skill=interviewer-dev`
+en el `.env` (el valor de `.env.example`). Esta variante solo hace tres preguntas y conserva el
+mismo contrato de perfil, persistencia e informe que producción, que usa `ia_skill=interviewer`.
+Después de completar una prueba, consulta el informe en pgAdmin o envía `/interview` para empezar
+otra.
 
 > **Runtime de contenedores.** El `Makefile` usa `docker` por defecto, que es lo que hay en los
 > runners de CI. En local, donde el runtime es podman, pasa la variable en cada invocación:
@@ -283,13 +250,13 @@ informe en Adminer o envía `/interview` para empezar otra.
 ## Plan de entrenamiento
 
 Con la entrevista completada, `/train` genera un mesociclo de 4 semanas. Requiere dos servicios
-adicionales, que `make dev-up` levanta o conecta automáticamente:
+adicionales, que `make dev-up` levanta con el resto:
 
-- **pgVector** con el catálogo de ejercicios. Vive en su propio Compose, así que hay que levantarlo
-  por separado la primera vez:
+- **pgVector** con el catálogo de ejercicios. La primera vez carga el catálogo al crear su volumen y
+  tarda varios minutos. Se puede manejar solo:
 
   ```bash
-  make vector-up      # pgVector + pgAdmin
+  make vector-up      # solo pgvector
   make vector-logs
   make vector-down    # conserva el volumen con la carga inicial
   ```
@@ -301,7 +268,7 @@ adicionales, que `make dev-up` levanta o conecta automáticamente:
 Ver [vector-db.md](vector-db.md) para el esquema, el modelo de embeddings y el rol de solo lectura,
 y [trainer-agent.md](trainer-agent.md) para el comportamiento del agente.
 
-En desarrollo, `make dev-up` fija `ia_trainer_skill=trainer-dev`: desarrolla bien la semana 1 y
+En desarrollo conviene `ia_trainer_skill=trainer-dev` en el `.env`: desarrolla bien la semana 1 y
 deriva las otras tres, con un máximo de 3 ejercicios por día. Mantiene intactas las comprobaciones
 que importan (ids del catálogo, 4 semanas, días comprometidos), así que sirve para probar el flujo
 completo sin gastar 4096 tokens por iteración.
@@ -314,6 +281,8 @@ no sustituye ejercicios ni guarda ajustes.
 
 ### Variables de entorno del entrenador
 
+Plantilla completa en `.env.example`; las propias del entrenador y sus dependencias:
+
 ```dotenv
 # Agente 2 (entrenador). El mesociclo completo no cabe en ia_max_tokens.
 ia_trainer_skill=trainer
@@ -322,32 +291,23 @@ ia_trainer_history_window_messages=10
 # Ejercicios recuperados de la BD vectorial por grupo muscular.
 ia_rag_top_k=8
 
-POSTGRES_USER=fitcoach
-POSTGRES_PASSWORD=...
-POSTGRES_HOST=postgres
-POSTGRES_DB=fitcoach
-POSTGRES_PORT=5432
-
 # Base de datos vectorial (catalogo de ejercicios). Solo lectura: ver
-# infra/vector-db/ddl/002_2026-09-21_readonly-role.sql. Levantala con `make vector-up`.
-VECTOR_DB_USER=fitcoach_ro
-VECTOR_DB_PASSWORD=...
-VECTOR_DB_HOST=pgvector
-VECTOR_DB_NAME=fitcoach
-VECTOR_DB_PORT=5433
-
-PGADMIN_DEFAULT_EMAIL=admin@admin.com
-PGADMIN_DEFAULT_PASSWORD=admin
-PGADMIN_PORT=8010
-STANDARD_HTTP_PORT=80
+# infra/vector-db/ddl/002_2026-09-21_readonly-role.sql.
+vector_database_url=postgresql+asyncpg://fitcoach_ro:...@pgvector:5432/fitcoach
+VECTOR_USER=fitcoach
+VECTOR_PASSWORD=...
+VECTOR_HOST=pgvector
+VECTOR_DB=fitcoach
+VECTOR_PORT=5433
+VECTOR_DB_RO_PASSWORD=...
 
 # Servicio de embeddings (infra/embedder). DEBE usar el mismo modelo que el
 # corpus: all-MiniLM-L6-v2, 384 dimensiones.
-embedder_port=8100
+embedder_url=http://embedder:8100
 embedder_timeout_seconds=10
 ```
 
-La aplicación no arranca si falta `vector_db_url` o `embedder_url`.
+La aplicación no arranca si falta `vector_database_url` o `embedder_url`.
 
 ### Avisos y encuestas semanales
 

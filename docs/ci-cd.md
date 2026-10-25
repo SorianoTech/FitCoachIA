@@ -341,4 +341,3 @@ ejecución o al modificar los workflows:
 | PR a `develop` no re-ejecuta `build.yml` | El filtro `pull_request.branches` evalúa la rama **base**, no la de origen; la validación de esos commits ya ocurrió en el `push` a la rama de trabajo. |
 | `bugfix/**` se valida pero no se puede fusionar | `build.yml` dispara sobre `bugfix/**`, pero `validate-develop-merge.yml` solo admite `feature/`, `feat/` y `fix/`: un PR desde `bugfix/**` a `develop` queda bloqueado pese a haber pasado CI. |
 | Versión del proyecto desincronizada | `pyproject.toml` declara `0.1.0` mientras los tags Git ya están en `0.4.2`; no hay bump automático de versión. |
-| `README.md` desactualizado | La sección `## CI/CD` describe workflows que ya no existen (`validate-merge-source.yml`) y afirma que `release.yml` se dispara con push a `main`, cuando en realidad es manual (`workflow_dispatch`) desde `develop`/`release/*`. |

@@ -199,7 +199,8 @@ el embedding de esa fila.
 
 ### Aplicación
 
-Variables de `/etc/fitcoachia/prod/.env.prod` o del fichero correspondiente al entorno:
+Variables del fichero de entorno (`/opt/fitcoachia/.env` en producción, `.env` del repositorio en
+desarrollo):
 
 ```env
 bot_telegram_commands=start:Inicia FitCoach,interview:Entrevista,train:Tu plan de entrenamiento,add_exercise:Propón un ejercicio,doubts:Resuelve dudas,progress:Tu progreso

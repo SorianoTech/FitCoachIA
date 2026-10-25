@@ -9,8 +9,8 @@ const offlineBanner = document.getElementById('offline-banner');
 const installBtn = document.getElementById('install-btn');
 const micBtn = document.getElementById('mic-btn');
 
-// Turns each [n] with a matching source into a button that highlights its chip (DOM nodes only).
-function renderCitations(body, text, chips) {
+// Turns each [n] with a matching source into a button that shows/hides its chip (DOM nodes only).
+function renderCitations(body, text, chips, list) {
   for (const part of text.split(/(\[\d+\])/)) {
     const chip = chips.get(Number(part.slice(1, -1)));
     if (!/^\[\d+\]$/.test(part) || !chip) {
@@ -21,10 +21,14 @@ function renderCitations(body, text, chips) {
     cite.type = 'button';
     cite.className = 'cite';
     cite.textContent = part;
+    cite.setAttribute('aria-expanded', 'false');
     cite.addEventListener('click', () => {
-      chip.classList.add('chip--active');
-      chip.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      setTimeout(() => chip.classList.remove('chip--active'), 2500);
+      chip.hidden = !chip.hidden;
+      list.hidden = [...chips.values()].every((c) => c.hidden);
+      for (const b of body.querySelectorAll('.cite')) {
+        b.setAttribute('aria-expanded', String(!chips.get(Number(b.textContent.slice(1, -1))).hidden));
+      }
+      if (!chip.hidden) chip.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
     body.appendChild(cite);
   }
@@ -45,10 +49,12 @@ function addMessage(kind, text, sources) {
   if (sources && sources.length) {
     const list = document.createElement('div');
     list.className = 'sources';
+    list.hidden = true;
     const chips = new Map();
     for (const s of sources) {
       const chip = document.createElement('span');
       chip.className = 'chip';
+      chip.hidden = true;
       const num = document.createElement('b');
       num.className = 'chip-num';
       num.textContent = `[${s.number}]`;
@@ -57,7 +63,7 @@ function addMessage(kind, text, sources) {
       chips.set(s.number, chip);
       list.appendChild(chip);
     }
-    renderCitations(body, text, chips);
+    renderCitations(body, text, chips, list);
     bubble.appendChild(list);
   } else {
     body.textContent = text; // never innerHTML: the answer comes from an LLM

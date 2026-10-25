@@ -177,7 +177,8 @@ Errores: `422` entrada no válida, `413` audio demasiado grande o largo, `415` t
 
 Cada fuente lleva `number`: la posición (desde 1) del pasaje en el contexto enviado al LLM, que es el `[n]`
 que cita en la respuesta. No se deduplican: hay una fuente por pasaje usado. El front muestra cada chip como
-`[n] fichero › sección` y convierte los `[n]` de la respuesta que tengan fuente en botones que resaltan su chip.
+`[n] fichero › sección`, pero los chips están ocultos: cada `[n]` de la respuesta que tenga fuente es un botón
+que muestra u oculta su chip (puede haber varios abiertos). Una fuente que el LLM no cita en el texto no se muestra.
 
 ## Anti-abuso
 

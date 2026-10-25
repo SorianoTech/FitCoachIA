@@ -275,7 +275,7 @@ Para high-cardinality (ej: `trace_id`), usa ad-hoc queries en Loki data source.
 
 Dos alertas provisionadas disparan en función de estos logs:
 
-1. **Latencia del LLM elevada** — `avg(latency_ms)` > 30s por 10 min
+1. **Latencia del LLM elevada** — percentil 95 de `latency_ms` > 30s por 10 min
 2. **Tasa de fallos elevada** — > 20% de llamadas no success
 
 Accede a ellas vía: Grafana → Alerting → Alert rules → "FitCoachIA"

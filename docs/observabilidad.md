@@ -256,15 +256,16 @@ entorno).
 ### Alertas provisionadas
 
 En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
-(carpeta «FitCoachIA» en Grafana), duplicadas por entorno para poder
-distinguir un incidente en dev de uno en prod:
+(carpeta «FitCoachIA» en Grafana), un solo grupo `fitcoach-llm` con dos reglas:
 
-- **`[dev]`/`[prod]` Latencia p95 del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
-- **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
+- **`[<entorno>]` Latencia del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
+- **`[<entorno>]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
 
-Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada
-grupo consulta su propio datasource (`fitcoach-postgres` /
-`fitcoach-postgres-prod`).
+Grafana sustituye `${DEPLOYMENT_ENVIRONMENT}` al cargar el fichero, así que cada stack crea sus reglas
+con el entorno en el título, en el `uid` (`fitcoach-<entorno>-llm-…`) y en la etiqueta `environment`, y
+las consulta contra el datasource de su entorno (`fitcoach-postgres-<entorno>`). Las dos llevan
+`severity: critical`. `deleteRules` borra las variantes anteriores `[dev]`/`[prod]` de los Grafana que
+ya las tuvieran.
 
 ## 5. Cómo levantar el stack
 
@@ -338,8 +339,8 @@ propio `.env`, así que cada uno tiene **su propio stack de observabilidad**, qu
   DB`, que apunta a la base de su entorno (`POSTGRES_HOST`:`POSTGRES_PORT`) con el uid
   `fitcoach-postgres-<DEPLOYMENT_ENVIRONMENT>`. Desde un stack no se puede consultar la base del
   otro entorno.
-- **Alertas**: definidas por entorno (`[dev]`/`[prod]` en el título); en cada stack solo funcionan
-  las de su entorno, porque cada una apunta al datasource de su entorno.
+- **Alertas**: un solo juego de reglas que toma el entorno de `DEPLOYMENT_ENVIRONMENT` y consulta
+  el datasource `fitcoach-postgres-<DEPLOYMENT_ENVIRONMENT>` (ver *Alertas provisionadas*).
 
 > **Regla general**: `proxy-network` solo admite interfaces que deban recibir tráfico de Nginx
 > Proxy Manager (la API, Grafana y pgAdmin). PostgreSQL, embedder, pgVector y Collector no se

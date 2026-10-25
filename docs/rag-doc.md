@@ -41,11 +41,42 @@ La lista blanca está en `infra/rag-doc/sources.yml` y contiene los 31 `.md` de 
 make rag-index
 ```
 
-- Los ficheros se trocean por encabezados (máx. `RAG_CHUNK_MAX_CHARS`, 1200 por defecto).
+- Los ficheros se trocean por encabezados (ver [Cómo se construyen los chunks](#cómo-se-construyen-los-chunks)).
 - Los ids de los puntos son `uuid5(fichero#índice)`: reindexar es idempotente y elimina los
   fragmentos de ficheros que salgan de la lista blanca.
 - Si cambia la dimensión del modelo, la colección se recrea.
 - Reindexa después de cambiar la documentación o `sources.yml`.
+
+### Cómo se construyen los chunks
+
+`rag_doc/chunking.py` (`chunk_markdown`) convierte cada `.md` en una lista de `Chunk(source, index, heading, text)`:
+
+1. **Secciones por encabezado.** Se recorre el fichero línea a línea y cada encabezado (`#` a `######`) abre una
+   sección. El `heading` del chunk es la ruta completa de encabezados (`H1 > H2 > H3`), no solo el último.
+   Las líneas dentro de bloques de código (```` ``` ```` o `~~~`) no cuentan como encabezado, y las secciones
+   vacías se descartan.
+2. **Fusión de secciones pequeñas** (solo si `RAG_CHUNK_MIN_CHARS` > 0). Una sección con menos de ese
+   número de caracteres se une a la siguiente, con el encabezado de la pequeña dentro del texto, siempre que el
+   resultado no supere `RAG_CHUNK_MAX_CHARS`. El chunk resultante conserva el `heading` de la primera.
+3. **División de secciones largas.** Si una sección supera `RAG_CHUNK_MAX_CHARS`, se parte por párrafos
+   (separados por línea en blanco) agrupándolos hasta el máximo. Un párrafo que por sí solo lo supera se corta
+   primero por fin de línea, luego por fin de frase y, como último recurso, por longitud, sin fragmentar nunca
+   una palabra a la mitad salvo que no haya otra opción.
+4. **Solapamiento** (solo si `RAG_CHUNK_OVERLAP` > 0). Al empezar un chunk dentro de una misma sección se
+   repite el último párrafo del anterior, solo si cabe en ese número de caracteres.
+5. **Texto que se vectoriza.** Se embebe `heading + "\n" + text` (`Chunk.embed_text`), para que la sección
+   aporte contexto aunque el texto no la nombre. El texto guardado y mostrado como fuente es solo `text`.
+
+El `index` es la posición del chunk en su fichero y, con `source`, forma el id del punto (`uuid5(fichero#índice)`).
+Por tanto, cambiar cualquier parámetro de troceado renumera los chunks y exige `make rag-index`.
+
+| Variable | Por defecto | Efecto |
+|---|---|---|
+| `RAG_CHUNK_MAX_CHARS` | `1200` | Tamaño máximo de un chunk |
+| `RAG_CHUNK_MIN_CHARS` | `0` | Umbral para fusionar secciones pequeñas (0 = desactivado) |
+| `RAG_CHUNK_OVERLAP` | `0` | Máximo de caracteres del párrafo repetido entre chunks (0 = desactivado) |
+
+Los tamaños se comparan con `make rag-eval` (ver [Evaluación de retrieval](#evaluación-de-retrieval)).
 
 ## Modelo de embeddings
 

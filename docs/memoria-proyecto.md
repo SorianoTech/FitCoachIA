@@ -122,7 +122,7 @@ de composición y valida **todas** las configuraciones al arrancar (fail-fast).
 
 | Componente | Responsabilidad |
 |---|---|
-| `api/` | Solo HTTP: webhook de Telegram (siempre devuelve `{"ok": true}` para evitar reintentos), `/health`, Mini App y panel admin |
+| `api/` | Solo HTTP: webhook de Telegram (403 sin cabecera secreta, 400 si el update está mal formado; tras un update válido y autenticado siempre devuelve `{"ok": true}` para evitar reintentos), `/health`, Mini App y panel admin |
 | `service/` | Casos de uso: `ConversationService` enruta comandos (`/start`, `/interview`, `/train`, `/doubts`, `/progress`), entrenamiento, cuotas |
 | `service/agent/` | Cadenas LLM: `BaseLLMChain`, entrevistador, entrenador, adaptación, curador, evaluador determinista, recuperador RAG |
 | `domain/` | Entidades Pydantic, errores y todos los textos de usuario (`constants.py`); sin I/O |

@@ -67,6 +67,7 @@ FitCoachIA/
 │   ├── fixtures/                 # Corpus mínimo de pgVector y stub de Telegram/LLM/embedder
 │   └── docker-compose-test.yml   # Entorno de los tests de integración
 ├── docs/                         # Documentación técnica (en español)
+├── tools/memoria/                # Regenera docs/memoria-proyecto.docx desde el Markdown (python tools/memoria/build_memoria.py)
 ├── .github/
 │   ├── actions/
 │   │   ├── python-setup/         # Action reutilizable: Python + uv + auditoría de dependencias

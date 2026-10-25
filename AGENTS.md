@@ -68,7 +68,7 @@ src/fitcoach/
 Key facts per layer:
 
 - **api/webhook.py**: Telegram sends raw JSON; `parse_update` builds a `telegram.Update` (400 on malformed JSON).
-  After a valid update it **always returns `{"ok": true}`** (Telegram retries non-2xx). `ConversationService.handle_update`
+  The secret-token header is verified first (403 if missing/wrong). After a valid, authenticated update it **always returns `{"ok": true}`** (Telegram retries non-2xx). `ConversationService.handle_update`
   never propagates exceptions: it logs and replies with a user-facing fallback.
 - **service/conversation_service.py**: strips emojis before command detection, keeps `message_thread_id` when replying,
   prefixes logs with an update/chat/thread/message/user context, routes `Commands` (`domain/telegram.py`):

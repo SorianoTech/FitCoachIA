@@ -101,9 +101,9 @@ Ejecuta `make help` para ver todos los comandos disponibles.
 | `make clean-image [version=x.y.z]` | Elimina solo la imagen de la versión indicada (por defecto `latest`) |
 | `make clean-images` | Elimina todas las imágenes locales de la aplicación |
 | `make tests` | Levanta el entorno de tests, ejecuta unitarios e integración con cobertura (falla si < 80%) y lo detiene |
-| `make dev-up` / `dev-down` / `dev-logs` | Entorno de desarrollo (`docker-compose.dev.yml`) |
-| `make prod-up [VERSION=x.y.z]` / `prod-down` / `prod-logs` | Entorno de producción (`docker-compose.yml`) |
-| `make vector-up` / `vector-down` / `vector-logs` | Base de datos vectorial (`infra/vector-db`) |
+| `make dev-up` / `dev-app` / `dev-down` / `dev-logs` | Desarrollo: construye y levanta todo el sistema (`docker-compose.yml`, `.env`) |
+| `make prod-up [VERSION=x.y.z]` / `prod-down` / `prod-logs` | Producción: descarga las imágenes y levanta todo sin construir (`docker-compose.yml`, `/opt/fitcoachia/.env`) |
+| `make vector-up` / `vector-down` / `vector-logs` | Solo el servicio `pgvector` del Compose (catálogo de ejercicios) |
 
 El detalle de cada comando y de sus variables está en [docs/Makefile.md](docs/Makefile.md).
 

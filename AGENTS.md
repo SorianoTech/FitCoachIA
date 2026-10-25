@@ -191,7 +191,8 @@ Out of scope of this flow (independent images with their own pins): `infra/embed
 
 The `Makefile` is the shared entry point for local use and GitHub workflows (`.github/`). Do not duplicate its logic in YAML.
 
-- Targets: `build`, `run`, `stop`, `logs`, `clean*`, `tests`, `dev-up|down|logs`, `prod-up|down|logs`, `vector-up|down|logs`.
+- Targets: `build`, `run`, `stop`, `logs`, `clean*`, `tests`, `dev-up|app|down|logs`, `prod-up|down|logs`, `vector-up|down|logs`
+  (all on the single `docker-compose.yml`; `dev-up` builds, `prod-up` pulls and never builds).
 - `make tests`: starts `tests/docker-compose-test.yml`, runs unit + IT with coverage >= 80 %, tears it down.
   CI calls `make tests PYTEST=pytest`.
 - `make prod-up` is what `deploy.yml` runs on the server. The deploy copies **only** `docker-compose.yml` and `Makefile`,

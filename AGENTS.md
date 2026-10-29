@@ -107,7 +107,7 @@ Key facts per layer:
 ## 2. External services
 
 | Service | Role | Adapter / location | Config prefix |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Telegram | Only entry point (webhook) and output channel | `infrastructure/bot`, `api/webhook.py` | `bot_telegram_*` |
 | PostgreSQL (conversational) | Messages, interview profiles, training plans, token usage, model prices | `infrastructure/database`, **Alembic** | `database_*` |
 | PostgreSQL + pgVector (exercise catalogue) | Read-only RAG corpus, separate server and role | `infrastructure/vectordb`, DDL in `infra/vector-db/ddl` | `vector_database_*` |
@@ -140,7 +140,7 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 
 ## 4. Configuration
 
-- Precedence: OS env vars > `.env.<APP_ENV>` > `.env` > defaults (`APP_ENV` defaults to `dev`).
+- Precedence: OS env vars > `.env.<DEPLOYMENT_ENVIRONMENT>` > `.env` > defaults (`DEPLOYMENT_ENVIRONMENT` defaults to `dev`).
 - One `BaseSettings` class per prefix in `infrastructure/config/settings.py`; `main.py` lifespan instantiates all of them
   so a missing/malformed value aborts startup (fail fast).
 - `bot_telegram_commands` is `name:description` pairs joined by commas; validate through `to_bot_command`.
@@ -174,10 +174,12 @@ Each agent is made of the same pieces. To add one, mirror the existing ones:
 1. **Ask the user** what the new library is for: runtime (app), `test`, `lint`, `ci` or `dev` (local only).
 2. Add it to the right place in `pyproject.toml` (`[project].dependencies` for runtime, otherwise the matching `[dependency-groups]`).
 3. Regenerate both files from the TOML:
+
    ```bash
    uv pip compile pyproject.toml --universal --python-version 3.11 --no-annotate -o src/requirements.txt
    uv pip compile pyproject.toml --group dev --group ci --universal --python-version 3.11 --no-annotate -o .github/requirements-ci.txt
    ```
+
 4. Update `docs/toml.md`.
 
 Out of scope of this flow (independent images with their own pins): `infra/embedder/requirements.txt`,
@@ -189,13 +191,16 @@ Out of scope of this flow (independent images with their own pins): `infra/embed
 
 The `Makefile` is the shared entry point for local use and GitHub workflows (`.github/`). Do not duplicate its logic in YAML.
 
-- Targets: `build`, `run`, `stop`, `logs`, `clean*`, `tests`, `dev-up|down|logs`, `prod-up|down|logs`, `vector-up|down|logs`.
+- Targets: `build`, `run`, `stop`, `logs`, `clean*`, `tests`, `dev-up|app|down|logs`, `prod-up|down|logs`, `vector-up|down|logs`
+  (all on the single `docker-compose.yml`; `dev-up` builds, `prod-up` pulls and never builds).
 - `make tests`: starts `tests/docker-compose-test.yml`, runs unit + IT with coverage >= 80 %, tears it down.
   CI calls `make tests PYTEST=pytest`.
-- `make prod-up` is what `deploy.yml` runs on the server. The deploy copies **only** `docker-compose.yml` and `Makefile`,
+- `make prod-up` is what `deploy.yml` runs on the server, through SSM and `infra/aws/ec2/deploy-release.sh`.
+  The deploy copies **only** `docker-compose.yml`, `Makefile` and the two `infra/aws/ec2` scripts (no repo clone),
   so the prod compose cannot depend on other repo files.
 - Workflows: `build.yml` (quality + security + semgrep + tests on `feat/**`, `feature/**`, `fix/**`, `bugfix/**`),
-  `release.yml` (image build, Trivy, GitHub release, then `deploy.yml`), `validate-*-merge.yml`.
+  `release.yml` (builds every compose image whose tag is not on Docker Hub yet: app = release version,
+  others = tag pinned in the compose; Trivy, push, GitHub release, then `deploy.yml`), `validate-*-merge.yml`.
   Composite actions: `.github/actions/python-setup` and `quality-check` (ruff, mypy, gitleaks, pip-audit, bandit).
 - Branch flow: `feat|feature|fix|bugfix/*` -> `develop` -> `main`. Direct commits to `main`/`develop` are blocked.
 - A change to targets, workflows or actions => update `docs/Makefile.md` / `docs/ci-cd.md`.
@@ -205,18 +210,16 @@ The `Makefile` is the shared entry point for local use and GitHub workflows (`.g
 ## 8. Containers and environments
 
 | File | Purpose | Notes |
-|---|---|---|
-| `docker-compose.dev.yml` | Development stack (`build:`) | Reference one: change here first |
-| `docker-compose.local.yml` | Local all-in-one stack, used to **try changes locally** | Reads root `.env` |
-| `docker-compose.yml` | Production (`image:` published, no `build:`) | Adapt, do not copy, from dev |
+| --- | --- | --- |
+| `docker-compose.yml` | Whole system of one environment (`build:`): app, embedder, Postgres, pgVector, pgAdmin, observability, Nginx Proxy Manager | One environment per host, chosen by `DEPLOYMENT_ENVIRONMENT` in the root `.env` |
 | `tests/docker-compose-test.yml` | Integration tests (app + Postgres + pgVector + stub server) | Must always work with `make tests` |
-| `infra/vector-db/docker-compose.vector-db*.yml` | pgVector catalogue (independent lifecycle) | Not part of app compose |
-| `infra/observability/compose.yml` | Grafana/Loki/Tempo/Prometheus/OTel collector | Independent of app code |
+| `infra/vector-db/` | pgVector image (`Dockerfile-pgVector`) and DDL | Built by `docker-compose.yml` |
+| `infra/observability/config/<component>/` | One image per observability component, with its config copied in | Built by `docker-compose.yml`; config changes need `--build` |
 | `infra/embedder/` | Embedder image (own Dockerfile, requirements) | Independent of app code |
-| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3, Nginx Proxy Manager compose | Runs the composes above unchanged; see `docs/despliegue-aws-ec2.md` |
+| `infra/aws/ec2/` | Single-EC2 AWS deployment: CloudFormation template, Postgres backup to S3 and the release deploy script | Runs `docker-compose.yml` unchanged; see `docs/despliegue-aws-ec2.md` |
 
-Workflow for a compose-affecting change: edit **dev** -> try it with **local** -> if it works, replicate in **prod**
-(keep prod-specific things: `image:`, `restart`, healthchecks, networks, env files) -> keep the **test** compose runnable.
+Workflow for a compose-affecting change: edit `docker-compose.yml`, add any new variable to `.env.example`, try it locally
+with `docker compose up -d --build` -> keep the **test** compose runnable.
 Dockerfile (`src/Dockerfile`): multi-stage, non-root user, context = repo root (`docker build -f src/Dockerfile .`);
 it only copies `src/requirements.txt`, `src/fitcoach`, `alembic` and `alembic.ini`.
 
@@ -264,10 +267,10 @@ Always try to run, when available, what the repo enforces (report anything you c
 Update every item that the change touches, in the same change:
 
 | If you change... | Also update |
-|---|---|
+| --- | --- |
 | Any behaviour, flow or design | the matching file in `docs/` (Spanish), chosen as in golden rule 7 — **mandatory** |
 | Code | unit + IT tests (OK and KO cases) — **mandatory** |
-| Services, ports, env vars | `docker-compose.dev.yml`, `docker-compose.local.yml`, `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
+| Services, ports, env vars | `docker-compose.yml`, `tests/docker-compose-test.yml` as needed |
 | Env vars | the matching `.env.example` (+ `docs/how-to.md`) |
 | DB models | Alembic revision (conversational DB) or `infra/vector-db/ddl` script (vector DB) |
 | Dependencies | `pyproject.toml` -> regenerate both requirements files -> `docs/toml.md` |

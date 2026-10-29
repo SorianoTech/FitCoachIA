@@ -1,32 +1,40 @@
 apiVersion: 1
 
-# Reglas previas, unicas, sustituidas por las variantes [dev]/[prod] de abajo.
+# Un solo grupo con el datasource de su entorno; se borran las variantes [dev]/[prod] anteriores.
 deleteRules:
   - orgId: 1
     uid: fitcoach-llm-latency-p95
   - orgId: 1
     uid: fitcoach-llm-failure-rate
+  - orgId: 1
+    uid: fitcoach-llm-latency-p95-dev
+  - orgId: 1
+    uid: fitcoach-llm-failure-rate-dev
+  - orgId: 1
+    uid: fitcoach-llm-latency-p95-prod
+  - orgId: 1
+    uid: fitcoach-llm-failure-rate-prod
 
 groups:
   - orgId: 1
-    name: fitcoach-llm-dev
+    name: fitcoach-llm
     folder: FitCoachIA
     interval: 5m
     rules:
-      - uid: fitcoach-llm-latency-p95-dev
-        title: "[dev] Latencia del LLM por encima del umbral"
+      - uid: fitcoach-${DEPLOYMENT_ENVIRONMENT}-llm-latency-p95
+        title: "[${DEPLOYMENT_ENVIRONMENT}] Latencia del LLM por encima del umbral"
         condition: C
         for: 10m
         noDataState: OK
         execErrState: Error
         annotations:
-          summary: "Latencia media del LLM (dev) > 30s en los ultimos 15 minutos"
+          summary: "Latencia p95 del LLM > 30s en los ultimos 15 minutos"
         labels:
-          severity: warning
-          environment: dev
+          severity: ${ALERT_SEVERITY}
+          environment: ${DEPLOYMENT_ENVIRONMENT}
         data:
           - refId: A
-            datasourceUid: fitcoach-postgres-dev
+            datasourceUid: fitcoach-postgres-${DEPLOYMENT_ENVIRONMENT}
             relativeTimeRange: { from: 900, to: 0 }
             model:
               rawSql: "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS latencia_p95_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
@@ -40,79 +48,20 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [30000] }
 
-      - uid: fitcoach-llm-failure-rate-dev
-        title: "[dev] Tasa de fallos del LLM elevada"
+      - uid: fitcoach-${DEPLOYMENT_ENVIRONMENT}-llm-failure-rate
+        title: "[${DEPLOYMENT_ENVIRONMENT}] Tasa de fallos del LLM elevada"
         condition: C
         for: 10m
         noDataState: OK
         execErrState: Error
         annotations:
-          summary: "Mas del 20% de las llamadas al LLM (dev) fallaron en los ultimos 15 minutos"
+          summary: "Mas del 20% de las llamadas al LLM fallaron en los ultimos 15 minutos"
         labels:
-          severity: warning
-          environment: dev
+          severity: ${ALERT_SEVERITY}
+          environment: ${DEPLOYMENT_ENVIRONMENT}
         data:
           - refId: A
-            datasourceUid: fitcoach-postgres-dev
-            relativeTimeRange: { from: 900, to: 0 }
-            model:
-              rawSql: "SELECT 100.0 * count(*) FILTER (WHERE status <> 'success') / greatest(count(*), 1) AS failure_rate_pct FROM token_usage WHERE created_at > now() - interval '15 minutes'"
-              format: table
-              rawQuery: true
-          - refId: C
-            datasourceUid: "__expr__"
-            model:
-              type: threshold
-              expression: A
-              conditions:
-                - evaluator: { type: gt, params: [20] }
-
-  - orgId: 1
-    name: fitcoach-llm-prod
-    folder: FitCoachIA
-    interval: 5m
-    rules:
-      - uid: fitcoach-llm-latency-p95-prod
-        title: "[prod] Latencia del LLM por encima del umbral"
-        condition: C
-        for: 10m
-        noDataState: OK
-        execErrState: Error
-        annotations:
-          summary: "Latencia media del LLM (prod) > 30s en los ultimos 15 minutos"
-        labels:
-          severity: critical
-          environment: prod
-        data:
-          - refId: A
-            datasourceUid: fitcoach-postgres-prod
-            relativeTimeRange: { from: 900, to: 0 }
-            model:
-              rawSql: "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS latencia_p95_ms FROM token_usage WHERE created_at > now() - interval '15 minutes'"
-              format: table
-              rawQuery: true
-          - refId: C
-            datasourceUid: "__expr__"
-            model:
-              type: threshold
-              expression: A
-              conditions:
-                - evaluator: { type: gt, params: [30000] }
-
-      - uid: fitcoach-llm-failure-rate-prod
-        title: "[prod] Tasa de fallos del LLM elevada"
-        condition: C
-        for: 10m
-        noDataState: OK
-        execErrState: Error
-        annotations:
-          summary: "Mas del 20% de las llamadas al LLM (prod) fallaron en los ultimos 15 minutos"
-        labels:
-          severity: critical
-          environment: prod
-        data:
-          - refId: A
-            datasourceUid: fitcoach-postgres-prod
+            datasourceUid: fitcoach-postgres-${DEPLOYMENT_ENVIRONMENT}
             relativeTimeRange: { from: 900, to: 0 }
             model:
               rawSql: "SELECT 100.0 * count(*) FILTER (WHERE status <> 'success') / greatest(count(*), 1) AS failure_rate_pct FROM token_usage WHERE created_at > now() - interval '15 minutes'"

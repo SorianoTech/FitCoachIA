@@ -1,16 +1,17 @@
-name: fitcoach-prod
+name: fitcoach
 
-# Los servicios internos comparten una red exclusiva de produccion. Solo la API
-# publica se conecta tambien a proxy-network.
+# Un entorno por host. Dev construye (`make dev-up`); prod descarga las imagenes (`make prod-up`).
+# La app toma VERSION de la release; el resto de imagenes propias lleva su propio tag fijo.
+# Los servicios internos comparten la red `fitcoach-internal`;
+# Tanto la API, Grafana como pgAdmin se conectan tambien a proxy-network.
 services:
-  fitcoach-ia-prod:
+  fitcoach-ia:
     container_name: fitcoach-ia
     restart: unless-stopped
-    image: fitcoachia/fitcoach-app:${VERSION:-1.0.0}
+    image: fitcoachia/fitcoach-app:${VERSION:-latest}
     build:
       context: .
       dockerfile: src/Dockerfile
-
     ports:
       - "${APP_PORT}:8000"
     healthcheck:
@@ -22,33 +23,27 @@ services:
       # Sondeo rapido solo durante el arranque: el despliegue no espera 5 min a ver healthy.
       start_interval: 5s
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
-        required: false
+      - path: ${FITCOACH_ENV_FILE:-.env}
     depends_on:
-      postgres-prod:
+      postgres:
         condition: service_healthy
-      embedder-prod:
+      embedder:
+        condition: service_healthy
+      pgvector:
         condition: service_healthy
     networks:
       - internal
       - proxy-network
 
-  embedder-prod:
+  embedder:
     container_name: fitcoach-embedder
     restart: unless-stopped
-    image: fitcoachia/embedder:${VERSION:-1.0.0}
+    image: fitcoachia/embedder:1.0.0
     build:
       context: infra/embedder
       dockerfile: Dockerfile-embedder
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
-        required: false
+      - path: ${FITCOACH_ENV_FILE:-.env}
     healthcheck:
       # /health solo responde 200 cuando el modelo esta cargado en memoria.
       test: [ "CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8100/health',timeout=2)" ]
@@ -60,58 +55,255 @@ services:
     networks:
       - internal
 
-  postgres-prod:
+  postgres:
     # Nombre fijo: sin el, un rename de servicio crearia un segundo Postgres
     # sobre el mismo volumen en vez de fallar por conflicto de nombre.
     container_name: fitcoach-postgres
     image: postgres:16-alpine
     restart: unless-stopped
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
-        required: false
+      - path: ${FITCOACH_ENV_FILE:-.env}
     volumes:
-      - fitcoach-prod-postgres:/var/lib/postgresql/data
+      - fitcoach-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-fitcoach} -d $${POSTGRES_DB:-fitcoach}" ]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
       - internal
 
-  pgadmin-prod:
-    image: dpage/pgadmin4
-    restart: unless-stopped
-    container_name: pgadmin4-prod
+  pgvector:
+    image: fitcoachia/pgvector:1.0.0
+    build:
+      context: ./infra/vector-db
+      dockerfile: Dockerfile-pgVector
+    container_name: pgvector
     env_file:
-      # Base del repositorio; el fichero del sistema, si existe, sobreescribe sus claves.
-      - path: .env.prod
-        required: false
-      - path: ${FITCOACH_ENV_FILE:-/etc/fitcoachia/prod/.env.prod}
-        required: false
+      - path: ${FITCOACH_ENV_FILE:-.env}
+    environment:
+      POSTGRES_HOST: ${VECTOR_HOST:?VECTOR_HOST is required}
+      POSTGRES_PORT: ${VECTOR_PORT:?VECTOR_PORT is required}
+      POSTGRES_USER: ${VECTOR_USER:?VECTOR_USER is required}
+      POSTGRES_PASSWORD: ${VECTOR_PASSWORD:?VECTOR_PASSWORD is required}
+      POSTGRES_DB: ${VECTOR_DB:?VECTOR_DB is required}
+    ports:
+      - "${VECTOR_PORT}:5432"
     volumes:
-      - pgadmin-prod_data:/root/.pgadmin
+      - fitcoach-pgvector-data:/var/lib/postgresql
     networks:
       - internal
+    restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "-O", "-", "http://localhost:${STANDARD_HTTP_PORT}/misc/ping" ]
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-fitcoach} -d ${POSTGRES_DB:-fitcoach}" ]
+      start_period: 10m
+      start_interval: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:9.18
+    container_name: pgadmin
+    env_file:
+      - path: ${FITCOACH_ENV_FILE:-.env}
+    ports:
+      - "${PGADMIN_PORT}:${PGADMIN_LISTEN_PORT}"
+    volumes:
+      - fitcoach-pgadmin-data:/root/.pgadmin
+    networks:
+      - internal
+      - proxy-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "-O", "-", "http://localhost:${PGADMIN_LISTEN_PORT}/misc/ping" ]
       interval: 60s
       timeout: 10s
       retries: 5
     depends_on:
-      postgres-prod:
+      postgres:
         condition: service_healthy
+      pgvector:
+        condition: service_healthy
+
+  grafana:
+    image: fitcoachia/grafana:1.0.0
+    build:
+      context: ./infra/observability/config/grafana
+      dockerfile: Dockerfile
+    container_name: fitcoach-grafana
+    restart: unless-stopped
+    environment:
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:?DEPLOYMENT_ENVIRONMENT is required}
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:?GF_SERVER_ROOT_URL is required}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD is required}
+      # Sin prefijo GF_: Grafana trata GF_<SECCION>_<CLAVE> como configuracion propia.
+      ALERT_SEVERITY: ${GF_ALERT_SEVERITY:-warning}
+      POSTGRES_DB: ${POSTGRES_DB:-fitcoach}
+      POSTGRES_USER: ${POSTGRES_USER:-fitcoach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+    volumes:
+      #- ./infra/observability/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - fitcoach-observability-grafana:/var/lib/grafana
+    healthcheck:
+      # /api/health devuelve 200 solo si Grafana responde y su base de datos interna está accesible.
+      test: [ "CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:3000/api/health" ]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      # La primera vez que arranca hace migraciones y carga los dashboards.
+      start_period: 60s
+      start_interval: 5s
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - observability
+      - internal
+      - proxy-network
+
+  prometheus:
+    image: fitcoachia/prometheus:1.0.0
+    build:
+      context: ./infra/observability/config/prometheus
+      dockerfile: Dockerfile
+    container_name: fitcoach-prometheus
+    restart: unless-stopped
+    # command:
+    #   - --config.file=/etc/prometheus/prometheus.yml
+    #   - --storage.tsdb.retention.time=30d
+    #   - --web.enable-remote-write-receiver # requerido por metrics_generator de Tempo
+    volumes:
+      #- ./infra/observability/config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - fitcoach-observability-prometheus:/prometheus
+    networks:
+      - observability
+
+  loki:
+    image: fitcoachia/grafana-loki:1.0.0
+    build:
+      context: ./infra/observability/config/loki
+      dockerfile: Dockerfile
+    container_name: fitcoach-loki-${DEPLOYMENT_ENVIRONMENT}
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      #- ./infra/observability/config/loki/loki.yml:/etc/loki/loki.yml:ro
+      - fitcoach-observability-loki:/loki
+    networks:
+      - observability
+
+  tempo:
+    image: fitcoachia/grafana-tempo:1.0.0
+    build:
+      context: ./infra/observability/config/tempo
+      dockerfile: Dockerfile
+    container_name: fitcoach-tempo
+    restart: unless-stopped
+    #command: -config.file=/etc/tempo/tempo.yml
+    volumes:
+      #- ./infra/observability/config/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - fitcoach-observability-tempo:/var/tempo
+    networks:
+      - observability
+
+  otel-collector:
+    image: fitcoachia/opentelemetry-collector-contrib:1.0.0
+    build:
+      context: ./infra/observability/config/otel-collector
+      dockerfile: Dockerfile
+    container_name: fitcoach-otel-collector
+    restart: unless-stopped
+    #command: [ "--config=/etc/otel-collector/otel-collector.yml" ]
+    environment:
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-dev}
+    volumes:
+      #- ./infra/observability/config/otel-collector/otel-collector.yml:/etc/otel-collector/otel-collector.yml:ro
+      - fitcoach-observability-otel-collector:/var/lib/otelcol
+    depends_on:
+      otel-collector-init:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    networks:
+      - observability
+      - internal
+
+  otel-collector-init:
+    image: alpine:3.20
+    command: [ "sh", "-c", "mkdir -p /var/lib/otelcol/queue && chown -R 10001:10001 /var/lib/otelcol" ]
+    volumes:
+      - fitcoach-observability-otel-collector:/var/lib/otelcol
+    restart: "no"
+    networks:
+      - observability
+
+  alloy:
+    image: fitcoachia/grafana-alloy:1.0.0
+    build:
+      context: ./infra/observability/config/alloy
+      dockerfile: Dockerfile
+    container_name: fitcoach-alloy
+    restart: unless-stopped
+    # command:
+    #   - run
+    #   - --server.http.listen-addr=0.0.0.0:12345
+    #   - --storage.path=/var/lib/alloy/data
+    #   - /etc/alloy/config.alloy
+    volumes:
+      # - ./infra/observability/config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Solo lectura; el propio config.alloy filtra para leer unicamente
+      # fitcoach-ia, aunque el socket expone todo el host.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - observability
+
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:2.12.3
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      # Podman rootless no publica puertos < 1024: en local usar NPM_HTTP_PORT=8080, NPM_HTTPS_PORT=8443.
+      - "${NPM_HTTP_PORT:-80}:80"
+      - "${NPM_HTTPS_PORT:-443}:443"
+      - "127.0.0.1:${NPM_ADMIN_PORT:-81}:81"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy-network
+    depends_on:
+      fitcoach-ia:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+      pgadmin:
+        condition: service_healthy
+
+volumes:
+  fitcoach-postgres:
+  fitcoach-pgadmin-data:
+  fitcoach-pgvector-data:
+  fitcoach-observability-grafana:
+  fitcoach-observability-prometheus:
+  fitcoach-observability-loki:
+  fitcoach-observability-tempo:
+  fitcoach-observability-otel-collector:
+  npm-data:
+  npm-letsencrypt:
 
 networks:
   internal:
-    name: fitcoach-prod-internal
-    external: true
+    name: fitcoach-internal
   proxy-network:
-    external: true
-
-volumes:
-  fitcoach-prod-postgres:
-  pgadmin-prod_data:
+    name: proxy-network
+  observability: {}

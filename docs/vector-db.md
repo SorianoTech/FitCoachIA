@@ -152,15 +152,19 @@ de modo que la aplicación no arranca antes de que el embedder pueda responder.
 
 ## Levantar el entorno
 
+pgVector y pgAdmin son servicios del único `docker-compose.yml`, con la configuración del `.env`
+(`VECTOR_*`, `VECTOR_DB_RO_PASSWORD`, `VECTOR_DB_WRITER_PASSWORD`, `PGADMIN_*`). Se levantan con el
+resto del sistema o por separado, desde la raíz del repositorio:
+
 ```bash
-make vector-up      # pgVector + pgAdmin
-make vector-logs
-make vector-down    # conserva el volumen con la carga inicial
+docker compose up -d --build pgvector pgadmin
+docker compose logs -f pgvector
+docker compose stop pgvector pgadmin    # conserva el volumen con la carga inicial
 ```
 
-`make vector-down` **no** borra el volumen a propósito: la carga inicial son 283 MB repartidos en 8
-ficheros y volver a aplicarla tarda varios minutos. Para borrarla de verdad hay que hacerlo
-explícitamente.
+El volumen `fitcoach-pgvector-data` guarda la carga inicial: son 283 MB repartidos en 8 ficheros y
+volver a aplicarla tarda varios minutos. `docker compose down -v` lo borraría junto con el resto de
+volúmenes del sistema.
 
 La primera vez, el contenedor aplica en orden alfabético todo lo que hay en
 `infra/vector-db/ddl/`:
@@ -198,20 +202,9 @@ leer o insertar en `exercise_publications`. No puede actualizar ni borrar librem
 
 ## Red
 
-`infra/vector-db/docker-compose.vector-db.yml` es un proyecto Compose independiente
-(`name: fitcoach-vector-db`), con su propio ciclo de vida: los ejercicios se cargan una vez y
-sobreviven a los despliegues de la aplicación.
-
-El Compose local conecta `pgvector` y pgAdmin a `fit-coach-net`. En el servidor se usan los
-overrides por entorno:
-
-- `docker-compose.vector-db.dev.yml` conecta pgVector a `fitcoach-dev-internal` y publica pgAdmin
-  mediante `proxy-network`.
-- `docker-compose.vector-db.prod.yml` conecta pgVector y pgAdmin exclusivamente a
-  `fitcoach-prod-internal`.
-
-De este modo la aplicación alcanza pgVector por su red backend y la base vectorial nunca necesita
-pertenecer a `proxy-network`.
+pgVector solo está en la red `fitcoach-internal`, la misma que la aplicación, que lo alcanza como
+`pgvector:5432`. Nunca pertenece a `proxy-network`. Además publica `VECTOR_PORT` en el host para
+conectarse con herramientas locales; pgAdmin, que sí está en `proxy-network`, publica `PGADMIN_PORT`.
 
 ## Consultas útiles
 
@@ -243,4 +236,4 @@ deterministas, y un stub de embeddings que devuelve un vector constante.
 Así la recuperación es reproducible y la comprobación que importa —que todos los `exercise_id` del
 plan existen de verdad en `exercises`— se ejecuta contra pgVector real.
 
-El volcado completo solo se ejercita a mano con `make vector-up`.
+El volcado completo solo se ejercita a mano con `docker compose up -d --build pgvector`.

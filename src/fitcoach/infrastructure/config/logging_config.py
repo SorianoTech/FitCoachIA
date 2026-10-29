@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fitcoach.infrastructure.observability.telemetry import SERVICE_NAME, SERVICE_VERSION
 
-_APP_ENV = os.getenv("APP_ENV", "dev")
+_APP_ENV = os.getenv("DEPLOYMENT_ENVIRONMENT", "dev")
 _DEFAULT_LEVEL = "INFO"
 
 

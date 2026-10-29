@@ -1,6 +1,6 @@
 apiVersion: 1
 
-# Datasource previo, unico, sustituido por "PostgreSQL Dev"/"PostgreSQL Prod"
+# Datasource previo, unico, sustituido por "PostgreSQL"
 # (ver seccion 8 de docs/observabilidad.md sobre convivencia dev/prod).
 deleteDatasources:
   - name: PostgreSQL
@@ -35,32 +35,20 @@ datasources:
         datasourceUid: prometheus
     editable: false
 
-  - name: PostgreSQL Dev
+  # Solo configuramos acceso a la base de datos del entorno en el que se despliega el Stack de observabilidad.
+  # No va a ser posible acceder a la base de datos del otro entorno.
+  - name: PostgreSQL Relation DB
     type: postgres
     access: proxy
-    url: postgres-dev:5432
-    database: ${FITCOACH_POSTGRES_DEV_DB}
-    user: ${FITCOACH_POSTGRES_DEV_USER}
-    uid: fitcoach-postgres-dev
+    url: ${POSTGRES_HOST}:${POSTGRES_PORT}
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_USER}
+    uid: fitcoach-postgres-${DEPLOYMENT_ENVIRONMENT}
     secureJsonData:
-      password: ${FITCOACH_POSTGRES_DEV_PASSWORD}
+      password: ${POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1600
     # token_usage vive en la misma base que la app: consultas SQL directas
     # (tokens/coste por telegram_user_id o por agente) sin pasar por Loki/Tempo.
-    editable: false
-
-  - name: PostgreSQL Prod
-    type: postgres
-    access: proxy
-    url: postgres-prod:5432
-    database: ${FITCOACH_POSTGRES_PROD_DB}
-    user: ${FITCOACH_POSTGRES_PROD_USER}
-    uid: fitcoach-postgres-prod
-    secureJsonData:
-      password: ${FITCOACH_POSTGRES_PROD_PASSWORD}
-    jsonData:
-      sslmode: disable
-      postgresVersion: 1600
     editable: false

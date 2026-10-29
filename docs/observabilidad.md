@@ -7,19 +7,20 @@ implementación, ver [plan/observabilidad.md](plan/observabilidad.md).
 
 ## 1. Visión general
 
-El stack vive en `infra/observability/`, **desacoplado** del compose de la
-aplicación (`docker-compose.yml` / `docker-compose.dev.yml`): tiene su propio
-`compose.yml`, arranca y se detiene de forma independiente, y la app sigue
-funcionando (sin telemetría) si el stack no está levantado.
+El stack forma parte del único `docker-compose.yml` del repositorio, junto a la aplicación, y se
+levanta con ella. Cada componente tiene su imagen propia, construida desde
+`infra/observability/config/<componente>/Dockerfile` con su configuración ya copiada dentro, así que
+el servidor no necesita los ficheros de configuración montados. La app sigue funcionando (sin
+telemetría) si el stack no está levantado: el exportador OTLP es best-effort.
 
 ```mermaid
 flowchart LR
-    subgraph App["FitCoachIA (docker-compose.yml)"]
+    subgraph App["Aplicación (docker-compose.yml)"]
         API["FastAPI / webhook"]
         DB[("Postgres\nconversation_messages\ntoken_usage")]
     end
 
-    subgraph Obs["infra/observability (stack independiente)"]
+    subgraph Obs["Observabilidad (docker-compose.yml)"]
         OTEL["OTel Collector"]
         ALLOY["Grafana Alloy\n(Docker logs)"]
         LOKI["Loki (logs)"]
@@ -46,7 +47,7 @@ flowchart LR
 ## 2. Componentes
 
 | Componente | Imagen | Puerto interno | Rol |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Grafana** | `grafana/grafana:11.3.0` | 3000 | Visualización: dashboards, datasources, alertas. Único servicio expuesto (vía `proxy-network` a nginx proxy manager, sin publicar el puerto al host). |
 | **Prometheus** | `prom/prometheus:v3.0.1` | 9090 | Almacena métricas. Tres orígenes: scrape del propio stack, remote-write de Tempo (`traces_spanmetrics_*`) y remote-write del Collector (métricas OTLP de la app). Retención 30 días. Arranca con `--enable-feature=exemplar-storage`: sin ese flag aceptaría el write y descartaría los exemplars en silencio. |
 | **Loki** | `grafana/loki:3.3.2` | 3100 | Almacena logs. Retención 14 días. Labels de baja cardinalidad únicamente (`service_name`, `environment`, `level`); campos variables como `telegram_user_id`, `chat_id`, `agent`, `trace_id` van como *structured metadata*, no como labels. |
@@ -54,11 +55,10 @@ flowchart LR
 | **OTel Collector** | `otel/opentelemetry-collector-contrib:0.116.1` | OTLP gRPC 4317 / HTTP 4318 | Punto único de entrada de telemetría de la app. Aplica `memory_limiter`, `resource`, redacción y `batch`. Reenvía logs a Loki, trazas a Tempo y métricas a Prometheus por remote-write. Las colas de Loki y Tempo se persisten en disco; la de métricas es en memoria (ver sección 9). |
 | **Grafana Alloy** | `grafana/alloy:v1.5.1` | 12345 (UI/API interno) | Lee los logs de los contenedores `fitcoach-ia`/`dev-fitcoach-ia` vía el socket de Docker (solo lectura) y los reenvía a Loki. Filtra explícitamente por nombre de contenedor: aunque el socket expone todo el host, solo se leen y reenvían los logs de la app. |
 
-Todos los servicios están en la red privada `observability`. Grafana se une además a las redes
-`fitcoach-dev-internal` y `fitcoach-prod-internal` para consultar cada PostgreSQL, y a
-`proxy-network` para que nginx proxy manager pueda publicarlo como `fitcoach-grafana:3000`. El
-Collector también se une a las dos redes internas de aplicación para recibir OTLP, pero no a la red
-del proxy.
+Todos los servicios están en la red privada `observability`. Grafana se une además a
+`fitcoach-internal` para consultar el PostgreSQL de la aplicación, y a `proxy-network` para que
+Nginx Proxy Manager pueda publicarlo como `fitcoach-grafana:3000`. El Collector también se une a
+`fitcoach-internal` para recibir OTLP de la app, pero no a la red del proxy.
 
 ## 3. Qué información se recoge
 
@@ -152,7 +152,7 @@ reparación de JSON cuando la primera respuesta es inválida) se normaliza a un
 se persiste como una fila en `token_usage`:
 
 | Columna | Contenido |
-|---|---|
+| --- | --- |
 | `chat_id` | Identificador de chat de Telegram (hoy equivale al usuario: solo hay chats privados 1:1). |
 | `agent` | Valor de `AgentType` (`interviewer`, ...). |
 | `model` | Modelo LLM usado en esa llamada concreta. |
@@ -213,7 +213,7 @@ con variables de filtro dinámicas y paneles organizados en capas de complejidad
 
 ### 4.1 Variables de filtro
 
-- **`$datasource`** — elige entre `PostgreSQL Dev` y `PostgreSQL Prod`.
+- **`$datasource`** — datasource PostgreSQL del dashboard; cada stack tiene uno solo, el de su entorno.
 - **`$agent`** — filtra por `interviewer`, `trainer`, `nutritionist`, `coach` (multiselecta).
 - **`$telegram_user_id`** — filtra por usuario de Telegram (multiselecta).
 - **`$log_level`** — filtra por nivel de log: `ERROR`, `WARNING`, `INFO`, `DEBUG` (multiselecta).
@@ -221,108 +221,102 @@ con variables de filtro dinámicas y paneles organizados en capas de complejidad
 ### 4.2 Paneles
 
 #### Fila 1: Métricas de tokens LLM (desacopladas de logs)
+
 1. **Tokens consumidos por agente** — serie temporal, `sum(total_tokens)` agrupado por hora y `agent`.
 2. **Top usuarios por tokens consumidos** — tabla: `chat_id` (= telegram_user_id), `agent`, tokens totales, nº de llamadas, latencia media.
 3. **Latencia media del LLM por agente** — serie temporal de `avg(latency_ms)`.
 4. **Llamadas al LLM por estado** — serie temporal de recuento por `status`.
 
 #### Fila 2: Estado de los logs en tiempo real (paneles Stat)
-5. **Contadores de logs por nivel** — tres paneles Stat con colores code:
+
+1. **Contadores de logs por nivel** — tres paneles Stat con colores code:
    - 🔴 **Errores** — fondo rojo; visible instantáneamente si hay problemas.
    - 🟠 **Warnings** — fondo naranja.
    - 🔵 **Infos** — fondo azul.
 
 #### Fila 3: Actividad y throughput
-6. **Throughput de logs (líneas/seg)** — serie temporal de `rate()` por nivel, permite ver picos de actividad y volumen relativo. Ignora las líneas no JSON de Uvicorn mediante `__error__=""`.
-7. **Actividad por logger** — gráfico de barras agregado por módulo (`conversation_service.py`, `webhook.py`, etc.), útil para identificar fuentes ruidosas. También ignora las líneas no JSON de Uvicorn.
+
+1. **Throughput de logs (líneas/seg)** — serie temporal de `rate()` por nivel, permite ver picos de actividad y volumen relativo. Ignora las líneas no JSON de Uvicorn mediante `__error__=""`.
+2. **Actividad por logger** — gráfico de barras agregado por módulo (`conversation_service.py`, `webhook.py`, etc.), útil para identificar fuentes ruidosas. También ignora las líneas no JSON de Uvicorn.
 
 #### Fila 4: Debugging rápido (Últimos N eventos)
-8. **Últimos 5 errores** — panel Logs nativo, maxLines=5, ordenado descendente (más nuevos primero).
-9. **Últimos 5 warnings** — igual, para detectar problemas inminentes sin scrollear.
+
+1. **Últimos 5 errores** — panel Logs nativo, maxLines=5, ordenado descendente (más nuevos primero).
+2. **Últimos 5 warnings** — igual, para detectar problemas inminentes sin scrollear.
 
 #### Fila 5: Stream de logs completo
-10. **Stream de logs en vivo** — panel Logs nativo con 100 líneas máximo. Consulta el stream bruto para mostrar tanto logs JSON de la aplicación como access logs de Uvicorn; el parseo JSON se reserva para los paneles agregados.
 
+ 1. **Stream de logs en vivo** — panel Logs nativo con 100 líneas máximo. Consulta el stream bruto para mostrar tanto logs JSON de la aplicación como access logs de Uvicorn; el parseo JSON se reserva para los paneles agregados.
 
 Datasources disponibles para explorar libremente además del dashboard:
 **Prometheus**, **Loki**, **Tempo** (con correlación log↔traza vía `trace_id`),
-**PostgreSQL Dev** y **PostgreSQL Prod** (consultas SQL ad-hoc sobre
-`token_usage` u otras tablas de cada base, ver sección 10).
+**PostgreSQL Relation DB** (consultas SQL ad-hoc sobre `token_usage` u otras tablas de la base del
+entorno).
 
 ### Alertas provisionadas
 
 En `infra/observability/config/grafana/provisioning/alerting/rules.yml`
-(carpeta «FitCoachIA» en Grafana), duplicadas por entorno para poder
-distinguir un incidente en dev de uno en prod:
+(carpeta «FitCoachIA» en Grafana), un solo grupo `fitcoach-llm` con dos reglas:
 
-- **`[dev]`/`[prod]` Latencia p95 del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
-- **`[dev]`/`[prod]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
+- **`[<entorno>]` Latencia del LLM por encima del umbral**: percentil 95 de `latency_ms` de los últimos 15 min > 30000 ms, sostenido 10 min.
+- **`[<entorno>]` Tasa de fallos del LLM elevada**: más del 20% de llamadas con `status <> 'success'` en los últimos 15 min, sostenido 10 min.
 
-Las de prod usan `severity: critical` y las de dev `severity: warning`, y cada
-grupo consulta su propio datasource (`fitcoach-postgres-dev` /
-`fitcoach-postgres-prod`).
+Grafana sustituye `${DEPLOYMENT_ENVIRONMENT}` al cargar el fichero, así que cada stack crea sus reglas
+con el entorno en el título, en el `uid` (`fitcoach-<entorno>-llm-…`) y en la etiqueta `environment`, y
+las consulta contra el datasource de su entorno (`fitcoach-postgres-<entorno>`). Las dos llevan
+la etiqueta `severity` de `GF_ALERT_SEVERITY` (`warning` si no está definida; en producción,
+`critical`). `deleteRules` borra las variantes anteriores `[dev]`/`[prod]` de los Grafana que
+ya las tuvieran.
 
 ## 5. Cómo levantar el stack
 
-Requiere las redes externas `proxy-network`, `fitcoach-dev-internal` y
-`fitcoach-prod-internal`. Desde la raíz del repositorio pueden crearse de forma idempotente con:
+Se levanta con el resto del sistema, desde la raíz del repositorio y con el `.env` único
+([`.env.example`](../.env.example)):
 
 ```bash
-make networks
+docker compose up -d --build
 ```
 
-Configurar las variables de entorno (una sola vez):
+Para levantar solo la observabilidad:
 
 ```bash
-cd infra/observability
-cp .env.example .env
-# Editar .env: GF_ADMIN_PASSWORD, DEPLOYMENT_ENVIRONMENT,
-# FITCOACH_POSTGRES_DEV_*/FITCOACH_POSTGRES_PROD_* (deben coincidir con las
-# credenciales reales de cada Postgres; ver seccion 8 sobre convivencia dev/prod).
+docker compose up -d --build grafana prometheus loki tempo otel-collector alloy
 ```
 
-Levantar el stack:
-
-```bash
-cd infra/observability
-docker compose up -d
-```
+Variables del `.env` que usa el stack: `DEPLOYMENT_ENVIRONMENT` (`dev` o `prod`),
+`GF_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_ALERT_SEVERITY` (severidad de las alertas) y las
+credenciales `POSTGRES_*` de la base de la aplicación, que Grafana usa para su datasource.
 
 Grafana quedará accesible:
-- En producción, vía nginx proxy manager en `https://grafana.fitcoach.sergiosoriano.es` (Forward Hostname/IP `fitcoach-grafana`, puerto `3000`).
-- En local, si se quiere acceder directo sin NPM, añadir temporalmente `ports: ["3000:3000"]` al servicio `grafana` en `compose.yml` (no comitear ese cambio) o usar `docker compose port grafana 3000` / `docker exec` para depurar.
+
+- En producción, vía Nginx Proxy Manager en `https://grafana.fitcoach.sergiosoriano.es` (Forward Hostname/IP `fitcoach-grafana`, puerto `3000`).
+- En local, si se quiere acceder directo sin NPM, añadir temporalmente `ports: ["3000:3000"]` al servicio `grafana` en `docker-compose.yml` (no comitear ese cambio) o usar `docker compose port grafana 3000` / `docker exec` para depurar.
 
 Usuario admin: `admin` / la contraseña definida en `GF_ADMIN_PASSWORD`.
 
-En el despliegue sobre una EC2 de AWS se levanta este mismo stack en la instancia; ver
+En el despliegue sobre una EC2 de AWS se levanta igual, con todo el sistema; ver
 [despliegue-aws-ec2.md](despliegue-aws-ec2.md).
 
 ## 6. Cómo parar el stack
 
 ```bash
-cd infra/observability
-docker compose down
+docker compose stop grafana prometheus loki tempo otel-collector alloy
 ```
 
-Esto detiene y elimina los contenedores pero conserva los volúmenes con datos
-(`fitcoach-observability-grafana`, `-prometheus`, `-loki`, `-tempo`). Para
-borrar también los datos:
+Los volúmenes con datos (`fitcoach-observability-grafana`, `-prometheus`, `-loki`, `-tempo`,
+`-otel-collector`) se conservan. `docker compose down -v` borra **todos** los volúmenes del sistema,
+también las bases de datos: para borrar solo los de observabilidad, usar `docker volume rm` con sus
+nombres.
 
-```bash
-docker compose down -v
-```
-
-Parar (o incluso borrar) este stack **no afecta** a la app: `fitcoach-ia`
-sigue respondiendo peticiones normalmente, simplemente deja de emitir trazas
-(el exportador OTLP es best-effort y no bloqueante).
+Parar el stack **no afecta** a la app: `fitcoach-ia` sigue respondiendo peticiones normalmente,
+simplemente deja de emitir trazas (el exportador OTLP es best-effort y no bloqueante).
 
 ## 7. Cómo configurar la app para que envíe telemetría
 
-En el entorno de la app (`.env`, `.env.dev`, `.env.prod` o variables reales del
-contenedor), añadir:
+En el `.env` de la app:
 
 ```bash
-otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317
+otel_exporter_otlp_endpoint=http://otel-collector:4317
 log_level=INFO           # opcional, por defecto INFO
 APP_VERSION=<git-sha o version>   # opcional, aparece como service.version en logs/trazas
 ```
@@ -330,51 +324,33 @@ APP_VERSION=<git-sha o version>   # opcional, aparece como service.version en lo
 - Si `otel_exporter_otlp_endpoint` no está definida, la app arranca igual pero
   no exporta trazas (modo no-op); así es como funcionan tests, CI y el
   desarrollo local por defecto.
-- El host `fitcoach-otel-collector` solo es resoluble si el contenedor de la app está en la misma
-  red que el Collector. El Compose de observabilidad conecta el Collector a
-  `fitcoach-dev-internal` y `fitcoach-prod-internal`.
-- Ya está activada en `.env.dev`. Para producción, añadir la misma línea a
-  `.env.prod` en el servidor (no está versionado, hay que editarlo a mano).
+- El host `otel-collector` es resoluble porque la app y el Collector comparten la red
+  `fitcoach-internal`.
 
-## 8. Cómo conviven dev y producción sin pisarse
+## 8. Un stack por entorno
 
-El stack de observabilidad es único y compartido, pero cada canal de
-telemetría separa dev de prod de una forma distinta:
+Cada entorno (dev o prod) se despliega en su propio servidor con el mismo `docker-compose.yml` y su
+propio `.env`, así que cada uno tiene **su propio stack de observabilidad**, que solo ve ese entorno:
 
-- **Trazas**: se distinguen por la etiqueta `deployment.environment.name`,
-  que sale de `APP_ENV` (`dev` en `docker-compose.dev.yml`, `prod` en
-  `docker-compose.yml`). Basta con activar `otel_exporter_otlp_endpoint` en
-  ambos `.env.<entorno>` para que las dos lleguen a la vez al mismo Collector.
-- **Logs**: Alloy ingiere `fitcoach-ia` y `dev-fitcoach-ia` simultáneamente
-  (ver `config/alloy/config.alloy`) y las distingue con la label
-  `environment` (`dev`/`prod`), calculada a partir del nombre del contenedor.
-- **Tokens/SQL (`token_usage`)**: cada entorno tiene su propio servicio Postgres
-  (`postgres-dev` en `docker-compose.dev.yml`, `postgres-prod` en
-  `docker-compose.yml`) y su propia red backend. Cada app solo puede resolver su base de datos.
-  Grafana se conecta a las dos redes y mantiene **dos datasources separados**
-  (`PostgreSQL Dev` → `postgres-dev:5432`, `PostgreSQL Prod` →
-  `postgres-prod:5432`), seleccionables en el dashboard con la variable
-  `$datasource`.
-- **La API mantiene nombres distintos por entorno** (`fitcoach-ia-dev` /
-  `fitcoach-ia-prod`). Solo estas APIs comparten `proxy-network`, por lo que sus alias deben seguir
-  siendo únicos. Esta regla evita repetir el incidente histórico en el que ambos servicios se
-  llamaban `fitcoach-ia` y Docker alternaba la resolución DNS entre dev y producción.
+- **Trazas**: llevan la etiqueta `deployment.environment.name`, que sale de
+  `DEPLOYMENT_ENVIRONMENT`.
+- **Logs**: Alloy lee los logs del contenedor `fitcoach-ia` (ver `config/alloy/config.alloy`) y les
+  pone la label `environment`.
+- **Tokens/SQL (`token_usage`)**: Grafana tiene un solo datasource PostgreSQL, `PostgreSQL Relation
+  DB`, que apunta a la base de su entorno (`POSTGRES_HOST`:`POSTGRES_PORT`) con el uid
+  `fitcoach-postgres-<DEPLOYMENT_ENVIRONMENT>`. Desde un stack no se puede consultar la base del
+  otro entorno.
+- **Alertas**: un solo juego de reglas que toma el entorno de `DEPLOYMENT_ENVIRONMENT` y consulta
+  el datasource `fitcoach-postgres-<DEPLOYMENT_ENVIRONMENT>` (ver *Alertas provisionadas*).
 
-> **Regla general**: `proxy-network` solo admite interfaces que deban recibir tráfico de nginx.
-> Sus nombres de servicio deben ser únicos. PostgreSQL, embedder, pgVector, jobs y Collector no se
+> **Regla general**: `proxy-network` solo admite interfaces que deban recibir tráfico de Nginx
+> Proxy Manager (la API, Grafana y pgAdmin). PostgreSQL, embedder, pgVector y Collector no se
 > conectan a esa red.
-- **Alertas**: duplicadas por entorno (`[dev]`/`[prod]` en el título), cada
-  una apuntando a su propio datasource Postgres.
-
-Si vas a desplegar producción por primera vez en este host, solo hace falta:
-1. Añadir `otel_exporter_otlp_endpoint=http://fitcoach-otel-collector:4317` a `.env.prod`.
-2. Rellenar `FITCOACH_POSTGRES_PROD_DB/USER/PASSWORD` en `infra/observability/.env` con las credenciales reales de `docker-compose.yml`.
-3. `docker compose -f infra/observability/compose.yml up -d --force-recreate grafana` para que recargue las credenciales.
 
 ## 9. Cómo configurar cada componente
 
 | Quiero cambiar... | Archivo |
-|---|---|
+| --- | --- |
 | Retención de logs / límites de ingesta | `infra/observability/config/loki/loki.yml` |
 | Retención de trazas / generación de métricas RED | `infra/observability/config/tempo/tempo.yml` |
 | Scrape jobs / retención de métricas | `infra/observability/config/prometheus/prometheus.yml` |
@@ -383,7 +359,7 @@ Si vas a desplegar producción por primera vez en este host, solo hace falta:
 | Datasources de Grafana (Prometheus/Loki/Tempo/Postgres) | `infra/observability/config/grafana/provisioning/datasources/datasources.yml` |
 | Dashboards | `infra/observability/config/grafana/provisioning/dashboards/json/*.json` |
 | Alertas | `infra/observability/config/grafana/provisioning/alerting/rules.yml` |
-| Contraseñas / entorno del stack | `infra/observability/.env` (no versionado; plantilla en `.env.example`) |
+| Contraseñas / entorno del stack | `.env` de la raíz (no versionado; plantilla en `.env.example`) |
 | Qué exporta la app (endpoint OTLP, nivel de log) | variables de entorno de la app: `otel_exporter_otlp_endpoint`, `log_level`, `APP_VERSION` |
 
 El Collector persiste las colas de **Loki y Tempo** en `/var/lib/otelcol/queue`,
@@ -407,17 +383,15 @@ Un efecto secundario a tener presente: `remote_write_queue` tiene `queue_size:
 estuviera caído mucho tiempo, esa cola podría presionar al limitador y degradar
 también la ingesta de logs y trazas.
 
-Tras cambiar cualquier archivo de configuración de un servicio, basta con
-recrearlo:
+La configuración va copiada dentro de cada imagen, así que tras cambiar cualquier archivo hay que
+reconstruir la imagen del servicio y recrearlo:
 
 ```bash
-cd infra/observability
-docker compose up -d --force-recreate <servicio>   # p. ej. grafana, prometheus, loki, tempo, otel-collector
+docker compose up -d --build <servicio>   # p. ej. grafana, prometheus, loki, tempo, otel-collector, alloy
 ```
 
-Los cambios en dashboards/alertas/datasources se recargan solos (Grafana
-revisa el directorio de provisioning cada 30s); no hace falta reiniciar
-Grafana salvo que cambie el propio `compose.yml`.
+Esto incluye los dashboards, alertas y datasources de Grafana: el provisioning se lee del directorio
+de la imagen.
 
 ## 10. Limitaciones conocidas / próximos pasos
 
@@ -431,6 +405,6 @@ Grafana salvo que cambie el propio `compose.yml`.
 - **Alloy necesita el socket de Docker montado en solo lectura**: es un
   privilegio amplio (puede enumerar todos los contenedores del host), acotado
   únicamente por la configuración (`discovery.relabel` descarta todo lo que no
-  sea `fitcoach-ia`/`dev-fitcoach-ia` antes de leer sus logs). Revisar si el
+  sea el contenedor de la app antes de leer sus logs). Revisar si el
   entorno de despliegue requiere una alternativa (p. ej. el driver de log
   `loki` de Docker a nivel de daemon).
